@@ -18,6 +18,8 @@ WORKDIR /build
 
 COPY . .
 
+RUN scripts/gen-changelog.sh
+
 RUN make deb
 
 # Build standalone tarball

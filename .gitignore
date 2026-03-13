@@ -3,6 +3,7 @@ data/
 dist/
 site/public/apt/
 site/public/gpg
+debian/changelog
 .DS_Store
 .wrangler/
 .claude/

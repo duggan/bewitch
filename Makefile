@@ -20,6 +20,7 @@ install-local: build
 	install -m 755 bin/bewitch /usr/local/bin/bewitch
 
 deb: build
+	scripts/gen-changelog.sh
 	dpkg-buildpackage -us -uc -b
 
 deb-docker:
