@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build artifacts
+        run: docker build -f Dockerfile.build -o dist .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.arch }}
+          path: dist/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: >-
+          gh release create "${{ github.ref_name }}"
+          dist/*.deb dist/*.tar.gz
+          --title "${{ github.ref_name }}"
+          --generate-notes
+
+  apt-repo:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Install wrangler
+        run: npm install -g wrangler
+
+      - name: Upload artifacts to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: scripts/upload-pool.sh dist/*.deb dist/*.tar.gz
+
+      - name: Write GPG key to file
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: printenv GPG_PRIVATE_KEY > /tmp/signing.key
+
+      - name: Build APT repo image
+        run: docker build -f Dockerfile.repo -t bewitch-repo .
+
+      - name: Generate signed APT repo metadata
+        run: |
+          docker run --rm \
+            -e SITE_PUBLIC=/work/site/public \
+            -e GPG_KEY_FILE=/work/signing.key \
+            -v "${{ github.workspace }}/dist:/work/dist" \
+            -v "${{ github.workspace }}/site/public:/work/site/public" \
+            -v /tmp/signing.key:/work/signing.key:ro \
+            bewitch-repo dist/*.deb
+
+      - name: Clean up GPG key
+        if: always()
+        run: rm -f /tmp/signing.key
+
+      - name: Upload site public directory
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-public
+          path: site/public/
+
+  deploy:
+    needs: apt-repo
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download site public directory
+        uses: actions/download-artifact@v4
+        with:
+          name: site-public
+          path: site/public/
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        working-directory: site
+        run: bun install --frozen-lockfile
+
+      - name: Build site
+        working-directory: site
+        run: bun run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site/dist --project-name=bewitch --branch=main
