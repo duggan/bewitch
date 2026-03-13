@@ -32,13 +32,10 @@ jobs:
         working-directory: site
         run: bun run build
 
-      - name: Build Pages Functions
-        run: npx wrangler@4 pages functions build site/functions --outdir site/dist
-
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '4'
-          command: pages deploy site/dist --project-name=bewitch --branch=${{ github.head_ref || github.ref_name }}
+          workingDirectory: site
+          command: pages deploy dist --project-name=bewitch --branch=${{ github.head_ref || github.ref_name }} --commit-dirty=true
