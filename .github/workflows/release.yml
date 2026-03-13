@@ -109,5 +109,13 @@ jobs:
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
             --data '{
-              "prefixes": ["bewitch.dev/apt/dists/"]
+              "files": [
+                "https://bewitch.dev/apt/dists/stable/Release",
+                "https://bewitch.dev/apt/dists/stable/Release.gpg",
+                "https://bewitch.dev/apt/dists/stable/InRelease",
+                "https://bewitch.dev/apt/dists/stable/main/binary-amd64/Packages",
+                "https://bewitch.dev/apt/dists/stable/main/binary-amd64/Packages.gz",
+                "https://bewitch.dev/apt/dists/stable/main/binary-arm64/Packages",
+                "https://bewitch.dev/apt/dists/stable/main/binary-arm64/Packages.gz"
+              ]
             }'
