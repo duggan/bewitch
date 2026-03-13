@@ -1,0 +1,32 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Create data directory first (before user, to avoid home dir warning)
+        mkdir -p /var/lib/bewitch
+
+        # Create bewitch user/group if they don't exist
+        if ! getent group bewitch > /dev/null 2>&1; then
+            addgroup --system bewitch
+        fi
+        if ! getent passwd bewitch > /dev/null 2>&1; then
+            adduser --system --ingroup bewitch --home /var/lib/bewitch \
+                --no-create-home --shell /usr/sbin/nologin bewitch
+        fi
+
+        # Set ownership of data directory
+        chown bewitch:bewitch /var/lib/bewitch
+        chmod 750 /var/lib/bewitch
+
+        # Install default config if none exists
+        if [ ! -f /etc/bewitch.toml ]; then
+            cp /usr/share/bewitch/bewitch.example.toml /etc/bewitch.toml
+            chmod 644 /etc/bewitch.toml
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

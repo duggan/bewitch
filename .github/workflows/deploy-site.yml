@@ -1,0 +1,39 @@
+name: Deploy Site
+
+on:
+  push:
+    branches: [main]
+    paths: [site/**]
+  pull_request:
+    paths: [site/**]
+
+concurrency:
+  group: deploy-site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        working-directory: site
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        working-directory: site
+        run: bun run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site/dist --project-name=bewitch --branch=${{ github.head_ref || github.ref_name }}

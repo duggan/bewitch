@@ -1,0 +1,14 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    dpkg-dev \
+    gpg \
+    gpg-agent \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+
+COPY scripts/build-apt-repo.sh /usr/local/bin/build-apt-repo.sh
+COPY scripts/repo-entrypoint.sh /usr/local/bin/repo-entrypoint.sh
+
+ENTRYPOINT ["repo-entrypoint.sh"]

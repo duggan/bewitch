@@ -1,0 +1,17 @@
+Source: bewitch
+Section: admin
+Priority: optional
+Maintainer: Ross <ross@example.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.0
+Homepage: https://github.com/ross/bewitch
+
+Package: bewitch
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: smartmontools
+Description: Server monitoring daemon with TUI
+ Bewitch is a lightweight server monitoring tool that collects system metrics
+ (CPU, memory, disk, network, temperature, power, processes) and stores them
+ in DuckDB. It includes a terminal UI for real-time monitoring and historical
+ analysis, plus an alerting system with webhook support.

@@ -1,0 +1,8 @@
+bin/
+data/
+dist/
+site/public/apt/
+site/public/gpg
+.DS_Store
+.wrangler/
+.claude/

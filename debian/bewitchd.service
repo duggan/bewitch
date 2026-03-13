@@ -1,0 +1,19 @@
+[Unit]
+Description=Bewitch Server Monitor Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/bewitchd -config /etc/bewitch.toml
+Restart=on-failure
+RestartSec=5
+User=bewitch
+Group=bewitch
+SupplementaryGroups=disk
+StateDirectory=bewitch
+RuntimeDirectory=bewitch
+AmbientCapabilities=CAP_SYS_RAWIO
+CapabilityBoundingSet=CAP_SYS_RAWIO
+
+[Install]
+WantedBy=multi-user.target

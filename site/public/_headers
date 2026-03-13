@@ -1,0 +1,49 @@
+/install.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+
+/*.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/witch.png
+  Cache-Control: public, max-age=86400
+
+/demo.mp4
+  Cache-Control: public, max-age=86400
+
+# APT repository
+
+/gpg
+  Content-Type: application/pgp-keys
+  Cache-Control: public, max-age=86400
+
+/apt/dists/stable/Release
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+
+/apt/dists/stable/Release.gpg
+  Content-Type: application/pgp-signature
+  Cache-Control: public, max-age=300
+
+/apt/dists/stable/InRelease
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+
+/apt/dists/stable/main/binary-amd64/Packages
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+
+/apt/dists/stable/main/binary-amd64/Packages.gz
+  Content-Type: application/gzip
+  Cache-Control: public, max-age=300
+
+/apt/dists/stable/main/binary-arm64/Packages
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+
+/apt/dists/stable/main/binary-arm64/Packages.gz
+  Content-Type: application/gzip
+  Cache-Control: public, max-age=300

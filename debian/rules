@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	go build -ldflags "-X main.version=$$(cat VERSION)" -o bin/bewitchd ./cmd/bewitchd
+	go build -ldflags "-X main.version=$$(cat VERSION)" -o bin/bewitch ./cmd/bewitch
+
+override_dh_auto_test:
+	# No tests yet
+
+override_dh_auto_install:
+	# Handled by debian/install
+
+override_dh_dwz:
+	# Skip dwz - doesn't work with Go binaries

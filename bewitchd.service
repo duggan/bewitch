@@ -1,0 +1,16 @@
+[Unit]
+Description=Bewitch Server Monitor Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/bewitchd -config /etc/bewitch.toml
+Restart=on-failure
+RestartSec=5
+User=bewitch
+Group=bewitch
+StateDirectory=bewitch
+RuntimeDirectory=bewitch
+
+[Install]
+WantedBy=multi-user.target

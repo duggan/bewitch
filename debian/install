@@ -1,0 +1,4 @@
+bin/bewitchd usr/bin
+bin/bewitch usr/bin
+bewitch.example.toml usr/share/bewitch
+debian/bewitchd.service lib/systemd/system

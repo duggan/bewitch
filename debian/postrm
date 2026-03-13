@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    purge)
+        # Remove data directory on purge
+        rm -rf /var/lib/bewitch
+
+        # Remove user and group
+        if getent passwd bewitch > /dev/null 2>&1; then
+            deluser --system bewitch || true
+        fi
+        if getent group bewitch > /dev/null 2>&1; then
+            delgroup --system bewitch || true
+        fi
+
+        # Remove config file
+        rm -f /etc/bewitch.toml
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

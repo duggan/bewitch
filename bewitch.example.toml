@@ -1,0 +1,84 @@
+[daemon]
+# mock = false  # synthetic data for macOS TUI development
+# socket = "/run/bewitch/bewitch.sock"  # default; requires RuntimeDirectory=bewitch in systemd
+# listen = ":9119"  # optional TCP listener for remote TUI access; empty = disabled
+# tls_cert = "/etc/bewitch/tls/cert.pem"  # PEM certificate; empty = auto-generate self-signed
+# tls_key = "/etc/bewitch/tls/key.pem"    # PEM private key; empty = auto-generate self-signed
+# tls_disabled = false                     # set true to disable TLS on TCP listener
+# auth_token = ""                          # bearer token for TCP client authentication; empty = no auth
+db_path = "/var/lib/bewitch/bewitch.duckdb"
+# log_level = "info"  # log level: debug, info, warn, error; default "info"
+# default_interval = "5s"  # default collection interval for all collectors; minimum 100ms
+# retention = "30d"  # delete metrics older than this; empty = keep forever
+# prune_interval = "1h"  # how often to delete old data (requires retention); default "1h"
+# compaction_interval = "7d"  # full DB rebuild interval; empty = disabled
+# checkpoint_threshold = "16MB"  # DuckDB WAL auto-checkpoint size; default "16MB"
+# checkpoint_interval = "5m"  # forced checkpoint interval for crash safety; empty = disabled
+# archive_threshold = "7d"  # archive data older than this to Parquet; empty = disabled
+# archive_interval = "6h"  # how often to run archive; default "6h"
+# archive_path = "/var/lib/bewitch/archive"  # default: sibling "archive" dir next to db_path
+
+[alerts]
+evaluation_interval = "10s"
+# Alert rules are now managed via the TUI (Alerts tab → press 'n' to create)
+
+[[alerts.webhooks]]
+url = "https://hooks.example.com/alert"
+
+# [[alerts.ntfy]]
+# url = "https://ntfy.sh"         # or self-hosted ntfy server URL
+# topic = "bewitch-alerts"        # ntfy topic name
+# token = ""                      # optional bearer token for authentication
+
+# [[alerts.email]]
+# smtp_host = "smtp.example.com"
+# smtp_port = 587                 # default 587; use 465 for implicit TLS
+# username = "alerts@example.com"
+# password = "app-password"
+# from = "alerts@example.com"
+# to = ["admin@example.com", "ops@example.com"]
+# starttls = true                 # default true; set false for implicit TLS (port 465)
+
+# [[alerts.gotify]]
+# url = "https://gotify.example.com"
+# token = "AxxxxxxxxxxxxxxR"      # Gotify application token
+# priority = 0                    # 0 = auto-map from severity (warning=5, critical=8)
+
+# [[alerts.commands]]
+# cmd = "/usr/local/bin/alert-handler"  # receives BEWITCH_RULE, BEWITCH_SEVERITY, BEWITCH_MESSAGE, BEWITCH_TIMESTAMP env vars
+
+[tui]
+refresh_interval = "2s"
+# history_ranges = ["1h", "6h", "24h", "7d", "30d"]  # time range presets for history charts
+
+[collectors.cpu]
+# interval = "1s"  # override default_interval for CPU collection
+
+[collectors.memory]
+# interval = "5s"
+
+[collectors.disk]
+# interval = "30s"
+# smart_interval = "5m"  # how often to read SMART data from disks (requires CAP_SYS_RAWIO)
+# Mount paths to exclude (prefix match). Default excludes: /snap/, /run/
+# exclude_mounts = ["/boot/efi"]  # add to defaults
+# no_default_excludes = false  # set true to disable defaults
+
+[collectors.network]
+# interval = "5s"
+
+[collectors.ecc]
+# interval = "60s"
+
+[collectors.temperature]
+# interval = "5s"
+# enabled = true  # set to false to disable temperature collection
+
+[collectors.power]
+# interval = "5s"
+# enabled = true  # set to false to disable power collection
+
+[collectors.process]
+# interval = "5s"
+# max_processes = 100  # maximum number of processes to track per collection cycle
+# pinned = ["nginx*", "postgres", "redis-server"]  # glob patterns of process names to always track with full metrics

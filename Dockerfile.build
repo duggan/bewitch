@@ -1,0 +1,38 @@
+FROM debian:bookworm
+
+ARG GO_VERSION=1.26.1
+ARG TARGETARCH
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    debhelper \
+    devscripts \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz | tar -C /usr/local -xz
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+WORKDIR /build
+
+COPY . .
+
+RUN make deb
+
+# Build standalone tarball
+RUN VERSION=$(cat VERSION) && \
+    ARCH=$(dpkg --print-architecture) && \
+    mkdir -p /tarball/bewitch-${VERSION}-linux-${ARCH} && \
+    cp bin/bewitchd bin/bewitch /tarball/bewitch-${VERSION}-linux-${ARCH}/ && \
+    cp bewitch.example.toml /tarball/bewitch-${VERSION}-linux-${ARCH}/ && \
+    cp debian/bewitchd.service /tarball/bewitch-${VERSION}-linux-${ARCH}/ && \
+    tar -czf /bewitch-${VERSION}-linux-${ARCH}.tar.gz \
+        -C /tarball bewitch-${VERSION}-linux-${ARCH}
+
+# Output stage - copy artifacts to /out
+FROM scratch
+COPY --from=0 /bewitch_*.deb /
+COPY --from=0 /bewitch_*.buildinfo /
+COPY --from=0 /bewitch_*.changes /
+COPY --from=0 /bewitch-*.tar.gz /
