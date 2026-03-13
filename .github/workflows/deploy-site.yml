@@ -33,7 +33,7 @@ jobs:
         run: bun run build
 
       - name: Build Pages Functions
-        run: npx wrangler@4 pages functions build --outdir site/dist --outfile _worker.js --functions-dir site/functions
+        run: npx wrangler@4 pages functions build site/functions --outdir site/dist
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
