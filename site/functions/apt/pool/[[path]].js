@@ -5,7 +5,7 @@
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
-  const key = url.pathname.slice(1); // strip leading slash: "apt/pool/main/b/bewitch/..."
+  const key = decodeURIComponent(url.pathname.slice(1)); // strip leading slash and decode: "apt/pool/main/b/bewitch/..."
 
   const object = await context.env.BUCKET.get(key);
   if (!object) {
