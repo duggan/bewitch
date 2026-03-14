@@ -65,16 +65,17 @@ func (s *Store) archiveTable(table, archivePath string, cutoff time.Time) error 
 	}
 
 	// Check if there's data to archive
-	var minTs, maxTs time.Time
+	var nullMinTs, nullMaxTs sql.NullTime
 	var count int64
 	query := fmt.Sprintf("SELECT MIN(ts), MAX(ts), COUNT(*) FROM %s WHERE ts > ? AND ts <= ?", table)
-	if err := s.db.QueryRow(query, lastArchived, cutoff).Scan(&minTs, &maxTs, &count); err != nil {
+	if err := s.db.QueryRow(query, lastArchived, cutoff).Scan(&nullMinTs, &nullMaxTs, &count); err != nil {
 		return fmt.Errorf("query time range: %w", err)
 	}
 
-	if count == 0 {
+	if count == 0 || !nullMinTs.Valid {
 		return nil // Nothing to archive
 	}
+	minTs, maxTs := nullMinTs.Time, nullMaxTs.Time
 
 	// Create table directory
 	tableDir := filepath.Join(archivePath, table)
