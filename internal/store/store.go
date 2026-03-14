@@ -346,17 +346,8 @@ func (s *Store) resume() {
 	}
 }
 
-// metricTables lists all metric tables that have a ts column for retention pruning.
-var metricTables = []string{
-	"cpu_metrics",
-	"memory_metrics",
-	"disk_metrics",
-	"network_metrics",
-	"ecc_metrics",
-	"temperature_metrics",
-	"power_metrics",
-	"process_metrics",
-}
+// metricTables aliases db.MetricTables for convenience.
+var metricTables = db.MetricTables
 
 // Prune deletes rows older than the retention cutoff from all metric tables.
 // DuckDB handles WAL checkpointing automatically via wal_autocheckpoint.
@@ -466,209 +457,18 @@ func (s *Store) Compact(dbPath string) error {
 		return fmt.Errorf("attach compact db: %w", err)
 	}
 
-	// Create tables with proper schema (including constraints) in the compact db
-	// This ensures PRIMARY KEY and other constraints are preserved
-	compactSchema := `
-CREATE TABLE compact_db.dimension_values (
-    id SMALLINT NOT NULL,
-    category VARCHAR NOT NULL,
-    value VARCHAR NOT NULL,
-    PRIMARY KEY (category, id)
-);
-
-CREATE TABLE compact_db.process_info (
-    pid INTEGER NOT NULL,
-    start_time BIGINT NOT NULL,
-    ppid INTEGER,
-    name VARCHAR NOT NULL,
-    cmdline VARCHAR,
-    uid INTEGER,
-    first_seen TIMESTAMP NOT NULL,
-    PRIMARY KEY (pid, start_time)
-);
-
-CREATE TABLE compact_db.cpu_metrics (
-    ts TIMESTAMP NOT NULL,
-    core TINYINT NOT NULL,
-    user_pct DOUBLE,
-    system_pct DOUBLE,
-    idle_pct DOUBLE,
-    iowait_pct DOUBLE
-);
-
-CREATE TABLE compact_db.memory_metrics (
-    ts TIMESTAMP NOT NULL,
-    total_bytes BIGINT,
-    used_bytes BIGINT,
-    available_bytes BIGINT,
-    buffers_bytes BIGINT,
-    cached_bytes BIGINT,
-    swap_total_bytes BIGINT,
-    swap_used_bytes BIGINT
-);
-
-CREATE TABLE compact_db.disk_metrics (
-    ts TIMESTAMP NOT NULL,
-    mount_id SMALLINT NOT NULL,
-    device_id SMALLINT,
-    total_bytes BIGINT,
-    used_bytes BIGINT,
-    free_bytes BIGINT,
-    read_bytes_sec DOUBLE,
-    write_bytes_sec DOUBLE,
-    read_iops DOUBLE,
-    write_iops DOUBLE
-);
-
-CREATE TABLE compact_db.network_metrics (
-    ts TIMESTAMP NOT NULL,
-    interface_id SMALLINT NOT NULL,
-    rx_bytes_sec DOUBLE,
-    tx_bytes_sec DOUBLE,
-    rx_packets_sec DOUBLE,
-    tx_packets_sec DOUBLE,
-    rx_errors BIGINT,
-    tx_errors BIGINT
-);
-
-CREATE TABLE compact_db.ecc_metrics (
-    ts TIMESTAMP NOT NULL,
-    corrected BIGINT,
-    uncorrected BIGINT
-);
-
-CREATE TABLE compact_db.temperature_metrics (
-    ts TIMESTAMP NOT NULL,
-    sensor_id SMALLINT NOT NULL,
-    temp_celsius DOUBLE
-);
-
-CREATE TABLE compact_db.power_metrics (
-    ts TIMESTAMP NOT NULL,
-    zone_id SMALLINT NOT NULL,
-    watts DOUBLE
-);
-
-CREATE TABLE compact_db.process_metrics (
-    ts TIMESTAMP NOT NULL,
-    pid INTEGER NOT NULL,
-    start_time BIGINT NOT NULL,
-    state VARCHAR(1),
-    cpu_user_pct DOUBLE,
-    cpu_system_pct DOUBLE,
-    rss_bytes BIGINT,
-    num_fds INTEGER,
-    num_threads INTEGER
-);
-
-CREATE TABLE compact_db.preferences (
-    key VARCHAR PRIMARY KEY,
-    value VARCHAR NOT NULL
-);
-
-CREATE SEQUENCE compact_db.alert_id_seq START 1;
-
-CREATE TABLE compact_db.alerts (
-    id INTEGER DEFAULT nextval('alert_id_seq'),
-    ts TIMESTAMP NOT NULL,
-    rule_name VARCHAR NOT NULL,
-    severity VARCHAR NOT NULL,
-    message VARCHAR NOT NULL,
-    acknowledged BOOLEAN DEFAULT false
-);
-
-CREATE SEQUENCE compact_db.alert_rule_id_seq START 1;
-
-CREATE TABLE compact_db.alert_rules (
-    id INTEGER DEFAULT nextval('alert_rule_id_seq'),
-    name VARCHAR NOT NULL,
-    type VARCHAR NOT NULL,
-    severity VARCHAR NOT NULL,
-    enabled BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT current_timestamp
-);
-
-CREATE TABLE compact_db.alert_rule_threshold (
-    rule_id INTEGER PRIMARY KEY,
-    metric VARCHAR NOT NULL,
-    operator VARCHAR NOT NULL,
-    value DOUBLE NOT NULL,
-    duration VARCHAR NOT NULL,
-    mount VARCHAR,
-    interface_name VARCHAR,
-    sensor VARCHAR
-);
-
-CREATE TABLE compact_db.alert_rule_predictive (
-    rule_id INTEGER PRIMARY KEY,
-    metric VARCHAR NOT NULL,
-    mount VARCHAR NOT NULL,
-    predict_hours INTEGER NOT NULL,
-    threshold_pct DOUBLE NOT NULL
-);
-
-CREATE TABLE compact_db.alert_rule_variance (
-    rule_id INTEGER PRIMARY KEY,
-    metric VARCHAR NOT NULL,
-    delta_threshold DOUBLE NOT NULL,
-    min_count INTEGER NOT NULL,
-    duration VARCHAR NOT NULL
-);
-
-CREATE TABLE compact_db.alert_rule_process_down (
-    rule_id INTEGER PRIMARY KEY,
-    process_name VARCHAR NOT NULL,
-    process_pattern VARCHAR,
-    min_instances INTEGER NOT NULL DEFAULT 1,
-    check_duration VARCHAR NOT NULL
-);
-
-CREATE TABLE compact_db.alert_rule_process_thrashing (
-    rule_id INTEGER PRIMARY KEY,
-    process_name VARCHAR NOT NULL,
-    process_pattern VARCHAR,
-    restart_threshold INTEGER NOT NULL,
-    restart_window VARCHAR NOT NULL
-);
-
-CREATE TABLE compact_db.archive_state (
-    table_name VARCHAR PRIMARY KEY,
-    last_archived_ts TIMESTAMP NOT NULL
-);
-
-CREATE TABLE compact_db.scheduled_jobs (
-    job_name VARCHAR PRIMARY KEY,
-    last_run_ts TIMESTAMP NOT NULL
-);
-`
-	if _, err := s.db.Exec(compactSchema); err != nil {
+	// Create schema by introspecting the live database — this ensures
+	// compaction always matches the current schema after migrations.
+	if err := db.CreateSequencesIn(s.db, "compact_db"); err != nil {
+		s.db.Exec("DETACH compact_db")
+		os.Remove(tmpPath)
+		return fmt.Errorf("creating compact sequences: %w", err)
+	}
+	tables := db.AllTables()
+	if err := db.CreateTablesIn(s.db, "compact_db", tables); err != nil {
 		s.db.Exec("DETACH compact_db")
 		os.Remove(tmpPath)
 		return fmt.Errorf("creating compact schema: %w", err)
-	}
-
-	// Tables to copy data - order matters for foreign key relationships
-	tables := []string{
-		"dimension_values",
-		"process_info",
-		"cpu_metrics",
-		"memory_metrics",
-		"disk_metrics",
-		"network_metrics",
-		"ecc_metrics",
-		"temperature_metrics",
-		"power_metrics",
-		"process_metrics",
-		"preferences",
-		"archive_state",
-		"scheduled_jobs",
-		"alert_rules",
-		"alert_rule_threshold",
-		"alert_rule_predictive",
-		"alert_rule_variance",
-		"alert_rule_process_down",
-		"alert_rule_process_thrashing",
-		"alerts",
 	}
 
 	// Copy data from each table
@@ -686,16 +486,8 @@ CREATE TABLE compact_db.scheduled_jobs (
 		}
 	}
 
-	// Recreate indexes on the compact database (dimension lookup only;
-	// ART indexes on ts columns removed due to storage overhead with no
-	// query benefit — DuckDB zone maps handle range scans efficiently)
-	indexes := []string{
-		"CREATE INDEX idx_dimension_lookup ON compact_db.dimension_values(category, value)",
-	}
-	for _, idx := range indexes {
-		if _, err := s.db.Exec(idx); err != nil {
-			log.Warnf("index creation: %v", err)
-		}
+	if err := db.CreateIndexesIn(s.db, "compact_db"); err != nil {
+		log.Warnf("compact index creation: %v", err)
 	}
 
 	// Force checkpoint on the compact database to ensure all data is written
@@ -781,100 +573,8 @@ func (s *Store) Snapshot(snapshotPath, archivePath string, withSystemTables bool
 		return fmt.Errorf("attach snapshot db: %w", err)
 	}
 
-	snapshotSchema := `
-CREATE TABLE snap_db.dimension_values (
-    id SMALLINT NOT NULL,
-    category VARCHAR NOT NULL,
-    value VARCHAR NOT NULL,
-    PRIMARY KEY (category, id)
-);
-
-CREATE TABLE snap_db.process_info (
-    pid INTEGER NOT NULL,
-    start_time BIGINT NOT NULL,
-    ppid INTEGER,
-    name VARCHAR NOT NULL,
-    cmdline VARCHAR,
-    uid INTEGER,
-    first_seen TIMESTAMP NOT NULL,
-    PRIMARY KEY (pid, start_time)
-);
-
-CREATE TABLE snap_db.cpu_metrics (
-    ts TIMESTAMP NOT NULL,
-    core TINYINT NOT NULL,
-    user_pct DOUBLE,
-    system_pct DOUBLE,
-    idle_pct DOUBLE,
-    iowait_pct DOUBLE
-);
-
-CREATE TABLE snap_db.memory_metrics (
-    ts TIMESTAMP NOT NULL,
-    total_bytes BIGINT,
-    used_bytes BIGINT,
-    available_bytes BIGINT,
-    buffers_bytes BIGINT,
-    cached_bytes BIGINT,
-    swap_total_bytes BIGINT,
-    swap_used_bytes BIGINT
-);
-
-CREATE TABLE snap_db.disk_metrics (
-    ts TIMESTAMP NOT NULL,
-    mount_id SMALLINT NOT NULL,
-    device_id SMALLINT,
-    total_bytes BIGINT,
-    used_bytes BIGINT,
-    free_bytes BIGINT,
-    read_bytes_sec DOUBLE,
-    write_bytes_sec DOUBLE,
-    read_iops DOUBLE,
-    write_iops DOUBLE
-);
-
-CREATE TABLE snap_db.network_metrics (
-    ts TIMESTAMP NOT NULL,
-    interface_id SMALLINT NOT NULL,
-    rx_bytes_sec DOUBLE,
-    tx_bytes_sec DOUBLE,
-    rx_packets_sec DOUBLE,
-    tx_packets_sec DOUBLE,
-    rx_errors BIGINT,
-    tx_errors BIGINT
-);
-
-CREATE TABLE snap_db.ecc_metrics (
-    ts TIMESTAMP NOT NULL,
-    corrected BIGINT,
-    uncorrected BIGINT
-);
-
-CREATE TABLE snap_db.temperature_metrics (
-    ts TIMESTAMP NOT NULL,
-    sensor_id SMALLINT NOT NULL,
-    temp_celsius DOUBLE
-);
-
-CREATE TABLE snap_db.power_metrics (
-    ts TIMESTAMP NOT NULL,
-    zone_id SMALLINT NOT NULL,
-    watts DOUBLE
-);
-
-CREATE TABLE snap_db.process_metrics (
-    ts TIMESTAMP NOT NULL,
-    pid INTEGER NOT NULL,
-    start_time BIGINT NOT NULL,
-    state VARCHAR(1),
-    cpu_user_pct DOUBLE,
-    cpu_system_pct DOUBLE,
-    rss_bytes BIGINT,
-    num_fds INTEGER,
-    num_threads INTEGER
-);
-`
-	if _, err := s.db.Exec(snapshotSchema); err != nil {
+	snapshotTables := append(db.DimensionTables, db.MetricTables...)
+	if err := db.CreateTablesIn(s.db, "snap_db", snapshotTables); err != nil {
 		s.db.Exec("DETACH snap_db")
 		os.Remove(snapshotPath)
 		return fmt.Errorf("creating snapshot schema: %w", err)
@@ -930,102 +630,19 @@ CREATE TABLE snap_db.process_metrics (
 		}
 	}
 
-	// Create indexes
-	if _, err := s.db.Exec("CREATE INDEX idx_dimension_lookup ON snap_db.dimension_values(category, value)"); err != nil {
+	if err := db.CreateIndexesIn(s.db, "snap_db"); err != nil {
 		log.Warnf("snapshot index: %v", err)
 	}
 
 	// Optionally include system/daemon tables for backup purposes
 	if withSystemTables {
-		systemSchema := `
-CREATE TABLE snap_db.preferences (
-    key VARCHAR PRIMARY KEY,
-    value VARCHAR NOT NULL
-);
-
-CREATE TABLE snap_db.alerts (
-    id INTEGER,
-    ts TIMESTAMP NOT NULL,
-    rule_name VARCHAR NOT NULL,
-    severity VARCHAR NOT NULL,
-    message VARCHAR NOT NULL,
-    acknowledged BOOLEAN DEFAULT false
-);
-
-CREATE TABLE snap_db.alert_rules (
-    id INTEGER,
-    name VARCHAR NOT NULL,
-    type VARCHAR NOT NULL,
-    severity VARCHAR NOT NULL,
-    enabled BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT current_timestamp
-);
-
-CREATE TABLE snap_db.alert_rule_threshold (
-    rule_id INTEGER PRIMARY KEY,
-    metric VARCHAR NOT NULL,
-    operator VARCHAR NOT NULL,
-    value DOUBLE NOT NULL,
-    duration VARCHAR NOT NULL,
-    mount VARCHAR,
-    interface_name VARCHAR,
-    sensor VARCHAR
-);
-
-CREATE TABLE snap_db.alert_rule_predictive (
-    rule_id INTEGER PRIMARY KEY,
-    metric VARCHAR NOT NULL,
-    mount VARCHAR NOT NULL,
-    predict_hours INTEGER NOT NULL,
-    threshold_pct DOUBLE NOT NULL
-);
-
-CREATE TABLE snap_db.alert_rule_variance (
-    rule_id INTEGER PRIMARY KEY,
-    metric VARCHAR NOT NULL,
-    delta_threshold DOUBLE NOT NULL,
-    min_count INTEGER NOT NULL,
-    duration VARCHAR NOT NULL
-);
-
-CREATE TABLE snap_db.alert_rule_process_down (
-    rule_id INTEGER PRIMARY KEY,
-    process_name VARCHAR NOT NULL,
-    process_pattern VARCHAR,
-    min_instances INTEGER NOT NULL DEFAULT 1,
-    check_duration VARCHAR NOT NULL
-);
-
-CREATE TABLE snap_db.alert_rule_process_thrashing (
-    rule_id INTEGER PRIMARY KEY,
-    process_name VARCHAR NOT NULL,
-    process_pattern VARCHAR,
-    restart_threshold INTEGER NOT NULL,
-    restart_window VARCHAR NOT NULL
-);
-
-CREATE TABLE snap_db.archive_state (
-    table_name VARCHAR PRIMARY KEY,
-    last_archived_ts TIMESTAMP NOT NULL
-);
-
-CREATE TABLE snap_db.scheduled_jobs (
-    job_name VARCHAR PRIMARY KEY,
-    last_run_ts TIMESTAMP NOT NULL
-);
-`
-		if _, err := s.db.Exec(systemSchema); err != nil {
+		if err := db.CreateTablesIn(s.db, "snap_db", db.SystemTables); err != nil {
 			s.db.Exec("DETACH snap_db")
 			os.Remove(snapshotPath)
 			return fmt.Errorf("creating system tables schema: %w", err)
 		}
 
-		systemTables := []string{
-			"preferences", "alerts", "alert_rules",
-			"alert_rule_threshold", "alert_rule_predictive", "alert_rule_variance",
-			"alert_rule_process_down", "alert_rule_process_thrashing",
-			"archive_state", "scheduled_jobs",
-		}
+		systemTables := db.SystemTables
 		for _, table := range systemTables {
 			query := fmt.Sprintf("INSERT INTO snap_db.%s SELECT * FROM %s", table, table)
 			if _, err := s.db.Exec(query); err != nil {
