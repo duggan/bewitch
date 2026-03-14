@@ -1561,6 +1561,9 @@ func (m *Model) updateNetSparklines(ifaces []api.NetworkMetric) {
 	if m.netSparkData == nil {
 		m.netSparkData = make(map[string][]float64)
 	}
+	if m.netSelected == nil {
+		m.netSelected = make(map[string]bool)
+	}
 	names := make([]string, len(ifaces))
 	for i, n := range ifaces {
 		names[i] = n.Interface
