@@ -115,8 +115,9 @@ db_path = "/var/lib/bewitch/bewitch.duckdb"
 evaluation_interval = "10s"
 # Alert rules are managed via the TUI (Alerts tab, press 'n')
 
-[[alerts.webhooks]]
-url = "https://hooks.example.com/alert"
+# [[alerts.email]]
+# use_mail_cmd = true
+# to = ["admin@example.com"]
 
 [tui]
 refresh_interval = "2s"
@@ -558,7 +559,7 @@ curl --unix-socket /run/bewitch/bewitch.sock \
 ```
 bewitchd (daemon)
 ├── Collectors (procfs/sysfs, parallel goroutines) → Store (DuckDB Appender API)
-├── Alert Engine (threshold + predictive + variance rules → webhooks)
+├── Alert Engine (threshold + predictive + variance rules → email/command notifications)
 ├── Pruner (optional, deletes old data per retention setting)
 ├── Compactor (optional, scheduled full DB rebuild)
 ├── Archiver (optional, exports old data to Parquet files)

@@ -39,32 +39,19 @@ type DaemonConfig struct {
 
 type AlertsConfig struct {
 	EvaluationInterval string        `toml:"evaluation_interval"`
-	Webhooks           []WebhookDest `toml:"webhooks"`
-	Ntfy               []NtfyDest    `toml:"ntfy"`
 	Email              []EmailDest   `toml:"email"`
-	Gotify             []GotifyDest  `toml:"gotify"`
 	Commands           []CommandDest `toml:"commands"`
 }
 
-type WebhookDest struct {
-	URL     string            `toml:"url"`
-	Headers map[string]string `toml:"headers"`
-}
-
-type NtfyDest struct {
-	URL   string `toml:"url"`   // e.g., "https://ntfy.sh" or self-hosted
-	Topic string `toml:"topic"` // ntfy topic name
-	Token string `toml:"token"` // optional bearer token for authentication
-}
-
 type EmailDest struct {
-	SMTPHost string   `toml:"smtp_host"`
-	SMTPPort int      `toml:"smtp_port"` // default 587
-	Username string   `toml:"username"`
-	Password string   `toml:"password"`
-	From     string   `toml:"from"`
-	To       []string `toml:"to"`
-	StartTLS *bool    `toml:"starttls"` // nil = default true
+	UseMailCmd bool     `toml:"use_mail_cmd"` // use local mail command instead of SMTP
+	SMTPHost   string   `toml:"smtp_host"`
+	SMTPPort   int      `toml:"smtp_port"` // default 587
+	Username   string   `toml:"username"`
+	Password   string   `toml:"password"`
+	From       string   `toml:"from"`
+	To         []string `toml:"to"`
+	StartTLS   *bool    `toml:"starttls"` // nil = default true
 }
 
 // IsStartTLS returns whether STARTTLS is enabled (defaults to true).
@@ -81,12 +68,6 @@ func (e *EmailDest) GetSMTPPort() int {
 		return 587
 	}
 	return e.SMTPPort
-}
-
-type GotifyDest struct {
-	URL      string `toml:"url"`      // Gotify server URL
-	Token    string `toml:"token"`    // application token (X-Gotify-Key)
-	Priority int    `toml:"priority"` // 0 = auto-map from severity
 }
 
 type CommandDest struct {

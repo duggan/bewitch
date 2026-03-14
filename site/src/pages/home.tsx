@@ -13,7 +13,7 @@ const features = [
   { icon: '\u{1F310}', title: 'Network', description: 'Per-interface RX/TX throughput with bits/bytes toggle and historical bandwidth charts.' },
   { icon: '\u{1F529}', title: 'Hardware', description: 'Temperature sensors, power consumption (RAPL), and ECC memory errors in one unified view with sub-tab navigation.' },
   { icon: '\u{1F504}', title: 'Process Tracking', description: 'All processes visible, top N enriched. Glob-pattern pinning for critical services. Sortable, searchable.' },
-  { icon: '\u{1F514}', title: 'Multi-Channel Alerts', description: 'Threshold, predictive, and variance rules. Notify via webhook, ntfy, email, Gotify, or shell command.' },
+  { icon: '\u{1F514}', title: 'Multi-Channel Alerts', description: 'Threshold, predictive, and variance rules. Notify via email or shell command.' },
 ]
 
 export const Home: FC = () => (
@@ -147,18 +147,15 @@ export const Home: FC = () => (
       {/* Notifications */}
       <div class="flex flex-col lg:flex-row-reverse items-start gap-8">
         <div class="lg:w-1/3">
-          <h3 class="font-mono font-semibold text-lg text-pink mb-2">Five notification channels</h3>
+          <h3 class="font-mono font-semibold text-lg text-pink mb-2">Email and command alerts</h3>
           <p class="text-muted text-sm leading-relaxed">
-            Route alerts to any combination of webhook, ntfy, email (SMTP), Gotify, or arbitrary shell commands. All config-driven, no code required.
+            Route alerts via email (local mail command or SMTP) or arbitrary shell commands. All config-driven, no code required.
           </p>
         </div>
         <div class="lg:w-2/3 w-full">
           <TerminalBlock title="bewitch.toml">
-            <div><span class="text-dim">[[alerts.ntfy]]</span></div>
-            <div><span class="text-lavender">url</span> <span class="text-dim">=</span> <span class="text-pink">"https://ntfy.sh"</span></div>
-            <div><span class="text-lavender">topic</span> <span class="text-dim">=</span> <span class="text-pink">"my-server-alerts"</span></div>
-            <div class="mt-2"><span class="text-dim">[[alerts.email]]</span></div>
-            <div><span class="text-lavender">smtp_host</span> <span class="text-dim">=</span> <span class="text-pink">"smtp.example.com"</span></div>
+            <div><span class="text-dim">[[alerts.email]]</span></div>
+            <div><span class="text-lavender">use_mail_cmd</span> <span class="text-dim">=</span> <span class="text-pink">true</span></div>
             <div><span class="text-lavender">to</span> <span class="text-dim">=</span> <span class="text-pink">["ops@example.com"]</span></div>
             <div class="mt-2"><span class="text-dim">[[alerts.commands]]</span></div>
             <div><span class="text-lavender">cmd</span> <span class="text-dim">=</span> <span class="text-pink">"/usr/local/bin/my-handler"</span></div>

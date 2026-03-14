@@ -1,10 +1,13 @@
 package alert
 
 import (
+	"bytes"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
 	"net/smtp"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -30,14 +33,29 @@ func (n *EmailNotifier) Send(a *Alert) NotifyResult {
 	}
 
 	subject := fmt.Sprintf("[bewitch] %s: %s", a.Severity, a.RuleName)
-	msg := fmt.Sprintf("Subject: %s\r\nFrom: %s\r\nTo: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s\n\nRule: %s\nSeverity: %s\nTime: %s\n",
-		subject,
-		n.cfg.From,
-		strings.Join(n.cfg.To, ", "),
+	body := fmt.Sprintf("%s\n\nRule: %s\nSeverity: %s\nTime: %s\n",
 		a.Message,
 		a.RuleName,
 		a.Severity,
 		time.Now().UTC().Format(time.RFC3339),
+	)
+
+	if n.cfg.UseMailCmd {
+		result.Body = body
+		start := time.Now()
+		err := n.sendMailCmd(subject, body)
+		result.Latency = time.Since(start)
+		if err != nil {
+			result.Error = fmt.Sprintf("mail cmd: %v", err)
+		}
+		return result
+	}
+
+	msg := fmt.Sprintf("Subject: %s\r\nFrom: %s\r\nTo: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s",
+		subject,
+		n.cfg.From,
+		strings.Join(n.cfg.To, ", "),
+		body,
 	)
 	result.Body = msg
 
@@ -52,6 +70,34 @@ func (n *EmailNotifier) Send(a *Alert) NotifyResult {
 		result.Error = fmt.Sprintf("smtp: %v", err)
 	}
 	return result
+}
+
+func (n *EmailNotifier) sendMailCmd(subject, body string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	args := []string{"-s", subject}
+	if n.cfg.From != "" {
+		args = append(args, "-r", n.cfg.From)
+	}
+	args = append(args, n.cfg.To...)
+
+	cmd := exec.CommandContext(ctx, "mail", args...)
+	cmd.Stdin = bytes.NewReader([]byte(body))
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("mail command timed out (10s)")
+		}
+		if stderr.Len() > 0 {
+			return fmt.Errorf("%w: %s", err, stderr.String())
+		}
+		return err
+	}
+	return nil
 }
 
 func (n *EmailNotifier) sendMail(addr string, port int, msg string) error {

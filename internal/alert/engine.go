@@ -29,17 +29,8 @@ func NewEngine(dbFn func() *sql.DB, cfg *config.AlertsConfig) *Engine {
 	}
 
 	var notifiers []Notifier
-	for _, w := range cfg.Webhooks {
-		notifiers = append(notifiers, NewWebhookNotifier(w))
-	}
-	for _, n := range cfg.Ntfy {
-		notifiers = append(notifiers, NewNtfyNotifier(n))
-	}
 	for _, em := range cfg.Email {
 		notifiers = append(notifiers, NewEmailNotifier(em))
-	}
-	for _, g := range cfg.Gotify {
-		notifiers = append(notifiers, NewGotifyNotifier(g))
 	}
 	for _, c := range cfg.Commands {
 		notifiers = append(notifiers, NewCommandNotifier(c))

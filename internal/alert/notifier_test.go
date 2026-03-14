@@ -2,8 +2,6 @@ package alert
 
 import (
 	"testing"
-
-	"github.com/ross/bewitch/internal/config"
 )
 
 // stubNotifier is a Notifier that returns a canned result.
@@ -27,8 +25,8 @@ func TestSendTestNotifications(t *testing.T) {
 
 	t.Run("collects results from all notifiers", func(t *testing.T) {
 		notifiers := []Notifier{
-			&stubNotifier{name: "a", method: "webhook", result: NotifyResult{Method: "webhook", Dest: "http://a"}},
-			&stubNotifier{name: "b", method: "ntfy", result: NotifyResult{Method: "ntfy", Dest: "http://b"}},
+			&stubNotifier{name: "a", method: "email", result: NotifyResult{Method: "email", Dest: "admin@example.com"}},
+			&stubNotifier{name: "b", method: "command", result: NotifyResult{Method: "command", Dest: "/usr/local/bin/alert"}},
 		}
 		results, err := SendTestNotifications(notifiers, &Alert{RuleName: "test", Severity: "info", Message: "hi"})
 		if err != nil {
@@ -37,21 +35,11 @@ func TestSendTestNotifications(t *testing.T) {
 		if len(results) != 2 {
 			t.Fatalf("expected 2 results, got %d", len(results))
 		}
-		if results[0].Method != "webhook" {
-			t.Errorf("result[0].Method = %q, want webhook", results[0].Method)
+		if results[0].Method != "email" {
+			t.Errorf("result[0].Method = %q, want email", results[0].Method)
 		}
-		if results[1].Method != "ntfy" {
-			t.Errorf("result[1].Method = %q, want ntfy", results[1].Method)
+		if results[1].Method != "command" {
+			t.Errorf("result[1].Method = %q, want command", results[1].Method)
 		}
 	})
-}
-
-func TestWebhookNotifierNameMethod(t *testing.T) {
-	n := NewWebhookNotifier(config.WebhookDest{URL: "https://example.com/hook"})
-	if n.Name() != "webhook:https://example.com/hook" {
-		t.Errorf("Name() = %q", n.Name())
-	}
-	if n.Method() != "webhook" {
-		t.Errorf("Method() = %q", n.Method())
-	}
 }

@@ -121,33 +121,17 @@ type DaemonConfigResponse struct {
 }
 
 type AlertsConfigResponse struct {
-	EvaluationInterval string                `json:"evaluation_interval"`
-	Webhooks           []WebhookDestResponse `json:"webhooks"`
-	Ntfy               []NtfyDestResponse    `json:"ntfy,omitempty"`
-	Email              []EmailDestResponse   `json:"email,omitempty"`
-	Gotify             []GotifyDestResponse  `json:"gotify,omitempty"`
+	EvaluationInterval string               `json:"evaluation_interval"`
+	Email              []EmailDestResponse  `json:"email,omitempty"`
 	Commands           []CommandDestResponse `json:"commands,omitempty"`
 }
 
-type WebhookDestResponse struct {
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-}
-
-type NtfyDestResponse struct {
-	URL   string `json:"url"`
-	Topic string `json:"topic"`
-}
-
 type EmailDestResponse struct {
-	SMTPHost string   `json:"smtp_host"`
-	SMTPPort int      `json:"smtp_port"`
-	From     string   `json:"from"`
-	To       []string `json:"to"`
-}
-
-type GotifyDestResponse struct {
-	URL string `json:"url"`
+	UseMailCmd bool     `json:"use_mail_cmd,omitempty"`
+	SMTPHost   string   `json:"smtp_host,omitempty"`
+	SMTPPort   int      `json:"smtp_port,omitempty"`
+	From       string   `json:"from,omitempty"`
+	To         []string `json:"to"`
 }
 
 type CommandDestResponse struct {

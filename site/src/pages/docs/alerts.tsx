@@ -55,29 +55,21 @@ export const AlertsDocs: FC = () => (
 
     <h2>Notification Channels</h2>
     <p>
-      Alerts can be delivered to any combination of five notification methods. All are configured in the
+      Alerts can be delivered via email or shell command. All are configured in the
       TOML config file under <code>[alerts]</code>.
     </p>
 
-    <h3>Webhook</h3>
-    <p>HTTP POST with JSON payload. Supports custom headers.</p>
+    <h3>Email (local mail command)</h3>
+    <p>Send email alerts using the local <code>mail</code> command (postfix/sendmail). No SMTP configuration needed.</p>
     <CodeBlock title="bewitch.toml">
-{`[[alerts.webhooks]]
-url = "https://hooks.example.com/alert"
-# headers = { "X-Auth" = "secret" }`}
-    </CodeBlock>
-
-    <h3>ntfy</h3>
-    <p>Push notifications via <a href="https://ntfy.sh">ntfy.sh</a> or a self-hosted server. Alert severity maps to ntfy priority.</p>
-    <CodeBlock title="bewitch.toml">
-{`[[alerts.ntfy]]
-url = "https://ntfy.sh"
-topic = "bewitch-alerts"
-# token = ""  # optional auth`}
+{`[[alerts.email]]
+use_mail_cmd = true
+to = ["admin@example.com"]
+from = "bewitch@myserver.local"  # optional, uses system default if omitted`}
     </CodeBlock>
 
     <h3>Email (SMTP)</h3>
-    <p>Send email alerts via SMTP with STARTTLS or implicit TLS.</p>
+    <p>Send email alerts via a remote SMTP server with STARTTLS or implicit TLS.</p>
     <CodeBlock title="bewitch.toml">
 {`[[alerts.email]]
 smtp_host = "smtp.example.com"
@@ -87,15 +79,6 @@ password = "app-password"
 from = "alerts@example.com"
 to = ["admin@example.com", "ops@example.com"]
 starttls = true  # false for implicit TLS (port 465)`}
-    </CodeBlock>
-
-    <h3>Gotify</h3>
-    <p>Push notifications to a self-hosted <a href="https://gotify.net">Gotify</a> server.</p>
-    <CodeBlock title="bewitch.toml">
-{`[[alerts.gotify]]
-url = "https://gotify.example.com"
-token = "AxxxxxxxxxxxxxxR"  # application token
-priority = 0  # 0 = auto-map from severity (warning=5, critical=8)`}
     </CodeBlock>
 
     <h3>Command</h3>

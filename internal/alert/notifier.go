@@ -9,8 +9,8 @@ import (
 
 // NotifyResult holds the outcome of sending a single notification.
 type NotifyResult struct {
-	Method     string        `json:"method"`               // "webhook", "ntfy", "email", "gotify", "command"
-	Dest       string        `json:"dest"`                 // URL, email address, command path
+	Method     string        `json:"method"`               // "email", "command"
+	Dest       string        `json:"dest"`                 // email address, command path
 	StatusCode int           `json:"status_code,omitempty"` // HTTP status or 0 for non-HTTP
 	Latency    time.Duration `json:"latency_ns"`
 	Error      string        `json:"error,omitempty"`
@@ -19,10 +19,10 @@ type NotifyResult struct {
 
 // Notifier sends alert notifications to a single destination.
 type Notifier interface {
-	// Name returns a human-readable identifier (e.g., "ntfy:my-alerts", "email:admin@x.com").
+	// Name returns a human-readable identifier (e.g., "email:admin@x.com", "command:/usr/local/bin/alert").
 	Name() string
 
-	// Method returns the notification type ("webhook", "ntfy", "email", "gotify", "command").
+	// Method returns the notification type ("email", "command").
 	Method() string
 
 	// Send delivers the alert and returns the result. Must be safe for concurrent use.

@@ -460,7 +460,6 @@ func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	mux.HandleFunc("GET /api/preferences", s.handleGetPreferences)
 	mux.HandleFunc("POST /api/preferences", s.handleSetPreference)
 	mux.HandleFunc("POST /api/test-notifications", s.handleTestNotifications)
-	mux.HandleFunc("POST /api/test-webhook", s.handleTestNotifications) // backward compat
 	mux.HandleFunc("POST /api/archive", s.handleArchive)
 	mux.HandleFunc("POST /api/unarchive", s.handleUnarchive)
 	mux.HandleFunc("GET /api/archive/status", s.handleArchiveStatus)

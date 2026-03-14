@@ -311,32 +311,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 			RefreshInterval: cfg.TUI.RefreshInterval,
 		},
 	}
-	for _, wh := range cfg.Alerts.Webhooks {
-		resp.Alerts.Webhooks = append(resp.Alerts.Webhooks, WebhookDestResponse{
-			URL:     wh.URL,
-			Headers: wh.Headers,
-		})
-	}
-	if resp.Alerts.Webhooks == nil {
-		resp.Alerts.Webhooks = []WebhookDestResponse{}
-	}
-	for _, n := range cfg.Alerts.Ntfy {
-		resp.Alerts.Ntfy = append(resp.Alerts.Ntfy, NtfyDestResponse{
-			URL:   n.URL,
-			Topic: n.Topic,
-		})
-	}
 	for _, e := range cfg.Alerts.Email {
 		resp.Alerts.Email = append(resp.Alerts.Email, EmailDestResponse{
-			SMTPHost: e.SMTPHost,
-			SMTPPort: e.GetSMTPPort(),
-			From:     e.From,
-			To:       e.To,
-		})
-	}
-	for _, g := range cfg.Alerts.Gotify {
-		resp.Alerts.Gotify = append(resp.Alerts.Gotify, GotifyDestResponse{
-			URL: g.URL,
+			UseMailCmd: e.UseMailCmd,
+			SMTPHost:   e.SMTPHost,
+			SMTPPort:   e.GetSMTPPort(),
+			From:       e.From,
+			To:         e.To,
 		})
 	}
 	for _, c := range cfg.Alerts.Commands {

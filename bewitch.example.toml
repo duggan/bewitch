@@ -22,14 +22,13 @@ db_path = "/var/lib/bewitch/bewitch.duckdb"
 evaluation_interval = "10s"
 # Alert rules are now managed via the TUI (Alerts tab → press 'n' to create)
 
-[[alerts.webhooks]]
-url = "https://hooks.example.com/alert"
+# Local mail command (postfix/sendmail):
+# [[alerts.email]]
+# use_mail_cmd = true
+# to = ["admin@example.com"]
+# from = "bewitch@myserver.local"  # optional, uses system default if omitted
 
-# [[alerts.ntfy]]
-# url = "https://ntfy.sh"         # or self-hosted ntfy server URL
-# topic = "bewitch-alerts"        # ntfy topic name
-# token = ""                      # optional bearer token for authentication
-
+# Full SMTP:
 # [[alerts.email]]
 # smtp_host = "smtp.example.com"
 # smtp_port = 587                 # default 587; use 465 for implicit TLS
@@ -38,11 +37,6 @@ url = "https://hooks.example.com/alert"
 # from = "alerts@example.com"
 # to = ["admin@example.com", "ops@example.com"]
 # starttls = true                 # default true; set false for implicit TLS (port 465)
-
-# [[alerts.gotify]]
-# url = "https://gotify.example.com"
-# token = "AxxxxxxxxxxxxxxR"      # Gotify application token
-# priority = 0                    # 0 = auto-map from severity (warning=5, critical=8)
 
 # [[alerts.commands]]
 # cmd = "/usr/local/bin/alert-handler"  # receives BEWITCH_RULE, BEWITCH_SEVERITY, BEWITCH_MESSAGE, BEWITCH_TIMESTAMP env vars

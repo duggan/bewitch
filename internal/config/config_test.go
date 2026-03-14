@@ -586,35 +586,6 @@ auth_token = "my-secret"
 }
 
 func TestLoadNotificationConfig(t *testing.T) {
-	t.Run("ntfy destinations", func(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "test.toml")
-		os.WriteFile(path, []byte(`[daemon]
-
-[[alerts.ntfy]]
-url = "https://ntfy.sh"
-topic = "my-alerts"
-token = "tk_secret"
-`), 0644)
-		cfg, err := Load(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(cfg.Alerts.Ntfy) != 1 {
-			t.Fatalf("expected 1 ntfy dest, got %d", len(cfg.Alerts.Ntfy))
-		}
-		n := cfg.Alerts.Ntfy[0]
-		if n.URL != "https://ntfy.sh" {
-			t.Errorf("url = %q", n.URL)
-		}
-		if n.Topic != "my-alerts" {
-			t.Errorf("topic = %q", n.Topic)
-		}
-		if n.Token != "tk_secret" {
-			t.Errorf("token = %q", n.Token)
-		}
-	})
-
 	t.Run("email destinations", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "test.toml")
@@ -651,32 +622,32 @@ starttls = false
 		}
 	})
 
-	t.Run("gotify destinations", func(t *testing.T) {
+	t.Run("email with use_mail_cmd", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "test.toml")
 		os.WriteFile(path, []byte(`[daemon]
 
-[[alerts.gotify]]
-url = "https://gotify.example.com"
-token = "AxxxxxxR"
-priority = 7
+[[alerts.email]]
+use_mail_cmd = true
+from = "bewitch@myserver.local"
+to = ["admin@example.com"]
 `), 0644)
 		cfg, err := Load(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(cfg.Alerts.Gotify) != 1 {
-			t.Fatalf("expected 1 gotify dest, got %d", len(cfg.Alerts.Gotify))
+		if len(cfg.Alerts.Email) != 1 {
+			t.Fatalf("expected 1 email dest, got %d", len(cfg.Alerts.Email))
 		}
-		g := cfg.Alerts.Gotify[0]
-		if g.URL != "https://gotify.example.com" {
-			t.Errorf("url = %q", g.URL)
+		e := cfg.Alerts.Email[0]
+		if !e.UseMailCmd {
+			t.Error("use_mail_cmd should be true")
 		}
-		if g.Token != "AxxxxxxR" {
-			t.Errorf("token = %q", g.Token)
+		if e.From != "bewitch@myserver.local" {
+			t.Errorf("from = %q", e.From)
 		}
-		if g.Priority != 7 {
-			t.Errorf("priority = %d, want 7", g.Priority)
+		if len(e.To) != 1 || e.To[0] != "admin@example.com" {
+			t.Errorf("to = %v", e.To)
 		}
 	})
 
@@ -705,12 +676,9 @@ cmd = "/usr/local/bin/alert-handler"
 		path := filepath.Join(dir, "test.toml")
 		os.WriteFile(path, []byte(`[daemon]
 
-[[alerts.webhooks]]
-url = "https://hooks.example.com/alert"
-
-[[alerts.ntfy]]
-url = "https://ntfy.sh"
-topic = "alerts"
+[[alerts.email]]
+use_mail_cmd = true
+to = ["admin@example.com"]
 
 [[alerts.commands]]
 cmd = "notify-send"
@@ -719,11 +687,8 @@ cmd = "notify-send"
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(cfg.Alerts.Webhooks) != 1 {
-			t.Errorf("webhooks: %d, want 1", len(cfg.Alerts.Webhooks))
-		}
-		if len(cfg.Alerts.Ntfy) != 1 {
-			t.Errorf("ntfy: %d, want 1", len(cfg.Alerts.Ntfy))
+		if len(cfg.Alerts.Email) != 1 {
+			t.Errorf("email: %d, want 1", len(cfg.Alerts.Email))
 		}
 		if len(cfg.Alerts.Commands) != 1 {
 			t.Errorf("commands: %d, want 1", len(cfg.Alerts.Commands))

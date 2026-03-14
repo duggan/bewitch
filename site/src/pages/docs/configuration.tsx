@@ -58,16 +58,11 @@ db_path = "/var/lib/bewitch/bewitch.duckdb"
 {`[alerts]
 evaluation_interval = "10s"  # how often the alert engine evaluates rules
 
-# Webhook notifications
-[[alerts.webhooks]]
-url = "https://hooks.example.com/alert"
-# headers = { "X-Custom" = "value" }
-
-# ntfy push notifications
-# [[alerts.ntfy]]
-# url = "https://ntfy.sh"
-# topic = "bewitch-alerts"
-# token = ""  # optional auth token
+# Local mail command (postfix/sendmail)
+# [[alerts.email]]
+# use_mail_cmd = true
+# to = ["admin@example.com"]
+# from = "bewitch@myserver.local"  # optional
 
 # Email via SMTP
 # [[alerts.email]]
@@ -78,12 +73,6 @@ url = "https://hooks.example.com/alert"
 # from = "alerts@example.com"
 # to = ["admin@example.com"]
 # starttls = true  # false for implicit TLS on port 465
-
-# Gotify push server
-# [[alerts.gotify]]
-# url = "https://gotify.example.com"
-# token = "AxxxxxxxxxxxxxxR"
-# priority = 0  # 0 = auto-map from severity
 
 # Shell command
 # [[alerts.commands]]
