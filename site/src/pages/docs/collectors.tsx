@@ -96,7 +96,7 @@ exclude_mounts = ["/boot/efi"]`}
       <li><strong>Metrics:</strong> temperature in &deg;C per sensor</li>
       <li><strong>Storage:</strong> <code>temperature_metrics</code> table with dimension IDs for sensor names</li>
       <li>Can be disabled via <code>enabled = false</code> in config</li>
-      <li>TUI tab auto-hides when no temperature data is available</li>
+      <li>Displayed in the Hardware tab's Temperature sub-section</li>
     </ul>
 
     <h2>Power</h2>

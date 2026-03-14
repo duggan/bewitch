@@ -23,14 +23,11 @@ Sleep 1s
 Screenshot site/public/screenshots/network.png
 Right
 Sleep 1s
-Screenshot site/public/screenshots/temp.png
-Right
-Sleep 1s
-Screenshot site/public/screenshots/power.png
+Screenshot site/public/screenshots/hardware.png
 Right
 Sleep 1s
 Screenshot site/public/screenshots/process.png
-Type "9"
+Type "8"
 Sleep 2s
 Screenshot site/public/screenshots/alerts.png
 Type "q"

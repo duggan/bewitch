@@ -11,8 +11,7 @@ const features = [
   { icon: '\u{1F9E0}', title: 'Memory + ECC', description: 'Real-time memory usage, available/free breakdown, ECC error tracking for server reliability.' },
   { icon: '\u{1F4BE}', title: 'Disk + SMART', description: 'Space usage, I/O rates, and SMART health per physical device. NVMe and SATA supported.' },
   { icon: '\u{1F310}', title: 'Network', description: 'Per-interface RX/TX throughput with bits/bytes toggle and historical bandwidth charts.' },
-  { icon: '\u{1F321}\u{FE0F}', title: 'Temperature', description: 'Hardware sensor readings with per-sensor sparklines and multi-select historical charts.' },
-  { icon: '\u{26A1}', title: 'Power (RAPL)', description: 'Per-zone power consumption in watts via powercap/RAPL with history tracking.' },
+  { icon: '\u{1F529}', title: 'Hardware', description: 'Temperature sensors, power consumption (RAPL), and ECC memory errors in one unified view with sub-tab navigation.' },
   { icon: '\u{1F504}', title: 'Process Tracking', description: 'All processes visible, top N enriched. Glob-pattern pinning for critical services. Sortable, searchable.' },
   { icon: '\u{1F514}', title: 'Multi-Channel Alerts', description: 'Threshold, predictive, and variance rules. Notify via webhook, ntfy, email, Gotify, or shell command.' },
 ]
@@ -63,7 +62,7 @@ export const Home: FC = () => (
       </h2>
       <div class="glow-box rounded-lg overflow-hidden border border-deep-purple/50" id="demo-slideshow">
         <div class="flex items-center gap-0 font-mono text-xs border-b border-deep-purple/30 overflow-x-auto" id="demo-tabs">
-          {['Dashboard', 'CPU', 'Memory', 'Disk', 'Network', 'Temp', 'Power', 'Process', 'Alerts'].map((tab, i) => (
+          {['Dashboard', 'CPU', 'Memory', 'Disk', 'Network', 'Hardware', 'Process', 'Alerts'].map((tab, i) => (
             <button
               type="button"
               data-slide={i}
@@ -78,7 +77,7 @@ export const Home: FC = () => (
           ))}
         </div>
         <div class="relative bg-body-bg" id="demo-slides">
-          {['dashboard', 'cpu', 'memory', 'disk', 'network', 'temp', 'power', 'process', 'alerts'].map((view, i) => (
+          {['dashboard', 'cpu', 'memory', 'disk', 'network', 'hardware', 'process', 'alerts'].map((view, i) => (
             <img
               src={`/screenshots/${view}.png`}
               alt={`${view} view`}

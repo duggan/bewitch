@@ -6,7 +6,7 @@ export const TuiDocs: FC = () => (
   <DocsLayout title="TUI Guide" active="/docs/tui">
     <p>
       The bewitch TUI is built with <a href="https://github.com/charmbracelet/bubbletea">bubbletea</a> and
-      provides 9 views for real-time system monitoring with historical charts.
+      provides 8 views for real-time system monitoring with historical charts.
     </p>
 
     <CodeBlock title="launch">
@@ -18,8 +18,7 @@ bewitch -addr myserver:9119 -token my-secret`}
 
     <h2>Views</h2>
     <p>
-      Views are accessed via number keys. Temperature and Power tabs appear only when data is available.
-      When tabs are hidden, subsequent tabs renumber automatically.
+      Views are accessed via number keys. Tab numbering is fixed regardless of hardware availability.
     </p>
     <table>
       <thead>
@@ -28,13 +27,12 @@ bewitch -addr myserver:9119 -token my-secret`}
       <tbody>
         <tr><td><code>1</code></td><td>Dashboard</td><td>Multi-column overview of all subsystems</td></tr>
         <tr><td><code>2</code></td><td>CPU</td><td>Per-core usage with historical chart</td></tr>
-        <tr><td><code>3</code></td><td>Memory</td><td>Memory breakdown with ECC errors and history</td></tr>
+        <tr><td><code>3</code></td><td>Memory</td><td>RAM and swap breakdown with history</td></tr>
         <tr><td><code>4</code></td><td>Disk</td><td>Per-mount space, I/O rates, SMART health</td></tr>
         <tr><td><code>5</code></td><td>Network</td><td>Per-interface throughput with bits/bytes toggle</td></tr>
-        <tr><td><code>6</code></td><td>Temperature</td><td>Sensor readings with sparklines (if available)</td></tr>
-        <tr><td><code>7</code></td><td>Power</td><td>Per-zone watts via RAPL (if available)</td></tr>
-        <tr><td><code>8</code></td><td>Process</td><td>All processes, sortable, searchable, pinnable</td></tr>
-        <tr><td><code>9</code></td><td>Alerts</td><td>Alert rules and fired alerts</td></tr>
+        <tr><td><code>6</code></td><td>Hardware</td><td>Temperature, power (RAPL), and ECC memory sub-sections</td></tr>
+        <tr><td><code>7</code></td><td>Process</td><td>All processes, sortable, searchable, pinnable</td></tr>
+        <tr><td><code>8</code></td><td>Alerts</td><td>Alert rules and fired alerts</td></tr>
       </tbody>
     </table>
 
@@ -51,16 +49,18 @@ bewitch -addr myserver:9119 -token my-secret`}
       </tbody>
     </table>
 
-    <h2>Temperature & Power Views</h2>
+    <h2>Hardware View</h2>
     <p>
-      These views have per-sensor/zone toggle selection controlling which items appear on the history chart.
-      Selections are persisted in the daemon's preferences database.
+      The Hardware view combines temperature sensors, power consumption (RAPL), and ECC memory errors into
+      sub-sections. Use <code>Tab</code> / <code>Shift+Tab</code> to cycle between sub-sections.
+      Sections without data are dimmed but still accessible. The active sub-section is persisted across sessions.
     </p>
     <table>
       <thead>
         <tr><th>Key</th><th>Action</th></tr>
       </thead>
       <tbody>
+        <tr><td><code>Tab</code> / <code>Shift+Tab</code></td><td>Cycle sub-sections (Temperature, Power, ECC)</td></tr>
         <tr><td><code>j</code> / <code>k</code></td><td>Navigate sensor/zone list</td></tr>
         <tr><td><code>Space</code></td><td>Toggle sensor/zone in chart</td></tr>
         <tr><td><code>a</code></td><td>Select / deselect all</td></tr>
@@ -115,7 +115,7 @@ bewitch -addr myserver:9119 -token my-secret`}
 
     <h2>Historical Charts</h2>
     <p>
-      CPU, memory, disk, temperature, power, and process views include a historical line chart below the live data.
+      CPU, memory, disk, hardware (temperature/power), and process views include a historical braille chart below the live data.
       Use <code>&lt;</code> / <code>&gt;</code> to cycle through time ranges: 1h, 6h, 24h, 7d, 30d.
     </p>
     <p>

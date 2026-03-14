@@ -16,10 +16,10 @@ Bewitch is comprised of two applications:
 - **Alerting** — threshold, predictive (linear regression), and variance alert rules, manageable from the TUI
 - **Webhook delivery** — alert notifications to external services
 - **TUI dashboard** — real-time system overview with detail views per subsystem; status bar indicates stale data when a collector stops producing updates
-- **Historical charts** — time-series line charts for CPU, memory, disk, temperature, power, and process CPU with selectable time ranges
+- **Historical charts** — high-resolution braille charts for CPU, memory, disk, hardware (temperature/power), and process CPU with selectable time ranges and dynamic height
 - **Interactive SQL REPL** — `bewitch repl` opens an interactive DuckDB query console against the daemon, with multi-line editing, dot-commands (`.tables`, `.schema`, `.metrics`, `.dimensions`, `.export`), persistent history, tab completion, piped input support, and read-only enforcement via DuckDB's statement parser
 - **Remote access with TLS** — optional TCP listener with auto-generated self-signed certificates, SSH-style trust-on-first-use fingerprint pinning, and bearer token authentication
-- **Unix socket API** — daemon control without network exposure, with JSON and FlatBuffers response formats
+- **Unix socket API** — daemon control without network exposure, JSON API
 
 ## macOS development (mock mode)
 
@@ -48,16 +48,13 @@ make test-verbose   # verbose output
 make test-integration  # integration tests (requires DuckDB/CGO)
 ```
 
-Unit tests cover config parsing, alert logic, CPU/disk/SMART data processing, API serialization round-trips, history bucketing, and TUI formatting. UI tests use Charm's [teatest](https://github.com/charmbracelet/x/tree/main/exp/teatest) library with a mock daemon client to verify view switching, tab cycling, history range controls, dynamic tab hiding, and process view interactions. All tests are cross-platform and pass on both Linux and macOS.
+Unit tests cover config parsing, alert logic, CPU/disk/SMART data processing, API serialization round-trips, history bucketing, and TUI formatting. UI tests use Charm's [teatest](https://github.com/charmbracelet/x/tree/main/exp/teatest) library with a mock daemon client to verify view switching, tab cycling, history range controls, hardware tab visibility, and process view interactions. All tests are cross-platform and pass on both Linux and macOS.
 
 ## Requirements
 
 - Go 1.21+
 - Linux (Debian/Ubuntu targeted, uses procfs and sysfs); macOS supported via mock mode
 - DuckDB (bundled via duckdb-go)
-- FlatBuffers compiler (`flatc`) — only needed when modifying the API schema
-  - macOS: `brew install flatbuffers`
-  - Debian/Ubuntu: `apt-get install flatbuffers-compiler`
 
 ## Build
 
@@ -168,7 +165,7 @@ enabled = false
 enabled = false
 ```
 
-When a collector is disabled, its corresponding TUI tab is automatically hidden. Tabs also hide automatically when no data is available (e.g., no power zones detected on the system).
+When a collector is disabled, its sub-section within the Hardware tab shows a "no data" message. The Hardware tab itself is always visible.
 
 ### Disk mount filtering
 
@@ -458,7 +455,7 @@ bewitch -config /etc/bewitch.toml -debug
 
 ### TUI navigation
 
-Views are accessed via number keys. Temperature and Power tabs appear only when data is available from those collectors — if hidden, subsequent tabs renumber automatically.
+Views are accessed via number keys. Tab numbering is fixed regardless of hardware availability.
 
 | Key | View |
 |-----|------|
@@ -467,13 +464,15 @@ Views are accessed via number keys. Temperature and Power tabs appear only when 
 | 3   | Memory details |
 | 4   | Disk details (per-mount with I/O and SMART health) |
 | 5   | Network details (per-interface) |
-| 6   | Temperature details (if available) |
-| 7   | Power details (if available) |
-| 8   | Process details |
-| 9   | Alerts |
-| Tab / Shift+Tab | Cycle views forward / backward |
+| 6   | Hardware (temperature, power, ECC sub-sections) |
+| 7   | Process details |
+| 8   | Alerts |
 | ← / → or h / l | Cycle views forward / backward |
 | < / > | Cycle history time range (1h, 6h, 24h, 7d, 30d) |
+| Tab / Shift+Tab (hardware) | Cycle sub-sections (Temperature, Power, ECC) |
+| j / k (hardware) | Navigate sensor/zone list |
+| Space (hardware) | Toggle sensor/zone on/off in chart |
+| a (hardware) | Select / deselect all sensors/zones |
 | j / k (alerts) | Navigate rules list or alert rows |
 | Tab (alerts) | Switch focus between rules and fired alerts |
 | n (alerts) | Create a new alert rule |
@@ -481,9 +480,6 @@ Views are accessed via number keys. Temperature and Power tabs appear only when 
 | Space (alerts) | Toggle rule enabled/disabled |
 | Enter (alerts) | Acknowledge selected alert |
 | Esc (alerts) | Cancel alert creation form |
-| j / k (temperature, power) | Navigate sensor/zone list |
-| Space (temperature, power) | Toggle sensor/zone on/off in chart |
-| a (temperature, power) | Select / deselect all sensors/zones |
 | j / k (process) | Navigate process list |
 | c / m / p / n / t / f (process) | Sort by CPU / mem / PID / name / threads / FDs |
 | * (process) | Pin/unpin selected process |
@@ -498,12 +494,7 @@ Views are accessed via number keys. Temperature and Power tabs appear only when 
 
 ### API
 
-The daemon exposes an HTTP API over its unix socket. Responses are available in two formats:
-
-- **FlatBuffers** (binary, default) — used by the TUI client. Schema: `schema/bewitch.fbs`
-- **JSON** — send `Accept: application/json` header for human-readable responses
-
-POST endpoints also accept JSON request bodies when sent with `Content-Type: application/json`.
+The daemon exposes a JSON HTTP API over its unix socket. POST endpoints accept JSON request bodies with `Content-Type: application/json`.
 
 Endpoints:
 
@@ -539,31 +530,28 @@ Endpoints:
 | POST | `/api/unarchive` | Reload all Parquet data into DuckDB and remove archive files |
 | GET | `/api/archive/status` | Archive state and directory stats |
 
-**Using curl with JSON:**
+**Using curl:**
 
 ```bash
 # Get daemon status
-curl --unix-socket /run/bewitch/bewitch.sock -H 'Accept: application/json' http://localhost/api/status
+curl --unix-socket /run/bewitch/bewitch.sock http://localhost/api/status
 
 # Get CPU metrics
-curl --unix-socket /run/bewitch/bewitch.sock -H 'Accept: application/json' http://localhost/api/metrics/cpu
+curl --unix-socket /run/bewitch/bewitch.sock http://localhost/api/metrics/cpu
 
 # Get alerts
-curl --unix-socket /run/bewitch/bewitch.sock -H 'Accept: application/json' 'http://localhost/api/alerts?ack=false'
+curl --unix-socket /run/bewitch/bewitch.sock 'http://localhost/api/alerts?ack=false'
 
-# Create an alert rule (JSON body)
+# Create an alert rule
 curl --unix-socket /run/bewitch/bewitch.sock \
-  -H 'Accept: application/json' \
   -H 'Content-Type: application/json' \
   -d '{"name":"high-cpu","type":"threshold","severity":"warning","metric":"cpu.aggregate","operator":">","value":90,"duration":"5m"}' \
   http://localhost/api/alert-rules
 
 # Get history with time range
-curl --unix-socket /run/bewitch/bewitch.sock -H 'Accept: application/json' \
+curl --unix-socket /run/bewitch/bewitch.sock \
   "http://localhost/api/history/cpu?start=$(date -d '1 hour ago' +%s)&end=$(date +%s)"
 ```
-
-Without the `Accept: application/json` header, responses are binary FlatBuffers (used by the TUI). To write a FlatBuffers client, use the generated code in `internal/fb/`.
 
 ## Architecture
 
@@ -579,13 +567,13 @@ bewitchd (daemon)
     └── TCP listener (optional, TLS by default)
 
 bewitch (TUI)
-└── Daemon Client (unix socket or TCP+TLS, FlatBuffers)
+└── Daemon Client (unix socket or TCP+TLS, JSON)
 
 bewitch repl (SQL console)
 └── Daemon Client (unix socket or TCP+TLS, JSON, POST /api/query)
 
 curl / scripts / external clients
-└── JSON API (unix socket or TCP+TLS, Accept: application/json)
+└── JSON API (unix socket or TCP+TLS)
 ```
 
 ### Performance notes
@@ -595,7 +583,6 @@ curl / scripts / external clients
 - SMART health data is cached per physical device (configurable interval, default 5m) to avoid expensive ioctl calls on every collection cycle
 - Temperature and power collectors cache sensor/zone paths (60s refresh) to avoid per-cycle glob operations
 - Dimension IDs (mount names, interfaces, sensors, etc.) and process info are cached in memory
-- **Lazy FlatBuffers encoding** — the daemon stores raw metric structs and defers FlatBuffers serialization until the first API request. When no TUI is connected, zero encoding work happens.
 - **ETag-based change detection** — API responses include `ETag` headers (generation counters). The TUI sends `If-None-Match` on subsequent requests; when data hasn't changed, the daemon returns `304 Not Modified` and the TUI skips decoding, allocation, and chart re-rendering.
 - **History cache with eviction** — history query results are cached for 5 seconds with automatic eviction of expired entries every 30 seconds, preventing unbounded memory growth in long-running daemons.
 

@@ -1,6 +1,6 @@
 import type { FC } from 'hono/jsx'
 
-const tabs = ['Dashboard', 'CPU', 'Memory', 'Disk', 'Network', 'Temp', 'Power', 'Process', 'Alerts']
+const tabs = ['Dashboard', 'CPU', 'Memory', 'Disk', 'Network', 'Hardware', 'Process', 'Alerts']
 
 export const TabBar: FC<{ active?: number }> = ({ active = 0 }) => (
   <div class="flex items-center gap-0 font-mono text-xs border-b border-deep-purple/30 overflow-x-auto">
