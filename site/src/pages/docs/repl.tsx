@@ -12,7 +12,7 @@ export const ReplDocs: FC = () => (
     </p>
 
     <CodeBlock title="launch">
-{`bewitch -config /etc/bewitch.toml repl
+{`bewitch repl
 
 # or connect remotely
 bewitch -addr myserver:9119 -token secret repl`}
@@ -107,7 +107,7 @@ WHERE n.ts > now() - INTERVAL '10 minutes';`}
     <h2>Scripting</h2>
     <p>Piped input works for non-interactive use:</p>
     <CodeBlock>
-{`echo "SELECT COUNT(*) FROM cpu_metrics;" | bewitch -config /etc/bewitch.toml repl
+{`echo "SELECT COUNT(*) FROM cpu_metrics;" | bewitch repl
 
 # multi-line
 cat <<'SQL' | bewitch repl

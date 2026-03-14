@@ -11,7 +11,7 @@ export const TuiDocs: FC = () => (
     </p>
 
     <CodeBlock title="launch">
-{`bewitch -config /etc/bewitch.toml
+{`bewitch
 
 # or connect to a remote daemon
 bewitch -addr myserver:9119 -token my-secret`}
@@ -132,7 +132,7 @@ bewitch -addr myserver:9119 -token my-secret`}
 
     <h2>Debug Mode</h2>
     <CodeBlock>
-{`bewitch -config /etc/bewitch.toml -debug`}
+{`bewitch -debug`}
     </CodeBlock>
     <p>
       Adds a scrollable debug console at the bottom of the TUI showing timestamped diagnostic messages:

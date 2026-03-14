@@ -48,7 +48,7 @@ prune_interval = "1h"     # run pruning every hour`}
 compaction_interval = "7d"  # weekly compaction`}
     </CodeBlock>
     <CodeBlock title="manual compaction">
-{`bewitch -config /etc/bewitch.toml compact
+{`bewitch compact
 
 # or remotely
 bewitch -addr myserver:9119 -token secret compact`}
@@ -83,10 +83,10 @@ retention = "90d"  # also prunes old Parquet files`}
     <h3>Manual archive/unarchive</h3>
     <CodeBlock>
 {`# Archive old data to Parquet
-bewitch -config /etc/bewitch.toml archive
+bewitch archive
 
 # Reload all Parquet data back into DuckDB
-bewitch -config /etc/bewitch.toml unarchive`}
+bewitch unarchive`}
     </CodeBlock>
     <p>
       <code>unarchive</code> reloads all Parquet data into DuckDB, removes the Parquet files, and resets the
@@ -100,7 +100,7 @@ bewitch -config /etc/bewitch.toml unarchive`}
     </p>
     <CodeBlock>
 {`# Metrics + dimensions only (default)
-bewitch -config /etc/bewitch.toml snapshot /tmp/metrics.duckdb
+bewitch snapshot /tmp/metrics.duckdb
 
 # Include alerts, preferences, scheduled jobs
 bewitch snapshot -with-system-tables /tmp/backup.duckdb`}
