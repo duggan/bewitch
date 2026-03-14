@@ -25,8 +25,9 @@ else
     SITE_PUBLIC="site/public"
 fi
 
+DIST="${APT_DIST:-stable}"
 APT_DIR="$SITE_PUBLIC/apt"
-DISTS_DIR="$APT_DIR/dists/stable"
+DISTS_DIR="$APT_DIR/dists/$DIST"
 
 if [ $# -eq 0 ]; then
     echo "Usage: $0 <deb-file> [<deb-file> ...]" >&2
@@ -119,8 +120,8 @@ done
 cat > "$release_file" <<RELEASE
 Origin: bewitch
 Label: bewitch
-Suite: stable
-Codename: stable
+Suite: $DIST
+Codename: $DIST
 Architectures: amd64 arm64
 Components: main
 Date: $(date -u '+%a, %d %b %Y %H:%M:%S UTC')

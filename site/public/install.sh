@@ -2,12 +2,15 @@
 # bewitch installer
 # Usage: curl -fsSL https://bewitch.dev/install.sh | sudo sh
 #
+# For dev builds: curl -fsSL https://bewitch.dev/install.sh | BEWITCH_CHANNEL=dev sudo -E sh
+#
 # On Debian/Ubuntu: adds the APT repository and installs the package.
 # On other Linux: downloads a pre-built binary tarball and installs it.
 
 set -eu
 
 VERSION="0.1.0"
+CHANNEL="${BEWITCH_CHANNEL:-stable}"
 BASE_URL="https://bewitch.dev"
 REPO_URL="${BASE_URL}/apt"
 GPG_URL="${BASE_URL}/gpg"
@@ -66,7 +69,7 @@ if is_apt; then
 
     # Add repository
     info "repo" "adding APT repository..."
-    echo "deb [signed-by=$KEYRING arch=$ARCH] $REPO_URL stable main" > "$SOURCES_LIST"
+    echo "deb [signed-by=$KEYRING arch=$ARCH] $REPO_URL $CHANNEL main" > "$SOURCES_LIST"
 
     # Update package list (scoped to bewitch repo only)
     info "update" "fetching package list..."

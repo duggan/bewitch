@@ -53,6 +53,33 @@ echo "deb [signed-by=/usr/share/keyrings/bewitch.gpg] https://bewitch.dev/apt st
 sudo apt update && sudo apt install bewitch`}
     </CodeBlock>
 
+    <h3>Dev channel</h3>
+    <p>
+      To track the latest development builds (published on every push to <code>main</code>):
+    </p>
+
+    <CodeBlock title="use dev channel">
+{`# Replace "stable" with "dev" in the repository line
+echo "deb [signed-by=/usr/share/keyrings/bewitch.gpg] https://bewitch.dev/apt dev main" \\
+  | sudo tee /etc/apt/sources.list.d/bewitch.list
+
+sudo apt update && sudo apt install bewitch`}
+    </CodeBlock>
+
+    <p>
+      Dev builds use versions like <code>0.1.3~dev.20260314.abcdef1</code>. The <code>~</code> prefix means
+      APT treats them as older than the corresponding release, so switching back to <code>stable</code> and
+      running <code>apt upgrade</code> will move you to the latest release automatically.
+    </p>
+
+    <p>
+      Or use the quick install script with the dev channel:
+    </p>
+
+    <CodeBlock title="one-line dev install">
+{`curl -fsSL https://bewitch.dev/install.sh | BEWITCH_CHANNEL=dev sudo -E sh`}
+    </CodeBlock>
+
     <h2>Binary Tarball (Any Linux)</h2>
     <p>Download and install pre-built binaries directly:</p>
 

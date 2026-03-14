@@ -18,6 +18,9 @@ WORKDIR /build
 
 COPY . .
 
+ARG BEWITCH_VERSION
+RUN if [ -n "${BEWITCH_VERSION}" ]; then echo "${BEWITCH_VERSION}" > VERSION; fi
+
 RUN scripts/gen-changelog.sh
 
 RUN make deb

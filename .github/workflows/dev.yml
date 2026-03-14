@@ -1,0 +1,123 @@
+name: Dev Build
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: dev-build
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute dev version
+        id: version
+        run: |
+          BASE=$(cat VERSION)
+          DATE=$(date -u +%Y%m%d)
+          SHA=$(git rev-parse --short HEAD)
+          echo "version=${BASE}~dev.${DATE}.${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build artifacts
+        run: >-
+          docker build -f Dockerfile.build
+          --build-arg BEWITCH_VERSION=${{ steps.version.outputs.version }}
+          -o dist .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.arch }}
+          path: dist/
+
+  apt-repo:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Install wrangler
+        run: npm install -g wrangler
+
+      - name: Upload artifacts to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: scripts/upload-pool.sh dist/*.deb dist/*.tar.gz
+
+      - name: Clean up old dev packages from R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: scripts/cleanup-dev-pool.sh
+
+      - name: Write GPG key to file
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: printenv GPG_PRIVATE_KEY > /tmp/signing.key
+
+      - name: Build APT repo image
+        run: docker build -f Dockerfile.repo -t bewitch-repo .
+
+      - name: Generate signed APT repo metadata
+        run: |
+          docker run --rm \
+            -e SITE_PUBLIC=/work/site/public \
+            -e GPG_KEY_FILE=/work/signing.key \
+            -e APT_DIST=dev \
+            -v "${{ github.workspace }}/dist:/work/dist" \
+            -v "${{ github.workspace }}/site/public:/work/site/public" \
+            -v /tmp/signing.key:/work/signing.key:ro \
+            bewitch-repo dist/*.deb
+
+      - name: Clean up GPG key
+        if: always()
+        run: rm -f /tmp/signing.key
+
+      - name: Upload APT metadata to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: scripts/upload-dists.sh site/public
+
+      - name: Purge APT metadata cache
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          curl -sf -X POST \
+            "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{
+              "files": [
+                "https://bewitch.dev/apt/dists/dev/Release",
+                "https://bewitch.dev/apt/dists/dev/Release.gpg",
+                "https://bewitch.dev/apt/dists/dev/InRelease",
+                "https://bewitch.dev/apt/dists/dev/main/binary-amd64/Packages",
+                "https://bewitch.dev/apt/dists/dev/main/binary-amd64/Packages.gz",
+                "https://bewitch.dev/apt/dists/dev/main/binary-arm64/Packages",
+                "https://bewitch.dev/apt/dists/dev/main/binary-arm64/Packages.gz"
+              ]
+            }'

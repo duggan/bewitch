@@ -9,7 +9,7 @@
 
 set -eu
 
-VERSION=$(cat VERSION)
+VERSION="${BEWITCH_VERSION:-$(cat VERSION)}"
 MAINTAINER="Ross <ross@example.com>"
 DATE=$(date -R)
 
