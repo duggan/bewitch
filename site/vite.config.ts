@@ -3,7 +3,9 @@ import ssg from '@hono/vite-ssg'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, type Plugin } from 'vite'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+
+const version = (await readFile(resolve(__dirname, '../VERSION'), 'utf-8')).trim()
 
 // After build, rewrite CSS links in generated HTML to point to the hashed CSS file
 function rewriteCssLinks(): Plugin {
@@ -39,13 +41,34 @@ function rewriteCssLinks(): Plugin {
   }
 }
 
+// After build, stamp the VERSION into install.sh (which is copied from public/)
+function stampInstallVersion(): Plugin {
+  return {
+    name: 'stamp-install-version',
+    apply: 'build',
+    async writeBundle(options) {
+      const outDir = options.dir || 'dist'
+      const installSh = join(outDir, 'install.sh')
+      try {
+        let content = await readFile(installSh, 'utf-8')
+        content = content.replace(/^VERSION=".*"$/m, `VERSION="${version}"`)
+        await writeFile(installSh, content)
+      } catch {}
+    },
+  }
+}
+
 export default defineConfig({
   plugins: [
     tailwindcss(),
     ssg({ entry: 'src/index.tsx' }),
     devServer({ entry: 'src/index.tsx' }),
     rewriteCssLinks(),
+    stampInstallVersion(),
   ],
+  define: {
+    __BEWITCH_VERSION__: JSON.stringify(version),
+  },
   build: {
     rollupOptions: {
       input: ['src/client.ts'],

@@ -3,6 +3,9 @@ import { docsBase } from '../../docs-base'
 import { DocsLayout } from '../../layouts/docs'
 import { CodeBlock } from '../../components/terminal-block'
 
+declare const __BEWITCH_VERSION__: string
+const v = __BEWITCH_VERSION__
+
 export const InstallationDocs: FC = () => (
   <DocsLayout title="Installation" active={`${docsBase}/installation`}>
     <p>
@@ -86,21 +89,21 @@ sudo apt update && sudo apt install bewitch`}
 
     <CodeBlock title="download & install">
 {`# Download (replace ARCH with amd64 or arm64)
-curl -LO https://bewitch.dev/releases/bewitch-0.2.0-linux-\${ARCH}.tar.gz
-tar xzf bewitch-0.2.0-linux-*.tar.gz
+curl -LO https://bewitch.dev/releases/bewitch-${v}-linux-\${ARCH}.tar.gz
+tar xzf bewitch-${v}-linux-*.tar.gz
 
 # Install binaries
-sudo install -m 755 bewitch-0.2.0-linux-*/bewitchd /usr/local/bin/
-sudo install -m 755 bewitch-0.2.0-linux-*/bewitch /usr/local/bin/
+sudo install -m 755 bewitch-${v}-linux-*/bewitchd /usr/local/bin/
+sudo install -m 755 bewitch-${v}-linux-*/bewitch /usr/local/bin/
 
 # Set up system user and data directory
 sudo useradd -r -s /usr/sbin/nologin bewitch
 sudo mkdir -p /var/lib/bewitch
 sudo chown bewitch:bewitch /var/lib/bewitch
-sudo cp bewitch-0.2.0-linux-*/bewitch.example.toml /etc/bewitch.toml
+sudo cp bewitch-${v}-linux-*/bewitch.example.toml /etc/bewitch.toml
 
 # Install systemd service
-sudo cp bewitch-0.2.0-linux-*/bewitchd.service /etc/systemd/system/
+sudo cp bewitch-${v}-linux-*/bewitchd.service /etc/systemd/system/
 sudo systemctl daemon-reload`}
     </CodeBlock>
 
@@ -109,8 +112,8 @@ sudo systemctl daemon-reload`}
 
     <CodeBlock title="download & install">
 {`# Replace ARCH with amd64 or arm64
-curl -LO https://bewitch.dev/apt/pool/main/b/bewitch/bewitch_0.2.0-1_\${ARCH}.deb
-sudo dpkg -i bewitch_0.2.0-1_*.deb`}
+curl -LO https://bewitch.dev/apt/pool/main/b/bewitch/bewitch_${v}-1_\${ARCH}.deb
+sudo dpkg -i bewitch_${v}-1_*.deb`}
     </CodeBlock>
 
     <p>The <code>.deb</code> package automatically:</p>
