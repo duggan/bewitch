@@ -9,23 +9,23 @@ Type "./bin/bewitch -config data/bewitch.toml"
 Enter
 Sleep 5s
 Screenshot site/public/screenshots/dashboard.png
-Right
+Type "2"
 Sleep 3s
 Screenshot site/public/screenshots/cpu.png
-Right
+Type "3"
 Sleep 2s
 Screenshot site/public/screenshots/memory.png
-Right
+Type "4"
 Sleep 2s
 Screenshot site/public/screenshots/disk.png
-Right
-Sleep 1s
+Type "5"
+Sleep 2s
 Screenshot site/public/screenshots/network.png
-Right
-Sleep 1s
+Type "6"
+Sleep 2s
 Screenshot site/public/screenshots/hardware.png
-Right
-Sleep 1s
+Type "7"
+Sleep 2s
 Screenshot site/public/screenshots/process.png
 Type "8"
 Sleep 2s
