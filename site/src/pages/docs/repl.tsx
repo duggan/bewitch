@@ -1,9 +1,10 @@
 import type { FC } from 'hono/jsx'
+import { docsBase } from '../../docs-base'
 import { DocsLayout } from '../../layouts/docs'
 import { CodeBlock } from '../../components/terminal-block'
 
 export const ReplDocs: FC = () => (
-  <DocsLayout title="SQL REPL" active="/docs/repl">
+  <DocsLayout title="SQL REPL" active={`${docsBase}/repl`}>
     <p>
       <code>bewitch repl</code> connects to the running daemon and opens an interactive DuckDB SQL console.
       The REPL uses readline for line editing with full multi-line support — arrow up/down between lines,

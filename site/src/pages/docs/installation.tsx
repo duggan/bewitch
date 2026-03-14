@@ -1,9 +1,10 @@
 import type { FC } from 'hono/jsx'
+import { docsBase } from '../../docs-base'
 import { DocsLayout } from '../../layouts/docs'
 import { CodeBlock } from '../../components/terminal-block'
 
 export const InstallationDocs: FC = () => (
-  <DocsLayout title="Installation" active="/docs/installation">
+  <DocsLayout title="Installation" active={`${docsBase}/installation`}>
     <p>
       Bewitch runs on Linux (amd64 and arm64). It uses procfs and sysfs for metric collection.
     </p>

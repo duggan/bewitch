@@ -1,9 +1,10 @@
 import type { FC } from 'hono/jsx'
+import { docsBase } from '../../docs-base'
 import { DocsLayout } from '../../layouts/docs'
 import { CodeBlock } from '../../components/terminal-block'
 
 export const TuiDocs: FC = () => (
-  <DocsLayout title="TUI Guide" active="/docs/tui">
+  <DocsLayout title="TUI Guide" active={`${docsBase}/tui`}>
     <p>
       The bewitch TUI is built with <a href="https://github.com/charmbracelet/bubbletea">bubbletea</a> and
       provides 8 views for real-time system monitoring with historical charts.

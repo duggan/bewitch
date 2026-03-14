@@ -1,9 +1,10 @@
 import type { FC } from 'hono/jsx'
+import { docsBase } from '../../docs-base'
 import { DocsLayout } from '../../layouts/docs'
 import { CodeBlock } from '../../components/terminal-block'
 
 export const CollectorsDocs: FC = () => (
-  <DocsLayout title="Collectors" active="/docs/collectors">
+  <DocsLayout title="Collectors" active={`${docsBase}/collectors`}>
     <p>
       Bewitch has 8 metric collectors. All implement the <code>Collector</code> interface with <code>Name()</code> and <code>Collect()</code> methods.
       Collectors run in parallel via goroutines on each tick. The daemon uses a GCD-based tick scheduler to fire each collector at its configured interval.

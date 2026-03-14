@@ -1,9 +1,10 @@
 import type { FC } from 'hono/jsx'
+import { docsBase } from '../../docs-base'
 import { DocsLayout } from '../../layouts/docs'
 import { CodeBlock } from '../../components/terminal-block'
 
 export const AlertsDocs: FC = () => (
-  <DocsLayout title="Alerts" active="/docs/alerts">
+  <DocsLayout title="Alerts" active={`${docsBase}/alerts`}>
     <p>
       Alert rules are created and managed from the TUI (Alerts view, press <code>n</code>). Rules are stored
       in the database and evaluated by the daemon on every evaluation cycle.

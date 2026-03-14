@@ -1,9 +1,10 @@
 import type { FC } from 'hono/jsx'
+import { docsBase } from '../../docs-base'
 import { DocsLayout } from '../../layouts/docs'
 import { CodeBlock } from '../../components/terminal-block'
 
 export const RemoteAccessDocs: FC = () => (
-  <DocsLayout title="Remote Access" active="/docs/remote-access">
+  <DocsLayout title="Remote Access" active={`${docsBase}/remote-access`}>
     <p>
       The daemon can listen on TCP for remote TUI, REPL, and CLI access. TCP connections use TLS by default
       with auto-generated self-signed certificates and SSH-style trust-on-first-use fingerprint pinning.

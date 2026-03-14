@@ -1,9 +1,10 @@
 import type { FC } from 'hono/jsx'
+import { docsBase } from '../../docs-base'
 import { DocsLayout } from '../../layouts/docs'
 import { CodeBlock } from '../../components/terminal-block'
 
 export const ConfigurationDocs: FC = () => (
-  <DocsLayout title="Configuration" active="/docs/configuration">
+  <DocsLayout title="Configuration" active={`${docsBase}/configuration`}>
     <p>
       Bewitch uses a TOML configuration file. Both <code>bewitchd</code> and <code>bewitch</code> accept <code>-config &lt;path&gt;</code>.
       The default location when installed via the Debian package is <code>/etc/bewitch.toml</code>.

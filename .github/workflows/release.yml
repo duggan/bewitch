@@ -119,3 +119,34 @@ jobs:
                 "https://bewitch.dev/apt/dists/stable/main/binary-arm64/Packages.gz"
               ]
             }'
+
+  versioned-docs:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install site dependencies
+        working-directory: site
+        run: bun install --frozen-lockfile
+
+      - name: Build versioned docs
+        working-directory: site
+        env:
+          VITE_DOCS_BASE: /docs/v${{ steps.version.outputs.version }}
+        run: bun run build
+
+      - name: Install wrangler
+        run: npm install -g wrangler
+
+      - name: Upload versioned docs to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: scripts/upload-versioned-docs.sh site/dist ${{ steps.version.outputs.version }}

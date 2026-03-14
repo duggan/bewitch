@@ -1,9 +1,10 @@
 import type { FC } from 'hono/jsx'
+import { docsBase } from '../../docs-base'
 import { DocsLayout } from '../../layouts/docs'
 import { CodeBlock } from '../../components/terminal-block'
 
 export const ArchivalDocs: FC = () => (
-  <DocsLayout title="Storage & Archival" active="/docs/archival">
+  <DocsLayout title="Storage & Archival" active={`${docsBase}/archival`}>
     <p>
       Bewitch stores metrics in DuckDB with optional data lifecycle management: retention pruning, compaction,
       and Parquet archival for long-term storage.

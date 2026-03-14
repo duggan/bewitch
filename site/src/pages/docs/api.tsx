@@ -1,9 +1,10 @@
 import type { FC } from 'hono/jsx'
+import { docsBase } from '../../docs-base'
 import { DocsLayout } from '../../layouts/docs'
 import { CodeBlock } from '../../components/terminal-block'
 
 export const ApiDocs: FC = () => (
-  <DocsLayout title="API Reference" active="/docs/api">
+  <DocsLayout title="API Reference" active={`${docsBase}/api`}>
     <p>
       The daemon exposes an HTTP API over its unix socket. When TCP is enabled, the same API is available
       over TLS with optional bearer token authentication. All responses are JSON.
