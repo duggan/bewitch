@@ -569,7 +569,7 @@ CREATE TABLE compact_db.preferences (
 CREATE SEQUENCE compact_db.alert_id_seq START 1;
 
 CREATE TABLE compact_db.alerts (
-    id INTEGER DEFAULT nextval('compact_db.alert_id_seq'),
+    id INTEGER DEFAULT nextval('alert_id_seq'),
     ts TIMESTAMP NOT NULL,
     rule_name VARCHAR NOT NULL,
     severity VARCHAR NOT NULL,
@@ -580,7 +580,7 @@ CREATE TABLE compact_db.alerts (
 CREATE SEQUENCE compact_db.alert_rule_id_seq START 1;
 
 CREATE TABLE compact_db.alert_rules (
-    id INTEGER DEFAULT nextval('compact_db.alert_rule_id_seq'),
+    id INTEGER DEFAULT nextval('alert_rule_id_seq'),
     name VARCHAR NOT NULL,
     type VARCHAR NOT NULL,
     severity VARCHAR NOT NULL,

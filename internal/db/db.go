@@ -147,6 +147,25 @@ func dropOldAlertRuleColumns(db *sql.DB) error {
 	return nil
 }
 
+// migrateFixSequenceSchema fixes DEFAULT expressions on alerts and alert_rules
+// that were incorrectly schema-qualified as compact_db.* after compaction.
+func migrateFixSequenceSchema(db *sql.DB) error {
+	// Only run if the alerts table exists (skipped for pre-migration DBs)
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM information_schema.tables
+		WHERE table_name = 'alerts'`).Scan(&count)
+	if err != nil || count == 0 {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE alerts ALTER COLUMN id SET DEFAULT nextval('alert_id_seq')`); err != nil {
+		return fmt.Errorf("fixing alerts sequence: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE alert_rules ALTER COLUMN id SET DEFAULT nextval('alert_rule_id_seq')`); err != nil {
+		return fmt.Errorf("fixing alert_rules sequence: %w", err)
+	}
+	return nil
+}
+
 // GetDriverConn extracts the underlying DuckDB driver connection from an sql.Conn.
 // This is needed for using the Appender API for bulk inserts.
 func GetDriverConn(ctx context.Context, db *sql.DB) (driver.Conn, *sql.Conn, error) {

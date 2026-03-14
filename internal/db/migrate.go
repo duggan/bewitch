@@ -26,6 +26,7 @@ type migration struct {
 func goMigrations() []migration {
 	return []migration{
 		{Version: 2, Name: "alert_rules_normalize", Fn: migrateAlertRules},
+		{Version: 3, Name: "fix_sequence_schema", Fn: migrateFixSequenceSchema},
 	}
 }
 
