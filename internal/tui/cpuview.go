@@ -3,12 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/ross/bewitch/internal/api"
-
-	"github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
-	"github.com/charmbracelet/lipgloss"
 )
 
 func renderCPUView(cores []api.CPUCoreMetric, width int, cachedChart string) string {
@@ -77,99 +73,3 @@ func renderCPUView(cores []api.CPUCoreMetric, width int, cachedChart string) str
 	return b.String()
 }
 
-var chartColors = []string{
-	"84",  // green
-	"215", // orange
-	"123", // cyan
-	"141", // soft purple
-	"228", // yellow
-	"203", // red
-	"75",  // sky blue
-	"177", // lavender
-	"43",  // mint
-	"117", // pale cyan
-	"183", // light purple
-	"209", // light salmon
-	"114", // seafoam
-	"220", // golden
-	"110", // light sky blue
-}
-
-func renderHistoryChart(series []api.TimeSeries, width int, start, end time.Time) string {
-	chartWidth := width
-	if chartWidth < 20 {
-		chartWidth = 20
-	}
-	chartHeight := 12
-
-	opts := []timeserieslinechart.Option{
-		timeserieslinechart.WithTimeRange(start, end),
-		timeserieslinechart.WithYRange(0, 100),
-		timeserieslinechart.WithXLabelFormatter(xLabelFormatter(end.Sub(start))),
-		timeserieslinechart.WithYLabelFormatter(func(_ int, v float64) string {
-			return fmt.Sprintf("%.0f%%", v)
-		}),
-	}
-
-	for i, s := range series {
-		if len(s.Points) == 0 {
-			continue
-		}
-		color := chartColors[i%len(chartColors)]
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		points := make([]timeserieslinechart.TimePoint, len(s.Points))
-		for j, p := range s.Points {
-			points[j] = timeserieslinechart.TimePoint{
-				Time:  time.Unix(0, p.TimestampNS),
-				Value: p.Value,
-			}
-		}
-		points = forwardFillPoints(points, end)
-		opts = append(opts,
-			timeserieslinechart.WithDataSetStyle(s.Label, style),
-			timeserieslinechart.WithDataSetTimeSeries(s.Label, points),
-		)
-	}
-
-	chart := timeserieslinechart.New(chartWidth, chartHeight, opts...)
-	chart.DrawAll()
-
-	// Build legend
-	var legend strings.Builder
-	for i, s := range series {
-		if len(s.Points) == 0 {
-			continue
-		}
-		color := chartColors[i%len(chartColors)]
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		if i > 0 {
-			legend.WriteString("  ")
-		}
-		legend.WriteString(style.Render("━ " + s.Label))
-	}
-
-	return chart.View() + "\n" + legend.String()
-}
-
-// forwardFillPoints extends the last point's value to the given end time,
-// preventing a "drop to zero" artifact when the chart time range extends
-// beyond the last data point.
-func forwardFillPoints(points []timeserieslinechart.TimePoint, end time.Time) []timeserieslinechart.TimePoint {
-	if len(points) > 0 && points[len(points)-1].Time.Before(end) {
-		points = append(points, timeserieslinechart.TimePoint{
-			Time:  end,
-			Value: points[len(points)-1].Value,
-		})
-	}
-	return points
-}
-
-func historyHelp(rangeLabel string) string {
-	return helpStyle.Render(fmt.Sprintf("< >: range [%s]  r: pick dates", rangeLabel))
-}
-
-// historyHelpInline returns help text styled for inclusion inside a panel (with spacing above).
-func historyHelpInline(rangeLabel string) string {
-	return "\n\n" + lipgloss.NewStyle().Foreground(colorDeepPurple).Render(
-		fmt.Sprintf("< >:range [%s]  r:pick dates", rangeLabel))
-}

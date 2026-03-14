@@ -157,28 +157,22 @@ func TestDynamicTabHiding(t *testing.T) {
 	tm.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
 }
 
-func TestDynamicTabHidingFinalModel(t *testing.T) {
-	// With temp + power data: both tabs visible
+func TestHardwareTabAlwaysVisible(t *testing.T) {
+	// Hardware tab is always present regardless of data availability
 	mockFull := newMockClient()
 	mFull := NewModel(mockFull, time.Second, config.DefaultHistoryRanges, false)
 
-	hasTemp, hasPower := false, false
+	hasHW := false
 	for _, v := range mFull.visibleTabs {
-		if v == viewTemperature {
-			hasTemp = true
-		}
-		if v == viewPower {
-			hasPower = true
+		if v == viewHardware {
+			hasHW = true
 		}
 	}
-	if !hasTemp {
-		t.Error("temperature tab should be visible with temp data")
-	}
-	if !hasPower {
-		t.Error("power tab should be visible with power data")
+	if !hasHW {
+		t.Error("hardware tab should always be visible")
 	}
 
-	// Without temp + power data: both tabs hidden
+	// Even without temp/power data, hardware tab is present
 	mockEmpty := &mockClient{
 		cpu:   []api.CPUCoreMetric{{Core: -1, UserPct: 10}},
 		mem:   &api.MemoryMetric{TotalBytes: 16_000_000_000, UsedBytes: 8_000_000_000},
@@ -187,13 +181,14 @@ func TestDynamicTabHidingFinalModel(t *testing.T) {
 	}
 	mEmpty := NewModel(mockEmpty, time.Second, config.DefaultHistoryRanges, false)
 
+	hasHW = false
 	for _, v := range mEmpty.visibleTabs {
-		if v == viewTemperature {
-			t.Error("temperature tab should be hidden without temp data")
+		if v == viewHardware {
+			hasHW = true
 		}
-		if v == viewPower {
-			t.Error("power tab should be hidden without power data")
-		}
+	}
+	if !hasHW {
+		t.Error("hardware tab should always be visible even without temp/power data")
 	}
 }
 

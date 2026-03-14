@@ -8,7 +8,6 @@ import (
 
 	"github.com/ross/bewitch/internal/api"
 
-	"github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -370,8 +369,7 @@ func formatAge(d time.Duration) string {
 	return fmt.Sprintf("%dy", days/365)
 }
 
-func renderProcessHistoryChart(series []api.TimeSeries, width int, start, end time.Time, pinnedMap map[string]bool) string {
-	// Reuse the existing chart rendering but with different Y axis scaling
+func renderProcessHistoryChart(series []api.TimeSeries, width, height int, start, end time.Time, pinnedMap map[string]bool) string {
 	// Process CPU can exceed 100% with multiple cores
 	maxVal := 100.0
 	for _, s := range series {
@@ -381,89 +379,25 @@ func renderProcessHistoryChart(series []api.TimeSeries, width int, start, end ti
 			}
 		}
 	}
-	// Round up to nice number
 	if maxVal > 100 {
 		maxVal = float64(int(maxVal/50)+1) * 50
 	}
 
-	return renderHistoryChartWithMax(series, width, start, end, maxVal, pinnedMap)
-}
-
-func renderHistoryChartWithMax(series []api.TimeSeries, width int, start, end time.Time, maxY float64, pinnedMap map[string]bool) string {
-	chartWidth := width
-	if chartWidth < 20 {
-		chartWidth = 20
-	}
-	chartHeight := 12
-
-	// Determine the bucket interval so we can detect stale series.
-	// A process whose last data point is more than 2 buckets before
-	// the chart end is no longer running — drop it to zero instead
-	// of forward-filling.
 	bucket := processBucketDuration(end.Sub(start))
 	staleThreshold := 2 * bucket
 
-	opts := []timeserieslinechart.Option{
-		timeserieslinechart.WithTimeRange(start, end),
-		timeserieslinechart.WithYRange(0, maxY),
-		timeserieslinechart.WithXLabelFormatter(xLabelFormatter(end.Sub(start))),
-		timeserieslinechart.WithYLabelFormatter(func(_ int, v float64) string {
-			return fmt.Sprintf("%.0f%%", v)
-		}),
-	}
-
-	for i, s := range series {
-		if len(s.Points) == 0 {
-			continue
-		}
-		color := chartColors[i%len(chartColors)]
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		points := make([]timeserieslinechart.TimePoint, len(s.Points))
-		for j, p := range s.Points {
-			points[j] = timeserieslinechart.TimePoint{
-				Time:  time.Unix(0, p.TimestampNS),
-				Value: p.Value,
-			}
-		}
-		lastTime := points[len(points)-1].Time
-		if end.Sub(lastTime) > staleThreshold {
-			// Process stopped running — drop to zero one bucket after
-			// its last real data point.
-			points = append(points, timeserieslinechart.TimePoint{
-				Time:  lastTime.Add(bucket),
-				Value: 0,
-			})
-		} else {
-			points = forwardFillPoints(points, end)
-		}
-		opts = append(opts,
-			timeserieslinechart.WithDataSetStyle(s.Label, style),
-			timeserieslinechart.WithDataSetTimeSeries(s.Label, points),
-		)
-	}
-
-	chart := timeserieslinechart.New(chartWidth, chartHeight, opts...)
-	chart.DrawAll()
-
-	// Build legend
-	var legend strings.Builder
-	for i, s := range series {
-		if len(s.Points) == 0 {
-			continue
-		}
-		color := chartColors[i%len(chartColors)]
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		if i > 0 {
-			legend.WriteString("  ")
-		}
-		label := s.Label
-		if pinnedMap[label] {
-			label = "* " + label
-		}
-		legend.WriteString(style.Render("━ " + label))
-	}
-
-	return chart.View() + "\n" + legend.String()
+	return renderBrailleChart(chartConfig{
+		series:       series,
+		width:        width,
+		height:       height,
+		start:        start,
+		end:          end,
+		yMin:         0,
+		yMax:         maxVal,
+		yFormatter:   yFmtPercent,
+		pinnedMap:    pinnedMap,
+		staleDropoff: staleThreshold,
+	})
 }
 
 // processBucketDuration mirrors the API's bucketInterval logic, returning

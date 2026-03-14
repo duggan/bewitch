@@ -27,11 +27,17 @@ const (
 	viewMemory
 	viewDisk
 	viewNetwork
-	viewTemperature
-	viewPower
+	viewHardware
 	viewProcess
 	viewAlerts
 	viewCount // sentinel for wrapping
+)
+
+// Hardware sub-sections within the Hardware tab.
+const (
+	hwSectionTemp  = 0
+	hwSectionPower = 1
+	hwSectionECC   = 2
 )
 
 type tickMsg time.Time
@@ -124,6 +130,7 @@ type Model struct {
 	powerSelected    map[string]bool
 	powerCursor      int
 	powerZoneNames   []string
+	hardwareSection  int // active hardware sub-tab: hwSectionTemp, hwSectionPower, hwSectionECC
 	dashSparkData    map[string][]float64 // keys: "cpu", "mem"
 	dashSparkInited  bool
 	// Alert view state
@@ -311,12 +318,10 @@ func viewMetric(v view) string {
 		return "memory"
 	case viewDisk:
 		return "disk"
-	case viewTemperature:
-		return "temperature"
 	case viewNetwork:
 		return "network"
-	case viewPower:
-		return "power"
+	case viewHardware:
+		return "hardware" // placeholder; overridden in fetchHistoryCmd
 	case viewProcess:
 		return "process"
 	default:
@@ -345,6 +350,18 @@ func (m *Model) fetchHistoryCmd() tea.Cmd {
 	metric := viewMetric(v)
 	if metric == "" {
 		return nil
+	}
+	// Hardware view: resolve to temp/power based on active sub-section.
+	// ECC has no history chart.
+	if v == viewHardware {
+		switch m.hardwareSection {
+		case hwSectionTemp:
+			metric = "temperature"
+		case hwSectionPower:
+			metric = "power"
+		default:
+			return nil // ECC has no history
+		}
 	}
 	var start, end time.Time
 	isCustom := m.customStart != nil && m.customEnd != nil
@@ -477,6 +494,17 @@ func (m *Model) prefetchHistoryForCmd(v view) tea.Cmd {
 	if metric == "" {
 		return nil
 	}
+	// Hardware view: prefetch based on active sub-section
+	if v == viewHardware {
+		switch m.hardwareSection {
+		case hwSectionTemp:
+			metric = "temperature"
+		case hwSectionPower:
+			metric = "power"
+		default:
+			return nil
+		}
+	}
 	end := time.Now()
 	start := end.Add(-m.historyRanges[m.historyRange].Duration)
 	client := m.client
@@ -501,19 +529,20 @@ func (m *Model) renderHistoryCacheEntry(v view) {
 		return
 	}
 	chartWidth := m.width - 4
+	ch := chartHeightForTerminal(m.height)
 	rangeLabel := m.historyRangeLabel()
 	switch v {
 	case viewProcess:
-		entry.chart = renderProcessHistoryChart(entry.series, chartWidth, entry.start, entry.end, m.pinnedProcesses)
+		entry.chart = renderProcessHistoryChart(entry.series, chartWidth, ch, entry.start, entry.end, m.pinnedProcesses)
 		entry.chart = renderPanel(fmt.Sprintf("Process CPU History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
 	case viewCPU:
-		entry.chart = renderHistoryChart(entry.series, chartWidth, entry.start, entry.end)
+		entry.chart = renderPercentChart(entry.series, chartWidth, ch, entry.start, entry.end)
 		entry.chart = renderPanel(fmt.Sprintf("CPU History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
 	case viewMemory:
-		entry.chart = renderHistoryChart(entry.series, chartWidth, entry.start, entry.end)
+		entry.chart = renderPercentChart(entry.series, chartWidth, ch, entry.start, entry.end)
 		entry.chart = renderPanel(fmt.Sprintf("Memory History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
 	case viewDisk:
-		entry.chart = renderHistoryChart(entry.series, chartWidth, entry.start, entry.end)
+		entry.chart = renderPercentChart(entry.series, chartWidth, ch, entry.start, entry.end)
 		entry.chart = renderPanel(fmt.Sprintf("Disk History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
 	case viewNetwork:
 		netFiltered := entry.series
@@ -526,32 +555,35 @@ func (m *Model) renderHistoryCacheEntry(v view) {
 				}
 			}
 		}
-		entry.chart = renderNetHistoryChart(netFiltered, chartWidth, entry.start, entry.end, m.netDisplayBits)
+		entry.chart = renderNetHistoryChart(netFiltered, chartWidth, ch, entry.start, entry.end, m.netDisplayBits)
 		entry.chart = renderPanel(fmt.Sprintf("Network History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
-	case viewTemperature:
-		tempFiltered := entry.series
-		if m.tempSelected != nil {
-			tempFiltered = nil
-			for _, s := range entry.series {
-				if m.tempSelected[s.Label] {
-					tempFiltered = append(tempFiltered, s)
+	case viewHardware:
+		switch m.hardwareSection {
+		case hwSectionTemp:
+			tempFiltered := entry.series
+			if m.tempSelected != nil {
+				tempFiltered = nil
+				for _, s := range entry.series {
+					if m.tempSelected[s.Label] {
+						tempFiltered = append(tempFiltered, s)
+					}
 				}
 			}
-		}
-		entry.chart = renderTempHistoryChart(tempFiltered, chartWidth, entry.start, entry.end)
-		entry.chart = renderPanel(fmt.Sprintf("Temperature History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
-	case viewPower:
-		powerFiltered := entry.series
-		if m.powerSelected != nil {
-			powerFiltered = nil
-			for _, s := range entry.series {
-				if m.powerSelected[s.Label] {
-					powerFiltered = append(powerFiltered, s)
+			entry.chart = renderTempHistoryChart(tempFiltered, chartWidth, ch, entry.start, entry.end)
+			entry.chart = renderPanel(fmt.Sprintf("Temperature History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
+		case hwSectionPower:
+			powerFiltered := entry.series
+			if m.powerSelected != nil {
+				powerFiltered = nil
+				for _, s := range entry.series {
+					if m.powerSelected[s.Label] {
+						powerFiltered = append(powerFiltered, s)
+					}
 				}
 			}
+			entry.chart = renderPowerHistoryChart(powerFiltered, chartWidth, ch, entry.start, entry.end)
+			entry.chart = renderPanel(fmt.Sprintf("Power History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
 		}
-		entry.chart = renderPowerHistoryChart(powerFiltered, chartWidth, entry.start, entry.end)
-		entry.chart = renderPanel(fmt.Sprintf("Power History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
 	}
 }
 
@@ -560,11 +592,8 @@ func (m *Model) renderHistoryCacheEntry(v view) {
 func (m *Model) prefetchAllHistoryCmds() []tea.Cmd {
 	m.historyCache = make(map[view]*viewHistoryCache)
 	views := []view{viewCPU, viewMemory, viewDisk, viewNetwork}
-	if len(m.tempData) > 0 {
-		views = append(views, viewTemperature)
-	}
-	if len(m.powerData) > 0 {
-		views = append(views, viewPower)
+	if len(m.tempData) > 0 || len(m.powerData) > 0 {
+		views = append(views, viewHardware)
 	}
 	views = append(views, viewProcess)
 	m.d("prefetch: %d views (async)", len(views))
@@ -612,10 +641,11 @@ func (m *Model) regenerateHistoryChart() {
 		return
 	}
 	chartWidth := m.width - 4 // panel border (2) + padding (2)
+	ch := chartHeightForTerminal(m.height)
 	rangeLabel := m.historyRangeLabel()
 	switch m.current {
 	case viewProcess:
-		topCPUChart := renderProcessHistoryChart(m.historySeries, chartWidth, m.historyStart, m.historyEnd, m.pinnedProcesses)
+		topCPUChart := renderProcessHistoryChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd, m.pinnedProcesses)
 		topCPUChart = renderPanel(fmt.Sprintf("Process CPU History [%s]", rangeLabel), topCPUChart+historyHelpInline(rangeLabel), m.width)
 		m.cachedHistoryChart = topCPUChart
 		// Always sync per-view cache with the top CPU chart (create if needed).
@@ -638,13 +668,13 @@ func (m *Model) regenerateHistoryChart() {
 		}
 		return
 	case viewCPU:
-		m.cachedHistoryChart = renderHistoryChart(m.historySeries, chartWidth, m.historyStart, m.historyEnd)
+		m.cachedHistoryChart = renderPercentChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd)
 		m.cachedHistoryChart = renderPanel(fmt.Sprintf("CPU History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
 	case viewMemory:
-		m.cachedHistoryChart = renderHistoryChart(m.historySeries, chartWidth, m.historyStart, m.historyEnd)
+		m.cachedHistoryChart = renderPercentChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd)
 		m.cachedHistoryChart = renderPanel(fmt.Sprintf("Memory History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
 	case viewDisk:
-		m.cachedHistoryChart = renderHistoryChart(m.historySeries, chartWidth, m.historyStart, m.historyEnd)
+		m.cachedHistoryChart = renderPercentChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd)
 		m.cachedHistoryChart = renderPanel(fmt.Sprintf("Disk History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
 	case viewNetwork:
 		// Filter to only selected interfaces
@@ -656,28 +686,31 @@ func (m *Model) regenerateHistoryChart() {
 				netFiltered = append(netFiltered, s)
 			}
 		}
-		m.cachedHistoryChart = renderNetHistoryChart(netFiltered, chartWidth, m.historyStart, m.historyEnd, m.netDisplayBits)
+		m.cachedHistoryChart = renderNetHistoryChart(netFiltered, chartWidth, ch, m.historyStart, m.historyEnd, m.netDisplayBits)
 		m.cachedHistoryChart = renderPanel(fmt.Sprintf("Network History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
-	case viewTemperature:
-		// Filter to only selected sensors
-		var tempFiltered []api.TimeSeries
-		for _, s := range m.historySeries {
-			if m.tempSelected[s.Label] {
-				tempFiltered = append(tempFiltered, s)
+	case viewHardware:
+		switch m.hardwareSection {
+		case hwSectionTemp:
+			var tempFiltered []api.TimeSeries
+			for _, s := range m.historySeries {
+				if m.tempSelected[s.Label] {
+					tempFiltered = append(tempFiltered, s)
+				}
 			}
-		}
-		m.cachedHistoryChart = renderTempHistoryChart(tempFiltered, chartWidth, m.historyStart, m.historyEnd)
-		m.cachedHistoryChart = renderPanel(fmt.Sprintf("Temperature History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
-	case viewPower:
-		// Filter to only selected zones
-		var powerFiltered []api.TimeSeries
-		for _, s := range m.historySeries {
-			if m.powerSelected[s.Label] {
-				powerFiltered = append(powerFiltered, s)
+			m.cachedHistoryChart = renderTempHistoryChart(tempFiltered, chartWidth, ch, m.historyStart, m.historyEnd)
+			m.cachedHistoryChart = renderPanel(fmt.Sprintf("Temperature History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
+		case hwSectionPower:
+			var powerFiltered []api.TimeSeries
+			for _, s := range m.historySeries {
+				if m.powerSelected[s.Label] {
+					powerFiltered = append(powerFiltered, s)
+				}
 			}
+			m.cachedHistoryChart = renderPowerHistoryChart(powerFiltered, chartWidth, ch, m.historyStart, m.historyEnd)
+			m.cachedHistoryChart = renderPanel(fmt.Sprintf("Power History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
+		default:
+			m.cachedHistoryChart = ""
 		}
-		m.cachedHistoryChart = renderPowerHistoryChart(powerFiltered, chartWidth, m.historyStart, m.historyEnd)
-		m.cachedHistoryChart = renderPanel(fmt.Sprintf("Power History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
 	default:
 		m.cachedHistoryChart = ""
 	}
@@ -690,7 +723,7 @@ func (m *Model) regenerateHistoryChart() {
 }
 
 func (m *Model) hasHistory() bool {
-	return m.current == viewCPU || m.current == viewMemory || m.current == viewDisk || m.current == viewTemperature || m.current == viewNetwork || m.current == viewPower || m.current == viewProcess
+	return m.current == viewCPU || m.current == viewMemory || m.current == viewDisk || m.current == viewNetwork || m.current == viewHardware || m.current == viewProcess
 }
 
 // bucketDuration returns the aggregation bucket size for a given time range,
@@ -824,13 +857,13 @@ func (m *Model) switchView(v view) tea.Cmd {
 		if !m.netSparkInited {
 			m.initNetSparklines()
 		}
-	case viewTemperature:
+	case viewHardware:
 		m.refreshTempData()
+		m.refreshPowerData()
+		m.refreshMemData() // for ECC
 		if !m.tempSparkInited {
 			m.initTempSparklines()
 		}
-	case viewPower:
-		m.refreshPowerData()
 		if !m.powerSparkInited {
 			m.initPowerSparklines()
 		}
@@ -996,7 +1029,7 @@ func (m *Model) refreshTempData() {
 	}
 	m.d("refresh: temp (%s)", time.Since(t))
 	m.tempData = temps
-	m.lastDataChange[viewTemperature] = time.Now()
+	m.lastDataChange[viewHardware] = time.Now()
 }
 
 func (m *Model) refreshPowerData() {
@@ -1013,7 +1046,7 @@ func (m *Model) refreshPowerData() {
 	}
 	m.d("refresh: power (%s)", time.Since(t))
 	m.powerData = zones
-	m.lastDataChange[viewPower] = time.Now()
+	m.lastDataChange[viewHardware] = time.Now()
 }
 
 func (m *Model) refreshAlertsData() {
@@ -1290,6 +1323,18 @@ func (m *Model) loadSelections() {
 			}
 		}
 	}
+
+	// Hardware section
+	if v, ok := prefs["hardware_section"]; ok {
+		switch v {
+		case "1":
+			m.hardwareSection = hwSectionPower
+		case "2":
+			m.hardwareSection = hwSectionECC
+		default:
+			m.hardwareSection = hwSectionTemp
+		}
+	}
 }
 
 // selectedProcess returns the currently selected process after applying filter+sort,
@@ -1459,21 +1504,10 @@ func (m *Model) loadHistoryRange() {
 	}
 }
 
-// updateVisibleTabs rebuilds the list of visible tabs based on data availability.
-// Temp and Power tabs are hidden if no data is available from those collectors.
-// Uses cached m.tempData / m.powerData (seeded at startup) to avoid API calls.
+// updateVisibleTabs rebuilds the list of visible tabs.
+// Hardware tab is always present (contains temp, power, ECC sub-sections).
 func (m *Model) updateVisibleTabs() {
-	tabs := []view{viewDashboard, viewCPU, viewMemory, viewDisk, viewNetwork}
-
-	if len(m.tempData) > 0 {
-		tabs = append(tabs, viewTemperature)
-	}
-
-	if len(m.powerData) > 0 {
-		tabs = append(tabs, viewPower)
-	}
-
-	tabs = append(tabs, viewProcess, viewAlerts)
+	tabs := []view{viewDashboard, viewCPU, viewMemory, viewDisk, viewNetwork, viewHardware, viewProcess, viewAlerts}
 	m.visibleTabs = tabs
 
 	// If current view is no longer visible, switch to dashboard
@@ -1828,8 +1862,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		// Temperature view: j/k/up/down navigate sensor list, space toggles
-		if m.current == viewTemperature {
+		// Hardware view: tab cycles sub-sections, up/down/space/a control active section
+		if m.current == viewHardware {
 			// Forward scroll keys to viewport
 			switch msg.String() {
 			case "pgup", "pgdown", "ctrl+u", "ctrl+d", "home", "end":
@@ -1838,83 +1872,91 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 			switch msg.String() {
-			case "down":
-				if len(m.tempSensorNames) > 0 {
-					m.tempCursor = (m.tempCursor + 1) % len(m.tempSensorNames)
-				}
-				return m, nil
-			case "up":
-				if len(m.tempSensorNames) > 0 {
-					m.tempCursor = (m.tempCursor - 1 + len(m.tempSensorNames)) % len(m.tempSensorNames)
-				}
-				return m, nil
-			case " ":
-				if m.tempCursor < len(m.tempSensorNames) {
-					name := m.tempSensorNames[m.tempCursor]
-					m.tempSelected[name] = !m.tempSelected[name]
-				}
-				m.saveTempSelection()
+			case "tab":
+				m.hardwareSection = (m.hardwareSection + 1) % 3
+				m.cachedHistoryChart = ""
 				m.regenerateHistoryChart()
+				go m.client.SetPreference("hardware_section", fmt.Sprintf("%d", m.hardwareSection))
 				return m, nil
-			case "a":
-				// Toggle all: if all selected, deselect all; otherwise select all
-				allSelected := true
-				for _, name := range m.tempSensorNames {
-					if !m.tempSelected[name] {
-						allSelected = false
-						break
-					}
-				}
-				for _, name := range m.tempSensorNames {
-					m.tempSelected[name] = !allSelected
-				}
-				m.saveTempSelection()
+			case "shift+tab":
+				m.hardwareSection = (m.hardwareSection + 2) % 3
+				m.cachedHistoryChart = ""
 				m.regenerateHistoryChart()
+				go m.client.SetPreference("hardware_section", fmt.Sprintf("%d", m.hardwareSection))
 				return m, nil
 			}
-		}
-		// Power view: j/k/up/down navigate zone list, space toggles
-		if m.current == viewPower {
-			// Forward scroll keys to viewport
-			switch msg.String() {
-			case "pgup", "pgdown", "ctrl+u", "ctrl+d", "home", "end":
-				var cmd tea.Cmd
-				m.viewport, cmd = m.viewport.Update(msg)
-				return m, cmd
-			}
-			switch msg.String() {
-			case "down":
-				if len(m.powerZoneNames) > 0 {
-					m.powerCursor = (m.powerCursor + 1) % len(m.powerZoneNames)
-				}
-				return m, nil
-			case "up":
-				if len(m.powerZoneNames) > 0 {
-					m.powerCursor = (m.powerCursor - 1 + len(m.powerZoneNames)) % len(m.powerZoneNames)
-				}
-				return m, nil
-			case " ":
-				if m.powerCursor < len(m.powerZoneNames) {
-					name := m.powerZoneNames[m.powerCursor]
-					m.powerSelected[name] = !m.powerSelected[name]
-				}
-				m.savePowerSelection()
-				m.regenerateHistoryChart()
-				return m, nil
-			case "a":
-				allSelected := true
-				for _, name := range m.powerZoneNames {
-					if !m.powerSelected[name] {
-						allSelected = false
-						break
+			// Delegate to active sub-section
+			switch m.hardwareSection {
+			case hwSectionTemp:
+				switch msg.String() {
+				case "down":
+					if len(m.tempSensorNames) > 0 {
+						m.tempCursor = (m.tempCursor + 1) % len(m.tempSensorNames)
 					}
+					return m, nil
+				case "up":
+					if len(m.tempSensorNames) > 0 {
+						m.tempCursor = (m.tempCursor - 1 + len(m.tempSensorNames)) % len(m.tempSensorNames)
+					}
+					return m, nil
+				case " ":
+					if m.tempCursor < len(m.tempSensorNames) {
+						name := m.tempSensorNames[m.tempCursor]
+						m.tempSelected[name] = !m.tempSelected[name]
+					}
+					m.saveTempSelection()
+					m.regenerateHistoryChart()
+					return m, nil
+				case "a":
+					allSelected := true
+					for _, name := range m.tempSensorNames {
+						if !m.tempSelected[name] {
+							allSelected = false
+							break
+						}
+					}
+					for _, name := range m.tempSensorNames {
+						m.tempSelected[name] = !allSelected
+					}
+					m.saveTempSelection()
+					m.regenerateHistoryChart()
+					return m, nil
 				}
-				for _, name := range m.powerZoneNames {
-					m.powerSelected[name] = !allSelected
+			case hwSectionPower:
+				switch msg.String() {
+				case "down":
+					if len(m.powerZoneNames) > 0 {
+						m.powerCursor = (m.powerCursor + 1) % len(m.powerZoneNames)
+					}
+					return m, nil
+				case "up":
+					if len(m.powerZoneNames) > 0 {
+						m.powerCursor = (m.powerCursor - 1 + len(m.powerZoneNames)) % len(m.powerZoneNames)
+					}
+					return m, nil
+				case " ":
+					if m.powerCursor < len(m.powerZoneNames) {
+						name := m.powerZoneNames[m.powerCursor]
+						m.powerSelected[name] = !m.powerSelected[name]
+					}
+					m.savePowerSelection()
+					m.regenerateHistoryChart()
+					return m, nil
+				case "a":
+					allSelected := true
+					for _, name := range m.powerZoneNames {
+						if !m.powerSelected[name] {
+							allSelected = false
+							break
+						}
+					}
+					for _, name := range m.powerZoneNames {
+						m.powerSelected[name] = !allSelected
+					}
+					m.savePowerSelection()
+					m.regenerateHistoryChart()
+					return m, nil
 				}
-				m.savePowerSelection()
-				m.regenerateHistoryChart()
-				return m, nil
 			}
 		}
 		// Process view: j/k navigate, c/m/p/t/f change sort
@@ -2338,8 +2380,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.d("pinnedHistoryResult: incremental, %d series updated (%s)", len(merged), msg.duration)
 			m.procPinnedSeries = merged
 			chartWidth := m.width - 4
+			ch := chartHeightForTerminal(m.height)
 			rangeLabel := m.historyRangeLabel()
-			m.procPinnedChart = renderProcessHistoryChart(merged, chartWidth, msg.windowStart, msg.end, m.pinnedProcesses)
+			m.procPinnedChart = renderProcessHistoryChart(merged, chartWidth, ch, msg.windowStart, msg.end, m.pinnedProcesses)
 			m.procPinnedChart = renderPanel(fmt.Sprintf("Pinned Process CPU [%s]", rangeLabel), m.procPinnedChart+historyHelpInline(rangeLabel), m.width)
 			if m.ready {
 				m.viewport.SetContent(m.renderCurrentContent())
@@ -2362,8 +2405,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		sort.Strings(m.procPinnedNames)
 		chartWidth := m.width - 4
+		ch := chartHeightForTerminal(m.height)
 		rangeLabel := m.historyRangeLabel()
-		m.procPinnedChart = renderProcessHistoryChart(msg.series, chartWidth, msg.start, msg.end, m.pinnedProcesses)
+		m.procPinnedChart = renderProcessHistoryChart(msg.series, chartWidth, ch, msg.start, msg.end, m.pinnedProcesses)
 		m.procPinnedChart = renderPanel(fmt.Sprintf("Pinned Process CPU [%s]", rangeLabel), m.procPinnedChart+historyHelpInline(rangeLabel), m.width)
 		if m.ready {
 			m.viewport.SetContent(m.renderCurrentContent())
@@ -2434,12 +2478,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case viewNetwork:
 			m.refreshNetData()
 			m.updateNetSparklines(m.netData)
-		case viewTemperature:
+		case viewHardware:
 			m.refreshTempData()
 			m.updateTempSparklines(m.tempData)
-		case viewPower:
 			m.refreshPowerData()
 			m.updatePowerSparklines(m.powerData)
+			m.refreshMemData() // for ECC
 		case viewProcess:
 			m.refreshProcessData()
 		case viewAlerts:
@@ -2469,15 +2513,16 @@ func (m *Model) renderCurrentContent() string {
 	case viewCPU:
 		return renderCPUView(m.cpuData, m.width, m.cachedHistoryChart)
 	case viewMemory:
-		return renderMemView(m.memData, m.eccData, m.width, m.cachedHistoryChart)
+		return renderMemView(m.memData, m.width, m.cachedHistoryChart)
 	case viewDisk:
 		return renderDiskView(m.diskData, m.width, m.cachedHistoryChart)
 	case viewNetwork:
 		return renderNetView(m.netData, m.width, m.cachedHistoryChart, m.netSparkData, m.netSelected, m.netCursor, m.netIfaceNames, m.netDisplayBits)
-	case viewTemperature:
-		return renderTempView(m.tempData, m.width, m.cachedHistoryChart, m.tempSparkData, m.tempSelected, m.tempCursor)
-	case viewPower:
-		return renderPowerView(m.powerData, m.width, m.cachedHistoryChart, m.powerSparkData, m.powerSelected, m.powerCursor)
+	case viewHardware:
+		return renderHardwareView(m.tempData, m.powerData, m.eccData, m.width, m.cachedHistoryChart,
+			m.tempSparkData, m.tempSelected, m.tempCursor,
+			m.powerSparkData, m.powerSelected, m.powerCursor,
+			m.hardwareSection)
 	case viewProcess:
 		chart := m.cachedHistoryChart
 		if m.procChartPinned && m.procPinnedChart != "" {

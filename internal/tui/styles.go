@@ -246,8 +246,7 @@ var tabInfo = map[view]struct {
 	viewMemory:      {"Memory", "Mem"},
 	viewDisk:        {"Disk", "Disk"},
 	viewNetwork:     {"Network", "Net"},
-	viewTemperature: {"Temp", "Temp"},
-	viewPower:       {"Power", "Pwr"},
+	viewHardware:    {"Hardware", "HW"},
 	viewProcess:     {"Procs", "Proc"},
 	viewAlerts:      {"Alerts", "Alert"},
 }
@@ -389,8 +388,7 @@ var collectorsForView = map[view][]string{
 	viewMemory:      {"memory", "ecc"},
 	viewDisk:        {"disk"},
 	viewNetwork:     {"network"},
-	viewTemperature: {"temperature"},
-	viewPower:       {"power"},
+	viewHardware:    {"temperature", "power", "ecc"},
 	viewProcess:     {"process"},
 }
 

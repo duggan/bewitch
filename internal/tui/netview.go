@@ -6,7 +6,6 @@ import (
 
 	"github.com/ross/bewitch/internal/api"
 
-	"github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 	"github.com/NimbleMarkets/ntcharts/sparkline"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
@@ -178,78 +177,20 @@ func renderNetView(ifaces []api.NetworkMetric, width int, cachedChart string, sp
 	return b.String()
 }
 
-func renderNetHistoryChart(series []api.TimeSeries, width int, start, end time.Time, displayBits bool) string {
-	maxVal := 0.0
-	for _, s := range series {
-		for _, p := range s.Points {
-			if p.Value > maxVal {
-				maxVal = p.Value
-			}
-		}
+func renderNetHistoryChart(series []api.TimeSeries, width, height int, start, end time.Time, displayBits bool) string {
+	yFmt := yFmtNetBytes
+	if displayBits {
+		yFmt = yFmtNetBits
 	}
-	if maxVal < 1024 {
-		maxVal = 1024
-	}
-	// Round up to nice boundary
-	maxVal = maxVal * 1.1
-
-	chartWidth := width
-	if chartWidth < 20 {
-		chartWidth = 20
-	}
-	chartHeight := 12
-
-	opts := []timeserieslinechart.Option{
-		timeserieslinechart.WithTimeRange(start, end),
-		timeserieslinechart.WithYRange(0, maxVal),
-		timeserieslinechart.WithXLabelFormatter(xLabelFormatter(end.Sub(start))),
-		timeserieslinechart.WithYLabelFormatter(func(_ int, v float64) string {
-			if displayBits {
-				return humanBits(uint64(v))
-			}
-			return humanBytes(uint64(v)) + "/s"
-		}),
-	}
-
-	for i, s := range series {
-		if len(s.Points) == 0 {
-			continue
-		}
-		color := chartColors[i%len(chartColors)]
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		points := make([]timeserieslinechart.TimePoint, len(s.Points))
-		for j, p := range s.Points {
-			points[j] = timeserieslinechart.TimePoint{
-				Time:  time.Unix(0, p.TimestampNS),
-				Value: p.Value,
-			}
-		}
-		points = forwardFillPoints(points, end)
-		opts = append(opts,
-			timeserieslinechart.WithDataSetStyle(s.Label, style),
-			timeserieslinechart.WithDataSetTimeSeries(s.Label, points),
-		)
-	}
-
-	chart := timeserieslinechart.New(chartWidth, chartHeight, opts...)
-	chart.DrawAll()
-
-	// Legend: show "iface rx" / "iface tx" with colors
-	var legend strings.Builder
-	for i, s := range series {
-		if len(s.Points) == 0 {
-			continue
-		}
-		color := chartColors[i%len(chartColors)]
-		lstyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
-		// Convert "iface_rx" -> "iface rx"
-		label := strings.Replace(s.Label, "_rx", " rx", 1)
-		label = strings.Replace(label, "_tx", " tx", 1)
-		if i > 0 {
-			legend.WriteString("  ")
-		}
-		legend.WriteString(lstyle.Render("━ " + label))
-	}
-
-	return chart.View() + "\n" + legend.String()
+	return renderBrailleChart(chartConfig{
+		series:         series,
+		width:          width,
+		height:         height,
+		start:          start,
+		end:            end,
+		yMin:           0,
+		yMax:           autoMaxY(series, 1024, 0),
+		yFormatter:     yFmt,
+		labelTransform: netLabelTransform,
+	})
 }
