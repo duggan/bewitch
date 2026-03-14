@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ross/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/api"
 )
 
 func TestFormatValue(t *testing.T) {

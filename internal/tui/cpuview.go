@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ross/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/api"
 )
 
 func renderCPUView(cores []api.CPUCoreMetric, width int, cachedChart string) string {

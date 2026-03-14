@@ -15,7 +15,7 @@ import (
 	"strings"
 
 	"github.com/knz/bubbline"
-	"github.com/ross/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/api"
 )
 
 // Config holds the configuration for the REPL.

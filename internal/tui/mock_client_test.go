@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ross/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/api"
 )
 
 // mockClient implements daemonClient with canned responses for testing.

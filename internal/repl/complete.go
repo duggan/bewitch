@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/knz/bubbline/editline"
-	"github.com/ross/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/api"
 )
 
 var dotCommands = []string{

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ross/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/config"
 )
 
 // CommandNotifier delivers alerts by executing a shell command.

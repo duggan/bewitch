@@ -15,9 +15,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
-	"github.com/ross/bewitch/internal/config"
-	"github.com/ross/bewitch/internal/repl"
-	"github.com/ross/bewitch/internal/tui"
+	"github.com/duggan/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/repl"
+	"github.com/duggan/bewitch/internal/tui"
 )
 
 var version = "dev"

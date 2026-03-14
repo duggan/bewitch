@@ -1,4 +1,4 @@
-module github.com/ross/bewitch
+module github.com/duggan/bewitch
 
 go 1.26.1
 

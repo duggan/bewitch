@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ross/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/config"
 )
 
 func TestCommandNotifierNameMethod(t *testing.T) {

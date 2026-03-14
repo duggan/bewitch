@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ross/bewitch/internal/api"
-	"github.com/ross/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/config"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/table"

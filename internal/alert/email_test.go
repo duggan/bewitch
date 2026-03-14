@@ -3,7 +3,7 @@ package alert
 import (
 	"testing"
 
-	"github.com/ross/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/config"
 )
 
 func TestEmailDestIsStartTLS(t *testing.T) {

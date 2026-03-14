@@ -15,8 +15,8 @@ import (
 
 	"github.com/charmbracelet/log"
 
-	"github.com/ross/bewitch/internal/alert"
-	"github.com/ross/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/alert"
+	"github.com/duggan/bewitch/internal/config"
 )
 
 // Server is the daemon HTTP API server over a unix socket (and optionally TCP).

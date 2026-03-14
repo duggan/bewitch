@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/log"
 
-	"github.com/ross/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/config"
 )
 
 // Engine periodically evaluates alert rules.

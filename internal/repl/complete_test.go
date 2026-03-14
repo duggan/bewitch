@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/knz/bubbline/editline"
-	"github.com/ross/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/api"
 )
 
 func mockQueryFn(sql string) (*api.QueryResponse, error) {

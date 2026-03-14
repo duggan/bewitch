@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ross/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/api"
 )
 
 // ErrNotModified is returned by Get* methods when the server responds with

@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/log"
 
-	"github.com/ross/bewitch/internal/alert"
+	"github.com/duggan/bewitch/internal/alert"
 )
 
 func isJSONBody(r *http.Request) bool {

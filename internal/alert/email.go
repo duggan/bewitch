@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ross/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/config"
 )
 
 // EmailNotifier delivers alerts via SMTP email.

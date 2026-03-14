@@ -13,7 +13,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/duckdb/duckdb-go/v2"
-	"github.com/ross/bewitch/internal/alert"
+	"github.com/duggan/bewitch/internal/alert"
 )
 
 func truncateSQL(s string) string {

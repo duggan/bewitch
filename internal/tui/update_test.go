@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ross/bewitch/internal/api"
-	"github.com/ross/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/config"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

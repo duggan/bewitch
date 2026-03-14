@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ross/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/config"
 
 	"github.com/charmbracelet/lipgloss"
 )

@@ -13,8 +13,8 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/duckdb/duckdb-go/v2"
-	"github.com/ross/bewitch/internal/collector"
-	"github.com/ross/bewitch/internal/db"
+	"github.com/duggan/bewitch/internal/collector"
+	"github.com/duggan/bewitch/internal/db"
 )
 
 // processKey uniquely identifies a process instance (PID reuse is handled by start_time)

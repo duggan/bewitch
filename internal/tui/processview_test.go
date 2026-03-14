@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ross/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/api"
 )
 
 func TestSortProcesses(t *testing.T) {

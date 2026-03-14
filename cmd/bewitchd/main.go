@@ -14,12 +14,12 @@ import (
 
 	"github.com/charmbracelet/log"
 
-	"github.com/ross/bewitch/internal/alert"
-	"github.com/ross/bewitch/internal/api"
-	"github.com/ross/bewitch/internal/collector"
-	"github.com/ross/bewitch/internal/config"
-	"github.com/ross/bewitch/internal/db"
-	"github.com/ross/bewitch/internal/store"
+	"github.com/duggan/bewitch/internal/alert"
+	"github.com/duggan/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/collector"
+	"github.com/duggan/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/db"
+	"github.com/duggan/bewitch/internal/store"
 )
 
 var version = "dev"

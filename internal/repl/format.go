@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ross/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/api"
 	"golang.org/x/term"
 )
 

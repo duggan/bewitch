@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Ross <ross@example.com>
 Build-Depends: debhelper-compat (= 13)
 Standards-Version: 4.6.0
-Homepage: https://github.com/ross/bewitch
+Homepage: https://github.com/duggan/bewitch
 
 Package: bewitch
 Architecture: any
