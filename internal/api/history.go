@@ -230,6 +230,7 @@ func (s *Server) handleHistoryCPU(w http.ResponseWriter, r *http.Request) {
 		var ts time.Time
 		var userAvg, sysAvg, ioAvg float64
 		if err := rows.Scan(&ts, &userAvg, &sysAvg, &ioAvg); err != nil {
+			log.Debugf("history/cpu: scan error: %v", err)
 			continue
 		}
 		ns := ts.UnixNano()
@@ -293,6 +294,7 @@ func (s *Server) handleHistoryMemory(w http.ResponseWriter, r *http.Request) {
 		var usedPct float64
 		var swapPct *float64
 		if err := rows.Scan(&ts, &usedPct, &swapPct); err != nil {
+			log.Debugf("history/memory: scan error: %v", err)
 			continue
 		}
 		ns := ts.UnixNano()
@@ -366,8 +368,9 @@ func (s *Server) handleHistoryDisk(w http.ResponseWriter, r *http.Request) {
 		rowCount++
 		var ts time.Time
 		var mount string
-		var usedPct float64
+		var usedPct *float64
 		if err := rows.Scan(&ts, &mount, &usedPct); err != nil {
+			log.Debugf("history/disk: scan error: %v", err)
 			continue
 		}
 		label := "disk_" + mount
@@ -376,7 +379,11 @@ func (s *Server) handleHistoryDisk(w http.ResponseWriter, r *http.Request) {
 			ser = &TimeSeries{Label: label}
 			seriesMap[label] = ser
 		}
-		ser.Points = append(ser.Points, TimeSeriesPoint{ts.UnixNano(), usedPct})
+		pct := 0.0
+		if usedPct != nil {
+			pct = *usedPct
+		}
+		ser.Points = append(ser.Points, TimeSeriesPoint{ts.UnixNano(), pct})
 	}
 
 	series := make([]TimeSeries, 0, len(seriesMap))
@@ -449,6 +456,7 @@ func (s *Server) handleHistoryTemperature(w http.ResponseWriter, r *http.Request
 		var sensor string
 		var tempAvg float64
 		if err := rows.Scan(&ts, &sensor, &tempAvg); err != nil {
+			log.Debugf("history/temperature: scan error: %v", err)
 			continue
 		}
 		ser, ok := seriesMap[sensor]
@@ -532,6 +540,7 @@ func (s *Server) handleHistoryNetwork(w http.ResponseWriter, r *http.Request) {
 		var iface string
 		var rxAvg, txAvg float64
 		if err := rows.Scan(&ts, &iface, &rxAvg, &txAvg); err != nil {
+			log.Debugf("history/network: scan error: %v", err)
 			continue
 		}
 		ns := ts.UnixNano()
@@ -617,6 +626,7 @@ func (s *Server) handleHistoryPower(w http.ResponseWriter, r *http.Request) {
 		var zone string
 		var wattsAvg float64
 		if err := rows.Scan(&ts, &zone, &wattsAvg); err != nil {
+			log.Debugf("history/power: scan error: %v", err)
 			continue
 		}
 		ser, ok := seriesMap[zone]
@@ -678,6 +688,7 @@ func (s *Server) handleHistoryProcess(w http.ResponseWriter, r *http.Request) {
 		var name string
 		var cpuAvg float64
 		if err := rows.Scan(&ts, &pid, &name, &cpuAvg); err != nil {
+			log.Debugf("history/process: scan error: %v", err)
 			continue
 		}
 		// Use name as label (pid can change if process restarts)
