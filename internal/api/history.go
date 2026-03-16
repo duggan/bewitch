@@ -290,13 +290,18 @@ func (s *Server) handleHistoryMemory(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var ts time.Time
-		var usedPct, swapPct float64
+		var usedPct float64
+		var swapPct *float64
 		if err := rows.Scan(&ts, &usedPct, &swapPct); err != nil {
 			continue
 		}
 		ns := ts.UnixNano()
 		memSeries.Points = append(memSeries.Points, TimeSeriesPoint{ns, usedPct})
-		swapSeries.Points = append(swapSeries.Points, TimeSeriesPoint{ns, swapPct})
+		swap := 0.0
+		if swapPct != nil {
+			swap = *swapPct
+		}
+		swapSeries.Points = append(swapSeries.Points, TimeSeriesPoint{ns, swap})
 	}
 
 	log.Debugf("history/memory: %s source=%s rows=%d", time.Since(queryStart), sourceLabel(source), len(memSeries.Points))
