@@ -154,6 +154,7 @@ To release a new version:
 1. Update `debian/changelog` with new version and changes
 2. Run `make deb` on a Debian/Ubuntu system
 3. Test with `sudo dpkg -i ../bewitch_<version>_<arch>.deb`
+4. Add the new version to the docs site version dropdown in `site/src/versions.ts`
 
 ## Documentation
 

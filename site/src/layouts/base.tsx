@@ -39,6 +39,21 @@ document.addEventListener('click', function(e) {
   });
 });
 
+document.addEventListener('click', function(e) {
+  var toggle = e.target.closest('[data-version-toggle]');
+  var wrap = toggle && toggle.closest('[id$="-wrap"]');
+  var dropdowns = document.querySelectorAll('#version-dropdown, #version-dropdown-mobile');
+  if (toggle && wrap) {
+    var dd = wrap.querySelector('[id^="version-dropdown"]');
+    dropdowns.forEach(function(d) { if (d !== dd) d.classList.add('hidden'); });
+    if (dd) dd.classList.toggle('hidden');
+    return;
+  }
+  if (!e.target.closest('#version-dropdown') && !e.target.closest('#version-dropdown-mobile')) {
+    dropdowns.forEach(function(d) { d.classList.add('hidden'); });
+  }
+});
+
 (function() {
   var tabs = document.getElementById('demo-tabs');
   var slides = document.getElementById('demo-slides');

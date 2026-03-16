@@ -1,4 +1,5 @@
 import type { FC } from 'hono/jsx'
+import { VersionDropdown, VersionDropdownMobile } from './version-dropdown'
 
 const sections = [
   { slug: '', label: 'Overview' },
@@ -17,6 +18,9 @@ export const DocsSidebar: FC<{ active?: string; base?: string }> = ({ active, ba
   <aside class="w-56 shrink-0 hidden lg:block">
     <div class="sticky top-18 space-y-0.5">
       <p class="font-mono text-xs text-dim uppercase tracking-wider mb-3 px-3">Documentation</p>
+      <div class="px-3">
+        <VersionDropdown current={base} />
+      </div>
       {sections.map(s => {
         const href = `${base}${s.slug}`
         return (
@@ -38,6 +42,7 @@ export const DocsSidebar: FC<{ active?: string; base?: string }> = ({ active, ba
 
 export const DocsMobileNav: FC<{ active?: string; base?: string }> = ({ active, base = '/docs' }) => (
   <div class="lg:hidden mb-6 overflow-x-auto">
+    <VersionDropdownMobile current={base} />
     <div class="flex gap-2 pb-2">
       {sections.map(s => {
         const href = `${base}${s.slug}`
