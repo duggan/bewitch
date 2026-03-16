@@ -12,6 +12,7 @@ const sections = [
   { slug: '/remote-access', label: 'Remote Access' },
   { slug: '/api', label: 'API Reference' },
   { slug: '/archival', label: 'Storage & Archival' },
+  { slug: '/changelog', label: 'Changelog' },
 ]
 
 export const DocsSidebar: FC<{ active?: string; base?: string }> = ({ active, base = '/docs' }) => (

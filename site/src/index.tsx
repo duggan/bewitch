@@ -11,6 +11,7 @@ import { ReplDocs } from './pages/docs/repl'
 import { RemoteAccessDocs } from './pages/docs/remote-access'
 import { ApiDocs } from './pages/docs/api'
 import { ArchivalDocs } from './pages/docs/archival'
+import { ChangelogDocs } from './pages/docs/changelog'
 
 const app = new Hono()
 
@@ -25,5 +26,6 @@ app.get(`${docsBase}/repl`, c => c.html(<ReplDocs />))
 app.get(`${docsBase}/remote-access`, c => c.html(<RemoteAccessDocs />))
 app.get(`${docsBase}/api`, c => c.html(<ApiDocs />))
 app.get(`${docsBase}/archival`, c => c.html(<ArchivalDocs />))
+app.get(`${docsBase}/changelog`, c => c.html(<ChangelogDocs />))
 
 export default app

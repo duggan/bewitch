@@ -12,6 +12,7 @@ const sections = [
   { slug: '/remote-access', title: 'Remote Access', desc: 'TLS with TOFU fingerprint pinning and bearer token authentication.' },
   { slug: '/api', title: 'API Reference', desc: 'HTTP endpoints for metrics, alerts, history, query, export, and more.' },
   { slug: '/archival', title: 'Storage & Archival', desc: 'DuckDB storage, retention, compaction, Parquet archival, and snapshots.' },
+  { slug: '/changelog', title: 'Changelog', desc: 'Release history and notable changes by version.' },
 ]
 
 export const DocsIndex: FC = () => (

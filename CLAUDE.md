@@ -151,10 +151,11 @@ The `debian/` directory contains full packaging for Debian/Ubuntu:
 
 To release a new version:
 
-1. Update `debian/changelog` with new version and changes
-2. Run `make deb` on a Debian/Ubuntu system
-3. Test with `sudo dpkg -i ../bewitch_<version>_<arch>.deb`
-4. Add the new version to the docs site version dropdown in `site/src/versions.ts`
+1. Update `CHANGELOG.md` and `site/src/pages/docs/changelog.tsx` (use `/changelog` skill)
+2. Update `debian/changelog` with new version and changes
+3. Run `make deb` on a Debian/Ubuntu system
+4. Test with `sudo dpkg -i ../bewitch_<version>_<arch>.deb`
+5. Add the new version to the docs site version dropdown in `site/src/versions.ts`
 
 ## Documentation
 
