@@ -109,12 +109,12 @@ install_extras() {
 
     _found=""
 
-    # smartmontools — on Debian/Ubuntu, already handled via Recommends in the .deb
+    # Check for relevant hardware (show section if any GPU detected)
     if ! is_apt && ! command -v smartctl >/dev/null 2>&1; then _found=1; fi
-    if has_intel_gpu && ! command -v intel_gpu_top >/dev/null 2>&1; then _found=1; fi
-    if has_nvidia_gpu && ! command -v nvidia-smi >/dev/null 2>&1; then _found=1; fi
+    if has_intel_gpu; then _found=1; fi
+    if has_nvidia_gpu; then _found=1; fi
 
-    # Nothing to offer
+    # No relevant hardware detected
     [ -n "$_found" ] || return 0
 
     echo ""
@@ -128,8 +128,12 @@ install_extras() {
         offer_pkg intel_gpu_top intel-gpu-tools "Intel GPU monitoring"
     fi
 
-    if has_nvidia_gpu && ! command -v nvidia-smi >/dev/null 2>&1; then
-        info "note" "NVIDIA GPU detected — install your distribution's NVIDIA driver package for GPU monitoring"
+    if has_nvidia_gpu; then
+        if command -v nvidia-smi >/dev/null 2>&1; then
+            info "ok" "nvidia-smi already installed (NVIDIA GPU monitoring)"
+        else
+            info "note" "NVIDIA GPU detected — install your distribution's NVIDIA driver package for GPU monitoring"
+        fi
     fi
 }
 
