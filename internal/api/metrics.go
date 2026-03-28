@@ -556,7 +556,7 @@ func (s *Server) handleMetricsGPU(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("ETag", etag)
-		writeJSON(w, http.StatusOK, GPUResponse{GPUs: gpus})
+		writeJSON(w, http.StatusOK, GPUResponse{GPUs: gpus, Hints: s.gpuHints})
 		return
 	}
 	rows, err := s.dbFn().Query(`SELECT d.value, m.utilization_pct, m.memory_used_bytes, m.memory_total_bytes,
@@ -566,7 +566,7 @@ func (s *Server) handleMetricsGPU(w http.ResponseWriter, r *http.Request) {
 		WHERE m.ts = (SELECT MAX(ts) FROM gpu_metrics)
 		ORDER BY d.value`)
 	if err != nil {
-		writeJSON(w, http.StatusOK, GPUResponse{GPUs: []GPUMetric{}})
+		writeJSON(w, http.StatusOK, GPUResponse{GPUs: []GPUMetric{}, Hints: s.gpuHints})
 		return
 	}
 	defer rows.Close()
@@ -584,7 +584,7 @@ func (s *Server) handleMetricsGPU(w http.ResponseWriter, r *http.Request) {
 	if result == nil {
 		result = []GPUMetric{}
 	}
-	writeJSON(w, http.StatusOK, GPUResponse{GPUs: result})
+	writeJSON(w, http.StatusOK, GPUResponse{GPUs: result, Hints: s.gpuHints})
 }
 
 func (s *Server) handleMetricsProcess(w http.ResponseWriter, r *http.Request) {

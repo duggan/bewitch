@@ -1,6 +1,10 @@
 package collector
 
-import "time"
+import (
+	"fmt"
+	"os/exec"
+	"time"
+)
 
 // GPUDeviceSample holds metrics for a single GPU device.
 type GPUDeviceSample struct {
@@ -71,4 +75,25 @@ func (c *GPUCollector) Stop() {
 	for _, b := range c.backends {
 		b.stop()
 	}
+}
+
+// DetectGPUHints checks for GPU hardware and reports missing tools.
+// Returns actionable messages for cases where hardware is detected but
+// the required monitoring tool is not installed.
+func DetectGPUHints() []string {
+	var hints []string
+
+	if name := detectIntelGPUName(); name != "" {
+		if _, err := exec.LookPath("intel_gpu_top"); err != nil {
+			hints = append(hints, fmt.Sprintf("Intel GPU detected (%s) but intel_gpu_top not found. Install intel-gpu-tools to enable GPU monitoring.", name))
+		}
+	}
+
+	if detectNvidiaGPU() {
+		if _, err := exec.LookPath("nvidia-smi"); err != nil {
+			hints = append(hints, "NVIDIA GPU detected but nvidia-smi not found. Install your distribution's NVIDIA driver package to enable GPU monitoring.")
+		}
+	}
+
+	return hints
 }

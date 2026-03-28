@@ -52,7 +52,8 @@ type ECCResponse struct {
 }
 
 type GPUResponse struct {
-	GPUs []GPUMetric `json:"gpus"`
+	GPUs  []GPUMetric `json:"gpus"`
+	Hints []string    `json:"hints,omitempty"`
 }
 
 type AlertsResponse struct {

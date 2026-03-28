@@ -71,7 +71,7 @@ func (m *mockClient) GetTemperature() ([]api.TemperatureMetric, error) { return 
 
 func (m *mockClient) GetPower() ([]api.PowerMetric, error) { return m.power, nil }
 
-func (m *mockClient) GetGPU() ([]api.GPUMetric, error) { return nil, nil }
+func (m *mockClient) GetGPU() ([]api.GPUMetric, []string, error) { return nil, nil, nil }
 
 func (m *mockClient) GetProcesses() (*api.ProcessResponse, error) {
 	if m.procs != nil {

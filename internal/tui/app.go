@@ -132,6 +132,7 @@ type Model struct {
 	powerCursor      int
 	powerZoneNames   []string
 	gpuData          []api.GPUMetric
+	gpuHints         []string
 	gpuSparkData     map[string][]float64
 	gpuSparkInited   bool
 	gpuSelected      map[string]bool
@@ -1087,7 +1088,7 @@ func (m *Model) refreshPowerData() {
 
 func (m *Model) refreshGPUData() {
 	t := time.Now()
-	gpus, err := m.client.GetGPU()
+	gpus, hints, err := m.client.GetGPU()
 	if errors.Is(err, ErrNotModified) {
 		m.d("refresh: gpu 304 (%s)", time.Since(t))
 		return
@@ -1099,6 +1100,7 @@ func (m *Model) refreshGPUData() {
 	}
 	m.d("refresh: gpu (%s)", time.Since(t))
 	m.gpuData = gpus
+	m.gpuHints = hints
 	m.lastDataChange[viewHardware] = time.Now()
 }
 
@@ -1788,7 +1790,7 @@ func (m *Model) initGPUSparklines() {
 	}
 	if m.gpuSelected == nil {
 		m.gpuSelected = make(map[string]bool)
-		gpus, err := m.client.GetGPU()
+		gpus, _, err := m.client.GetGPU()
 		if err == nil {
 			m.gpuDeviceNames = make([]string, len(gpus))
 			for i, g := range gpus {
@@ -2743,7 +2745,7 @@ func (m *Model) renderCurrentContent() string {
 		return renderHardwareView(m.tempData, m.powerData, m.eccData, m.gpuData, m.width, m.cachedHistoryChart,
 			m.tempSparkData, m.tempSelected, m.tempCursor,
 			m.powerSparkData, m.powerSelected, m.powerCursor,
-			m.gpuSparkData, m.gpuSelected, m.gpuCursor,
+			m.gpuSparkData, m.gpuSelected, m.gpuCursor, m.gpuHints,
 			m.hardwareSection)
 	case viewProcess:
 		chart := m.cachedHistoryChart

@@ -25,6 +25,7 @@ func renderHardwareView(
 	gpuSparkData map[string][]float64,
 	gpuSelected map[string]bool,
 	gpuCursor int,
+	gpuHints []string,
 	activeSection int,
 ) string {
 	var b strings.Builder
@@ -72,7 +73,11 @@ func renderHardwareView(
 		b.WriteString(renderECCView(ecc, width))
 	case hwSectionGPU:
 		if !hasGPU {
-			b.WriteString(renderPanel("GPU", dimStyle.Render("No GPUs detected."), width))
+			msg := "No GPUs detected."
+			if len(gpuHints) > 0 {
+				msg = strings.Join(gpuHints, "\n")
+			}
+			b.WriteString(renderPanel("GPU", dimStyle.Render(msg), width))
 		} else {
 			b.WriteString(renderGPUView(gpus, width, cachedChart, gpuSparkData, gpuSelected, gpuCursor))
 		}

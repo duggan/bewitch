@@ -214,6 +214,13 @@ func main() {
 		})
 	}
 
+	if hints := collector.DetectGPUHints(); len(hints) > 0 {
+		apiServer.SetGPUHints(hints)
+		for _, h := range hints {
+			log.Warnf("GPU: %s", h)
+		}
+	}
+
 	go func() {
 		if err := apiServer.Start(); err != nil && err != http.ErrServerClosed {
 			log.Errorf("API server error: %v", err)

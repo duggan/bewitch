@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -80,6 +81,17 @@ func parseNvidiaSmiOutput(output string) ([]GPUDeviceSample, error) {
 		return nil, fmt.Errorf("no GPUs parsed from nvidia-smi output")
 	}
 	return gpus, nil
+}
+
+// detectNvidiaGPU checks for NVIDIA GPU hardware via DRM sysfs vendor IDs.
+func detectNvidiaGPU() bool {
+	cards, _ := filepath.Glob("/sys/class/drm/card[0-9]*/device/vendor")
+	for _, vendorFile := range cards {
+		if readString(vendorFile) == "0x10de" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseFloatField(s string) float64 {

@@ -50,6 +50,9 @@ type Server struct {
 	metricsSnapshot *metricsCache
 	metricsMu       sync.RWMutex
 
+	// Static hints about missing GPU tools (set once at startup)
+	gpuHints []string
+
 	// History response cache (avoids re-running expensive DB queries every TUI tick)
 	historyCache   map[string]*historyCacheEntry
 	historyCacheMu sync.RWMutex
@@ -280,6 +283,11 @@ func (s *Server) SetGPUSnapshot(gpus []GPUMetric) {
 	mc.gpus = gpus
 	mc.dash = nil
 	s.metricsMu.Unlock()
+}
+
+// SetGPUHints stores static hints about detected GPU hardware with missing tools.
+func (s *Server) SetGPUHints(hints []string) {
+	s.gpuHints = hints
 }
 
 // getCachedECC returns the cached ECC metrics.
