@@ -1,4 +1,4 @@
-.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy
+.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install
 
 VERSION := $(shell cat VERSION)
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
@@ -52,7 +52,17 @@ apt-upload:
 	scripts/upload-pool.sh dist/amd64/bewitch_*.deb dist/arm64/bewitch_*.deb \
 		dist/amd64/bewitch-*.tar.gz dist/arm64/bewitch-*.tar.gz
 
-deploy:
-	cd site && bun run build && wrangler pages deploy dist --project-name=bewitch --commit-dirty=true
+stamp-install:
+	@V=$$(cat VERSION) && \
+	sed 's/^VERSION="[^"]*"/VERSION="'"$$V"'"/' site/public/install.sh > site/public/install.sh.tmp && \
+	mv site/public/install.sh.tmp site/public/install.sh
 
-release: deb-docker apt-upload apt-repo deploy
+deploy:
+	cd site && bun run build
+	@V=$$(cat VERSION) && \
+	sed -e 's/^VERSION="[^"]*"/VERSION="'"$$V"'"/' \
+	    -e 's/BEWITCH_CHANNEL:-stable/BEWITCH_CHANNEL:-dev/' \
+	    site/public/install.sh > site/dist/install-dev.sh
+	cd site && wrangler pages deploy dist --project-name=bewitch --commit-dirty=true
+
+release: stamp-install deb-docker apt-upload apt-repo deploy

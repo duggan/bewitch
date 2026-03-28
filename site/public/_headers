@@ -2,6 +2,10 @@
   Content-Type: text/plain; charset=utf-8
   Cache-Control: public, max-age=300
 
+/install-dev.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: no-cache
+
 /*.css
   Cache-Control: public, max-age=31536000, immutable
 

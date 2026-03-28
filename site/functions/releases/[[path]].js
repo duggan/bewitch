@@ -14,12 +14,18 @@ export async function onRequestGet(context) {
 
   const name = key.split("/").pop();
 
-  return new Response(object.body, {
-    headers: {
-      "Content-Type": "application/gzip",
-      "Content-Disposition": `attachment; filename="${name}"`,
-      "Cache-Control": "public, max-age=86400",
-      "ETag": object.httpEtag,
-    },
-  });
+  const headers = {
+    "ETag": object.httpEtag,
+  };
+
+  if (name.endsWith(".txt")) {
+    headers["Content-Type"] = "text/plain; charset=utf-8";
+    headers["Cache-Control"] = "no-cache";
+  } else {
+    headers["Content-Type"] = "application/gzip";
+    headers["Content-Disposition"] = `attachment; filename="${name}"`;
+    headers["Cache-Control"] = "public, max-age=86400";
+  }
+
+  return new Response(object.body, { headers });
 }

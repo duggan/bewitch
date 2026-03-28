@@ -66,6 +66,18 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: scripts/upload-pool.sh dist/*.deb dist/*.tar.gz
 
+      - name: Upload dev version marker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          TARBALL=$(ls dist/bewitch-*-linux-*.tar.gz | head -1)
+          DEV_VERSION=$(basename "$TARBALL" | sed 's/^bewitch-//; s/-linux-.*$//')
+          echo "$DEV_VERSION" > /tmp/dev-version.txt
+          wrangler r2 object put "bewitch-apt/releases/dev-version.txt" \
+            --file /tmp/dev-version.txt --remote
+          rm -f /tmp/dev-version.txt
+
       - name: Clean up old dev packages from R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

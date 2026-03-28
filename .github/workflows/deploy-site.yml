@@ -32,6 +32,13 @@ jobs:
         working-directory: site
         run: bun run build
 
+      - name: Generate install-dev.sh
+        run: |
+          VERSION=$(cat VERSION)
+          sed -e "s/^VERSION=\"[^\"]*\"/VERSION=\"${VERSION}\"/" \
+              -e 's/BEWITCH_CHANNEL:-stable/BEWITCH_CHANNEL:-dev/' \
+              site/public/install.sh > site/dist/install-dev.sh
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:

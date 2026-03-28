@@ -10,8 +10,13 @@ Package: bewitch
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Recommends: smartmontools
+Suggests: intel-gpu-tools
 Description: Server monitoring daemon with TUI
  Bewitch is a lightweight server monitoring tool that collects system metrics
- (CPU, memory, disk, network, temperature, power, processes) and stores them
- in DuckDB. It includes a terminal UI for real-time monitoring and historical
- analysis, plus an alerting system with webhook support.
+ (CPU, memory, disk, network, temperature, power, GPU, processes) and stores
+ them in DuckDB. It includes a terminal UI for real-time monitoring and
+ historical analysis, plus an alerting system with webhook support.
+ .
+ Optional packages: intel-gpu-tools enables Intel iGPU monitoring via
+ intel_gpu_top. NVIDIA GPU monitoring requires nvidia-smi from the
+ distribution's NVIDIA driver package.

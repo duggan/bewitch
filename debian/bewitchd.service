@@ -9,11 +9,11 @@ Restart=on-failure
 RestartSec=5
 User=bewitch
 Group=bewitch
-SupplementaryGroups=disk
+SupplementaryGroups=disk video render
 StateDirectory=bewitch
 RuntimeDirectory=bewitch
-AmbientCapabilities=CAP_SYS_RAWIO
-CapabilityBoundingSet=CAP_SYS_RAWIO
+AmbientCapabilities=CAP_SYS_RAWIO CAP_PERFMON
+CapabilityBoundingSet=CAP_SYS_RAWIO CAP_PERFMON
 
 [Install]
 WantedBy=multi-user.target
