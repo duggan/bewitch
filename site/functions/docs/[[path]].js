@@ -1,22 +1,13 @@
 // Pages Function: serve versioned docs from R2 bucket
 //
 // Handles /docs/v*/** requests by fetching from R2.
-// Redirects /docs (bare) to the latest stable version.
-// All other /docs/* requests fall through to static assets (dev docs).
+// All other /docs/* requests fall through to static assets (latest docs).
 //
 // Binding required: R2 bucket "bewitch-apt" bound as "BUCKET"
-
-// Update this on each release to point /docs to the latest stable version.
-const LATEST_STABLE = 'v0.3.1';
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
   const path = url.pathname;
-
-  // Redirect /docs and /docs/ to latest stable version
-  if (path === '/docs' || path === '/docs/') {
-    return Response.redirect(new URL(`/docs/${LATEST_STABLE}`, url.origin).toString(), 302);
-  }
 
   // Only handle versioned docs: /docs/v0.2.0/..., /docs/v1.0.0/...
   if (!/^\/docs\/v\d/.test(path)) {
