@@ -69,6 +69,7 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 					huh.NewOption("Disk", "disk"),
 					huh.NewOption("Network", "network"),
 					huh.NewOption("Temperature", "temperature"),
+					huh.NewOption("GPU", "gpu"),
 					huh.NewOption("Process", "process"),
 				).
 				Value(&state.category),
@@ -102,7 +103,11 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 					return []huh.Option[string]{
 						huh.NewOption("Sustained high temperature", "threshold"),
 					}
-				case "process":
+			case "gpu":
+				return []huh.Option[string]{
+					huh.NewOption("Sustained GPU utilization", "threshold"),
+				}
+			case "process":
 					return []huh.Option[string]{
 						huh.NewOption("Process went down", "process_down"),
 						huh.NewOption("Process restarting (thrashing)", "process_thrashing"),
@@ -179,6 +184,17 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 				Validate(validateNotEmpty),
 		).WithHideFunc(func() bool {
 			return !(state.category == "temperature")
+		}),
+		// GPU device
+		huh.NewGroup(
+			huh.NewInput().
+				Title("GPU Name").
+				Description("GPU device name (as shown in hardware view)").
+				Placeholder("Intel UHD Graphics 770").
+				Value(&state.sensor).
+				Validate(validateNotEmpty),
+		).WithHideFunc(func() bool {
+			return !(state.category == "gpu")
 		}),
 		// Variance parameters (memory only)
 		huh.NewGroup(
@@ -320,6 +336,8 @@ func thresholdDesc(state *alertFormState) string {
 		return "Throughput in bytes/sec"
 	case "temperature":
 		return "Temperature in °C"
+	case "gpu":
+		return "GPU utilization percentage (0-100)"
 	}
 	return ""
 }
@@ -354,6 +372,9 @@ func (s *alertFormState) toAlertRuleMetric() api.AlertRuleMetric {
 			rule.InterfaceName = s.ifaceName
 		case "temperature":
 			rule.Metric = "temperature.sensor"
+			rule.Sensor = s.sensor
+		case "gpu":
+			rule.Metric = "gpu.utilization"
 			rule.Sensor = s.sensor
 		}
 	case "variance":

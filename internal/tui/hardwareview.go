@@ -13,6 +13,7 @@ func renderHardwareView(
 	temps []api.TemperatureMetric,
 	zones []api.PowerMetric,
 	ecc *api.ECCMetric,
+	gpus []api.GPUMetric,
 	width int,
 	cachedChart string,
 	tempSparkData map[string][]float64,
@@ -21,6 +22,9 @@ func renderHardwareView(
 	powerSparkData map[string][]float64,
 	powerSelected map[string]bool,
 	powerCursor int,
+	gpuSparkData map[string][]float64,
+	gpuSelected map[string]bool,
+	gpuCursor int,
 	activeSection int,
 ) string {
 	var b strings.Builder
@@ -29,6 +33,7 @@ func renderHardwareView(
 	hasTemp := len(temps) > 0
 	hasPower := len(zones) > 0
 	hasECC := ecc != nil
+	hasGPU := len(gpus) > 0
 
 	sectionCount := 0
 	if hasTemp {
@@ -40,10 +45,13 @@ func renderHardwareView(
 	if hasECC {
 		sectionCount++
 	}
+	if hasGPU {
+		sectionCount++
+	}
 
 	// Only show sub-tab bar if multiple sections have data
 	if sectionCount > 1 {
-		b.WriteString(renderHardwareSubTabs(activeSection, hasTemp, hasPower, hasECC, width))
+		b.WriteString(renderHardwareSubTabs(activeSection, hasTemp, hasPower, hasECC, hasGPU, width))
 		b.WriteString("\n")
 	}
 
@@ -62,12 +70,18 @@ func renderHardwareView(
 		}
 	case hwSectionECC:
 		b.WriteString(renderECCView(ecc, width))
+	case hwSectionGPU:
+		if !hasGPU {
+			b.WriteString(renderPanel("GPU", dimStyle.Render("No GPUs detected."), width))
+		} else {
+			b.WriteString(renderGPUView(gpus, width, cachedChart, gpuSparkData, gpuSelected, gpuCursor))
+		}
 	}
 
 	return b.String()
 }
 
-func renderHardwareSubTabs(active int, hasTemp, hasPower, hasECC bool, width int) string {
+func renderHardwareSubTabs(active int, hasTemp, hasPower, hasECC, hasGPU bool, width int) string {
 	activeStyle := lipgloss.NewStyle().Bold(true).Foreground(colorPink)
 	inactiveStyle := lipgloss.NewStyle().Foreground(colorDeepPurple)
 	dimmedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
@@ -81,6 +95,7 @@ func renderHardwareSubTabs(active int, hasTemp, hasPower, hasECC bool, width int
 		{"Temperature", hwSectionTemp, hasTemp},
 		{"Power", hwSectionPower, hasPower},
 		{"ECC", hwSectionECC, hasECC},
+		{"GPU", hwSectionGPU, hasGPU},
 	}
 
 	var parts []string

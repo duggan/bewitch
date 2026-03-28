@@ -137,6 +137,21 @@ func (r *ThresholdRule) buildQuery(cutoff time.Time) (string, []any, error) {
 			FROM temperature_metrics m
 			JOIN dimension_values d ON d.category = 'sensor' AND d.id = m.sensor_id
 			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, nil
+	case "gpu.utilization":
+		return `SELECT AVG(m.utilization_pct)
+			FROM gpu_metrics m
+			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
+			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, nil
+	case "gpu.temperature":
+		return `SELECT AVG(m.temp_celsius)
+			FROM gpu_metrics m
+			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
+			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, nil
+	case "gpu.power":
+		return `SELECT AVG(m.power_watts)
+			FROM gpu_metrics m
+			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
+			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported threshold metric: %s", r.cfg.Metric)
 	}

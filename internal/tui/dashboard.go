@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func renderDashboard(dash *api.DashboardData, width int, sparkData map[string][]float64, netSelected, tempSelected, powerSelected map[string]bool) string {
+func renderDashboard(dash *api.DashboardData, width int, sparkData map[string][]float64, netSelected, tempSelected, powerSelected, gpuSelected map[string]bool) string {
 	if dash == nil {
 		return dimStyle.Render("loading...")
 	}
@@ -51,6 +51,10 @@ func renderDashboard(dash *api.DashboardData, width int, sparkData map[string][]
 		if powerPanel != "" {
 			b.WriteString("\n" + renderPanel("Power", powerPanel, fullWidth))
 		}
+		gpuPanel := buildGPUPanel(dash, fullWidth, gpuSelected)
+		if gpuPanel != "" {
+			b.WriteString("\n" + renderPanel("GPU", gpuPanel, fullWidth))
+		}
 		procPanel := buildProcessPanel(dash, fullWidth)
 		if procPanel != "" {
 			b.WriteString("\n" + renderPanel("Processes", procPanel, fullWidth))
@@ -65,6 +69,7 @@ func renderDashboard(dash *api.DashboardData, width int, sparkData map[string][]
 	netPanel := buildNetPanel(dash, width, netSelected)
 	tempPanel := buildTempPanel(dash, width, tempSelected)
 	powerPanel := buildPowerPanel(dash, width, powerSelected)
+	gpuPanel := buildGPUPanel(dash, width, gpuSelected)
 
 	var b strings.Builder
 	b.WriteString(renderPanel("CPU", cpuPanel, width) + "\n")
@@ -76,6 +81,9 @@ func renderDashboard(dash *api.DashboardData, width int, sparkData map[string][]
 	}
 	if powerPanel != "" {
 		b.WriteString("\n" + renderPanel("Power", powerPanel, width))
+	}
+	if gpuPanel != "" {
+		b.WriteString("\n" + renderPanel("GPU", gpuPanel, width))
 	}
 	procPanel := buildProcessPanel(dash, width)
 	if procPanel != "" {
@@ -363,6 +371,35 @@ func buildPowerPanel(dash *api.DashboardData, width int, selected map[string]boo
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func buildGPUPanel(dash *api.DashboardData, width int, selected map[string]bool) string {
+	if len(dash.GPU) == 0 {
+		return ""
+	}
+	barWidth := width - 24
+	if barWidth < 10 {
+		barWidth = 10
+	}
+	if barWidth > 40 {
+		barWidth = 40
+	}
+	var b strings.Builder
+	for i, g := range dash.GPU {
+		if len(selected) > 0 && !selected[g.Name] {
+			continue
+		}
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		name := g.Name
+		if len(name) > 16 {
+			name = name[:16]
+		}
+		b.WriteString(labelStyle.Render(name) + renderBar(g.UtilizationPct, barWidth) +
+			valueStyle.Render(fmt.Sprintf(" %.0f%%  %dMHz", g.UtilizationPct, g.FrequencyMHz)))
+	}
+	return b.String()
 }
 
 func buildProcessPanel(dash *api.DashboardData, width int) string {

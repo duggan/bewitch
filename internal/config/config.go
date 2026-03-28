@@ -88,6 +88,7 @@ type CollectorsConfig struct {
 	Temperature TemperatureCollectorConfig `toml:"temperature"`
 	Power       PowerCollectorConfig       `toml:"power"`
 	Process     ProcessCollectorConfig     `toml:"process"`
+	GPU         GPUCollectorConfig         `toml:"gpu"`
 }
 
 type CPUCollectorConfig struct {
@@ -189,6 +190,24 @@ func (c *PowerCollectorConfig) GetInterval(defaultInterval time.Duration) time.D
 // IsEnabled returns whether the power collector is enabled.
 // Defaults to true if not explicitly set.
 func (c *PowerCollectorConfig) IsEnabled() bool {
+	if c.Enabled == nil {
+		return true
+	}
+	return *c.Enabled
+}
+
+type GPUCollectorConfig struct {
+	Interval string `toml:"interval"`
+	Enabled  *bool  `toml:"enabled"`
+}
+
+func (c *GPUCollectorConfig) GetInterval(defaultInterval time.Duration) time.Duration {
+	return collectorInterval(c.Interval, defaultInterval)
+}
+
+// IsEnabled returns whether the GPU collector is enabled.
+// Defaults to true if not explicitly set.
+func (c *GPUCollectorConfig) IsEnabled() bool {
 	if c.Enabled == nil {
 		return true
 	}

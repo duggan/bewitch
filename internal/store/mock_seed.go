@@ -52,6 +52,7 @@ func (s *Store) SeedMockHistory(duration time.Duration, interval time.Duration) 
 		{"sensor", "coretemp/Core 0"}, {"sensor", "coretemp/Core 1"},
 		{"sensor", "coretemp/Package id 0"}, {"sensor", "acpitz/temp1"},
 		{"zone", "package-0"}, {"zone", "package-0/core"}, {"zone", "package-0/uncore"},
+		{"gpu", "Intel UHD Graphics 770"}, {"gpu", "NVIDIA GeForce RTX 4090"},
 	}
 	dimIDs := make(map[string]int16)
 	for _, d := range dims {
@@ -98,6 +99,12 @@ func (s *Store) SeedMockHistory(duration time.Duration, interval time.Duration) 
 		return fmt.Errorf("prepare power: %w", err)
 	}
 	defer powerStmt.Close()
+
+	gpuStmt, err := tx.Prepare("INSERT INTO gpu_metrics (ts, gpu_id, utilization_pct, memory_used_bytes, memory_total_bytes, temp_celsius, power_watts, frequency_mhz, frequency_max_mhz, throttle_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		return fmt.Errorf("prepare gpu: %w", err)
+	}
+	defer gpuStmt.Close()
 
 	const (
 		memTotal     = 32 * 1024 * 1024 * 1024
@@ -202,6 +209,30 @@ func (s *Store) SeedMockHistory(duration time.Duration, interval time.Duration) 
 			for _, z := range zones {
 				powerStmt.Exec(ts, dimIDs[z.key], smoothWaveAt(t, z.min, z.max, z.period, z.phase))
 			}
+		}
+
+		// GPU
+		{
+			// Intel iGPU
+			gpuStmt.Exec(ts,
+				dimIDs["gpu/Intel UHD Graphics 770"],
+				smoothWaveAt(t, 5, 45, 60, 0),   // utilization
+				int64(0), int64(0),                // memory (iGPU = shared)
+				0.0,                               // temp (handled by temp collector)
+				smoothWaveAt(t, 1, 15, 90, 0.5),  // power
+				int32(smoothWaveAt(t, 300, 1500, 60, 0)), int32(1500), // freq
+				smoothWaveAt(t, 60, 98, 120, 1.0), // RC6
+			)
+			// NVIDIA discrete
+			gpuStmt.Exec(ts,
+				dimIDs["gpu/NVIDIA GeForce RTX 4090"],
+				smoothWaveAt(t, 10, 85, 45, 2.0),                     // utilization
+				int64(smoothWaveAt(t, 2e9, 18e9, 120, 0.5)), int64(24e9), // memory
+				smoothWaveAt(t, 35, 78, 90, 1.0),                     // temp
+				smoothWaveAt(t, 30, 350, 45, 1.5),                    // power
+				int32(smoothWaveAt(t, 210, 2520, 60, 0)), int32(2520), // freq
+				0.0, // throttle (N/A for NVIDIA)
+			)
 		}
 	}
 

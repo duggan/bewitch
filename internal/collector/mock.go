@@ -191,6 +191,39 @@ func (c *MockPowerCollector) Collect() (Sample, error) {
 	}}, nil
 }
 
+// --- GPU ---
+
+type MockGPUCollector struct{}
+
+func NewMockGPUCollector() *MockGPUCollector { return &MockGPUCollector{} }
+func (c *MockGPUCollector) Name() string     { return "gpu" }
+func (c *MockGPUCollector) Stop()            {}
+
+func (c *MockGPUCollector) Collect() (Sample, error) {
+	return Sample{Timestamp: time.Now(), Kind: "gpu", Data: GPUData{
+		GPUs: []GPUDeviceSample{
+			{
+				Name: "Intel UHD Graphics 770", Index: 0, Vendor: "intel",
+				UtilizationPct:  smoothWave(5, 45, 60, 0),
+				PowerWatts:      smoothWave(1, 15, 90, 0.5),
+				FrequencyMHz:    uint32(smoothWave(300, 1500, 60, 0)),
+				FrequencyMaxMHz: 1500,
+				ThrottlePct:     smoothWave(60, 98, 120, 1.0),
+			},
+			{
+				Name: "NVIDIA GeForce RTX 4090", Index: 1, Vendor: "nvidia",
+				UtilizationPct:   smoothWave(10, 85, 45, 2.0),
+				MemoryUsedBytes:  uint64(smoothWave(2e9, 18e9, 120, 0.5)),
+				MemoryTotalBytes: 24e9,
+				TempCelsius:      smoothWave(35, 78, 90, 1.0),
+				PowerWatts:       smoothWave(30, 350, 45, 1.5),
+				FrequencyMHz:     uint32(smoothWave(210, 2520, 60, 0)),
+				FrequencyMaxMHz:  2520,
+			},
+		},
+	}}, nil
+}
+
 // --- Process ---
 
 type mockProcDef struct {

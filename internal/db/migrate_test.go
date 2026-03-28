@@ -33,8 +33,8 @@ func TestFreshDB(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM schema_version`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("reading schema_version: %v", err)
 	}
-	if version != 3 {
-		t.Errorf("version = %d, want 3", version)
+	if version != 4 {
+		t.Errorf("version = %d, want 4", version)
 	}
 	if dirty {
 		t.Error("dirty = true, want false")
@@ -70,8 +70,8 @@ func TestExistingDBDetection(t *testing.T) {
 		t.Fatalf("reading schema_version: %v", err)
 	}
 	// Should be stamped at 1 (skipped initial), then ran migrations 2 and 3.
-	if version != 3 {
-		t.Errorf("version = %d, want 3", version)
+	if version != 4 {
+		t.Errorf("version = %d, want 4", version)
 	}
 	if dirty {
 		t.Error("dirty = true, want false")
@@ -115,7 +115,7 @@ func TestIdempotentRestart(t *testing.T) {
 	if err := db.QueryRow(`SELECT version FROM schema_version`).Scan(&version); err != nil {
 		t.Fatalf("reading version: %v", err)
 	}
-	if version != 3 {
-		t.Errorf("version = %d, want 3", version)
+	if version != 4 {
+		t.Errorf("version = %d, want 4", version)
 	}
 }

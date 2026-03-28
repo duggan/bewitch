@@ -277,6 +277,18 @@ func main() {
 			interval:  cfg.Collectors.Power.GetInterval(defaultInterval),
 		})
 	}
+	if cfg.Daemon.Mock || cfg.Collectors.GPU.IsEnabled() {
+		var gpuCollector collector.Collector
+		if cfg.Daemon.Mock {
+			gpuCollector = collector.NewMockGPUCollector()
+		} else {
+			gpuCollector = collector.NewGPUCollector()
+		}
+		scheduled = append(scheduled, scheduledCollector{
+			collector: gpuCollector,
+			interval:  cfg.Collectors.GPU.GetInterval(defaultInterval),
+		})
+	}
 	scheduled = append(scheduled, scheduledCollector{
 		collector: procCollector,
 		interval:  cfg.Collectors.Process.GetInterval(defaultInterval),
@@ -505,6 +517,13 @@ func main() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			alertEngine.Stop()
+			// Stop long-lived collector subprocesses (e.g. intel_gpu_top)
+			for _, sc := range scheduled {
+				type stopper interface{ Stop() }
+				if s, ok := sc.collector.(stopper); ok {
+					s.Stop()
+				}
+			}
 			apiServer.Shutdown(ctx)
 			close(writeCh)
 			writeWg.Wait() // drain remaining batches before DB close
@@ -662,6 +681,19 @@ func pushMetricsSnapshot(srv *api.Server, samples []collector.Sample) {
 			ecc = &api.ECCMetric{
 				Corrected: d.Corrected, Uncorrected: d.Uncorrected,
 			}
+		case collector.GPUData:
+			gpus := make([]api.GPUMetric, len(d.GPUs))
+			for i, g := range d.GPUs {
+				gpus[i] = api.GPUMetric{
+					Name: g.Name, Index: g.Index, Vendor: g.Vendor,
+					UtilizationPct: g.UtilizationPct,
+					MemoryUsedBytes: g.MemoryUsedBytes, MemoryTotalBytes: g.MemoryTotalBytes,
+					TempCelsius: g.TempCelsius, PowerWatts: g.PowerWatts,
+					FrequencyMHz: g.FrequencyMHz, FrequencyMaxMHz: g.FrequencyMaxMHz,
+					ThrottlePct: g.ThrottlePct,
+				}
+			}
+			srv.SetGPUSnapshot(gpus)
 		}
 	}
 	srv.SetMetricsSnapshot(cpu, mem, disks, net, temps, power, ecc)

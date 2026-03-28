@@ -34,6 +34,7 @@ type daemonClient interface {
 	GetNetwork() ([]api.NetworkMetric, error)
 	GetTemperature() ([]api.TemperatureMetric, error)
 	GetPower() ([]api.PowerMetric, error)
+	GetGPU() ([]api.GPUMetric, error)
 	GetProcesses() (*api.ProcessResponse, error)
 	GetAlerts() ([]api.AlertMetric, error)
 	GetHistory(metric string, start, end time.Time) ([]api.TimeSeries, error)
@@ -180,6 +181,14 @@ func (c *DaemonClient) GetPower() ([]api.PowerMetric, error) {
 		return nil, err
 	}
 	return resp.Zones, nil
+}
+
+func (c *DaemonClient) GetGPU() ([]api.GPUMetric, error) {
+	var resp api.GPUResponse
+	if err := c.getJSON("/api/metrics/gpu", &resp); err != nil {
+		return nil, err
+	}
+	return resp.GPUs, nil
 }
 
 func (c *DaemonClient) GetProcesses() (*api.ProcessResponse, error) {

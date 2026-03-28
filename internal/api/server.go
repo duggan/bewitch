@@ -67,6 +67,7 @@ type metricsCache struct {
 	temps []TemperatureMetric
 	power []PowerMetric
 	ecc   *ECCMetric
+	gpus  []GPUMetric
 	dash  *DashboardData // lazily built from components; nil until first request
 }
 
@@ -255,6 +256,32 @@ func (s *Server) getCachedPower() ([]PowerMetric, uint64) {
 	return mc.power, mc.gen
 }
 
+// getCachedGPU returns the cached GPU metrics.
+func (s *Server) getCachedGPU() ([]GPUMetric, uint64) {
+	s.metricsMu.RLock()
+	defer s.metricsMu.RUnlock()
+	mc := s.metricsSnapshot
+	if mc == nil || mc.gpus == nil {
+		return nil, 0
+	}
+	return mc.gpus, mc.gen
+}
+
+// SetGPUSnapshot updates the cached GPU metrics served by the API.
+// Separate from SetMetricsSnapshot to match the SetProcessSnapshot pattern.
+func (s *Server) SetGPUSnapshot(gpus []GPUMetric) {
+	s.metricsMu.Lock()
+	mc := s.metricsSnapshot
+	if mc == nil {
+		mc = &metricsCache{}
+		s.metricsSnapshot = mc
+	}
+	mc.gen++
+	mc.gpus = gpus
+	mc.dash = nil
+	s.metricsMu.Unlock()
+}
+
 // getCachedECC returns the cached ECC metrics.
 func (s *Server) getCachedECC() (*ECCMetric, uint64) {
 	s.metricsMu.RLock()
@@ -299,6 +326,9 @@ func (s *Server) getCachedDashboard() (*DashboardData, uint64) {
 		}
 		if dash.Power == nil {
 			dash.Power = []PowerMetric{}
+		}
+		if mc.gpus != nil {
+			dash.GPU = mc.gpus
 		}
 		// Top 5 processes from the live process snapshot
 		s.procSnapshotMu.RLock()
@@ -353,7 +383,7 @@ func (s *Server) SetArchiveConfig(archivePath string, archiveThreshold time.Dura
 // archiveViewTables lists the metric tables that get all_* archive views.
 var archiveViewTables = []string{
 	"cpu_metrics", "memory_metrics", "disk_metrics", "network_metrics",
-	"ecc_metrics", "temperature_metrics", "power_metrics", "process_metrics",
+	"ecc_metrics", "temperature_metrics", "power_metrics", "process_metrics", "gpu_metrics",
 }
 
 // CreateArchiveViews creates or replaces all_* views that union each metric
@@ -443,6 +473,7 @@ func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	mux.HandleFunc("GET /api/metrics/temperature", s.handleMetricsTemperature)
 	mux.HandleFunc("GET /api/metrics/power", s.handleMetricsPower)
 	mux.HandleFunc("GET /api/metrics/ecc", s.handleMetricsECC)
+	mux.HandleFunc("GET /api/metrics/gpu", s.handleMetricsGPU)
 	mux.HandleFunc("GET /api/metrics/process", s.handleMetricsProcess)
 	mux.HandleFunc("GET /api/metrics/dashboard", s.handleMetricsDashboard)
 	mux.HandleFunc("POST /api/compact", s.handleCompact)
@@ -452,6 +483,7 @@ func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	mux.HandleFunc("GET /api/history/temperature", s.handleHistoryTemperature)
 	mux.HandleFunc("GET /api/history/network", s.handleHistoryNetwork)
 	mux.HandleFunc("GET /api/history/power", s.handleHistoryPower)
+	mux.HandleFunc("GET /api/history/gpu", s.handleHistoryGPU)
 	mux.HandleFunc("GET /api/history/process", s.handleHistoryProcess)
 	mux.HandleFunc("GET /api/alert-rules", s.handleListAlertRules)
 	mux.HandleFunc("POST /api/alert-rules", s.handleCreateAlertRule)

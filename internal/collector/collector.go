@@ -5,7 +5,7 @@ import "time"
 // Sample is one batch of metric readings from a collector.
 type Sample struct {
 	Timestamp time.Time
-	Kind      string // "cpu", "memory", "disk", "network", "ecc", "temperature"
+	Kind      string // "cpu", "memory", "disk", "network", "ecc", "temperature", "power", "gpu", "process"
 	Data      any
 }
 

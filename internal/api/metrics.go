@@ -78,6 +78,20 @@ type ECCMetric struct {
 	Uncorrected uint64 `json:"uncorrected"`
 }
 
+type GPUMetric struct {
+	Name             string  `json:"name"`
+	Index            int     `json:"index"`
+	Vendor           string  `json:"vendor"`
+	UtilizationPct   float64 `json:"utilization_pct"`
+	MemoryUsedBytes  uint64  `json:"memory_used_bytes"`
+	MemoryTotalBytes uint64  `json:"memory_total_bytes"`
+	TempCelsius      float64 `json:"temp_celsius"`
+	PowerWatts       float64 `json:"power_watts"`
+	FrequencyMHz     uint32  `json:"frequency_mhz"`
+	FrequencyMaxMHz  uint32  `json:"frequency_max_mhz"`
+	ThrottlePct      float64 `json:"throttle_pct"`
+}
+
 type ProcessMetric struct {
 	PID          int32   `json:"pid"`
 	PPID         int32   `json:"ppid"`
@@ -151,6 +165,7 @@ type DashboardData struct {
 	Network     []NetworkMetric    `json:"network"`
 	Temperature []TemperatureMetric `json:"temperature"`
 	Power       []PowerMetric      `json:"power"`
+	GPU         []GPUMetric        `json:"gpu,omitempty"`
 	Processes   *ProcessResponse   `json:"processes,omitempty"`
 }
 
@@ -530,6 +545,46 @@ func (s *Server) handleMetricsECC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, ECCResponse{ECC: &m})
+}
+
+func (s *Server) handleMetricsGPU(w http.ResponseWriter, r *http.Request) {
+	gpus, gen := s.getCachedGPU()
+	if gpus != nil {
+		etag := metricsGenETag(gen)
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		writeJSON(w, http.StatusOK, GPUResponse{GPUs: gpus})
+		return
+	}
+	rows, err := s.dbFn().Query(`SELECT d.value, m.utilization_pct, m.memory_used_bytes, m.memory_total_bytes,
+		m.temp_celsius, m.power_watts, m.frequency_mhz, m.frequency_max_mhz, m.throttle_pct
+		FROM gpu_metrics m
+		JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
+		WHERE m.ts = (SELECT MAX(ts) FROM gpu_metrics)
+		ORDER BY d.value`)
+	if err != nil {
+		writeJSON(w, http.StatusOK, GPUResponse{GPUs: []GPUMetric{}})
+		return
+	}
+	defer rows.Close()
+
+	var result []GPUMetric
+	idx := 0
+	for rows.Next() {
+		var g GPUMetric
+		rows.Scan(&g.Name, &g.UtilizationPct, &g.MemoryUsedBytes, &g.MemoryTotalBytes,
+			&g.TempCelsius, &g.PowerWatts, &g.FrequencyMHz, &g.FrequencyMaxMHz, &g.ThrottlePct)
+		g.Index = idx
+		idx++
+		result = append(result, g)
+	}
+	if result == nil {
+		result = []GPUMetric{}
+	}
+	writeJSON(w, http.StatusOK, GPUResponse{GPUs: result})
 }
 
 func (s *Server) handleMetricsProcess(w http.ResponseWriter, r *http.Request) {

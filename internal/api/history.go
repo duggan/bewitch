@@ -647,6 +647,87 @@ func (s *Server) handleHistoryPower(w http.ResponseWriter, r *http.Request) {
 	s.writeHistoryData(r, w, series)
 }
 
+func (s *Server) handleHistoryGPU(w http.ResponseWriter, r *http.Request) {
+	if s.tryHistoryCache(r, w) {
+		return
+	}
+	start, end := parseTimeRange(r)
+	bucket := bucketInterval(start, end)
+	source := s.getQuerySource(start, end)
+
+	var query string
+	var args []interface{}
+
+	switch source {
+	case querySourceDuckDB:
+		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
+			d.value AS gpu,
+			AVG(m.utilization_pct) AS util_avg
+			FROM gpu_metrics m
+			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
+			WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			GROUP BY bucket, d.value ORDER BY bucket`, bucket)
+		args = []interface{}{start.Unix(), end.Unix()}
+	case querySourceParquet:
+		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
+			d.value AS gpu,
+			AVG(m.utilization_pct) AS util_avg
+			FROM read_parquet('%s') m
+			JOIN read_parquet('%s') d ON d.category = 'gpu' AND d.id = m.gpu_id
+			WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			GROUP BY bucket, d.value ORDER BY bucket`, bucket, s.parquetPath("gpu_metrics"), s.dimensionParquetPath())
+		args = []interface{}{start.Unix(), end.Unix()}
+	case querySourceBoth:
+		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
+			d.value AS gpu,
+			AVG(m.utilization_pct) AS util_avg
+			FROM (
+				SELECT ts, gpu_id, utilization_pct FROM gpu_metrics WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+				UNION ALL
+				SELECT ts, gpu_id, utilization_pct FROM read_parquet('%s') WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			) m
+			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
+			GROUP BY bucket, d.value ORDER BY bucket`, bucket, s.parquetPath("gpu_metrics"))
+		args = []interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
+	}
+
+	queryStart := time.Now()
+	rows, err := s.dbFn().Query(query, args...)
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	var rowCount int
+	seriesMap := make(map[string]*TimeSeries)
+	for rows.Next() {
+		rowCount++
+		var ts time.Time
+		var gpu string
+		var utilAvg float64
+		if err := rows.Scan(&ts, &gpu, &utilAvg); err != nil {
+			log.Debugf("history/gpu: scan error: %v", err)
+			continue
+		}
+		ser, ok := seriesMap[gpu]
+		if !ok {
+			ser = &TimeSeries{Label: gpu}
+			seriesMap[gpu] = ser
+		}
+		ser.Points = append(ser.Points, TimeSeriesPoint{ts.UnixNano(), utilAvg})
+	}
+
+	series := make([]TimeSeries, 0, len(seriesMap))
+	for _, ser := range seriesMap {
+		series = append(series, *ser)
+	}
+	sort.Slice(series, func(i, j int) bool { return series[i].Label < series[j].Label })
+
+	log.Debugf("history/gpu: %s source=%s rows=%d series=%d", time.Since(queryStart), sourceLabel(source), rowCount, len(series))
+	s.writeHistoryData(r, w, series)
+}
+
 func (s *Server) handleHistoryProcess(w http.ResponseWriter, r *http.Request) {
 	if s.tryHistoryCache(r, w) {
 		return

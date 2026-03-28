@@ -38,6 +38,7 @@ const (
 	hwSectionTemp  = 0
 	hwSectionPower = 1
 	hwSectionECC   = 2
+	hwSectionGPU   = 3
 )
 
 type tickMsg time.Time
@@ -130,7 +131,13 @@ type Model struct {
 	powerSelected    map[string]bool
 	powerCursor      int
 	powerZoneNames   []string
-	hardwareSection  int // active hardware sub-tab: hwSectionTemp, hwSectionPower, hwSectionECC
+	gpuData          []api.GPUMetric
+	gpuSparkData     map[string][]float64
+	gpuSparkInited   bool
+	gpuSelected      map[string]bool
+	gpuCursor        int
+	gpuDeviceNames   []string
+	hardwareSection  int // active hardware sub-tab: hwSectionTemp, hwSectionPower, hwSectionECC, hwSectionGPU
 	dashSparkData    map[string][]float64 // keys: "cpu", "mem"
 	dashSparkInited  bool
 	// Alert view state
@@ -359,6 +366,8 @@ func (m *Model) fetchHistoryCmd() tea.Cmd {
 			metric = "temperature"
 		case hwSectionPower:
 			metric = "power"
+		case hwSectionGPU:
+			metric = "gpu"
 		default:
 			return nil // ECC has no history
 		}
@@ -501,6 +510,8 @@ func (m *Model) prefetchHistoryForCmd(v view) tea.Cmd {
 			metric = "temperature"
 		case hwSectionPower:
 			metric = "power"
+		case hwSectionGPU:
+			metric = "gpu"
 		default:
 			return nil
 		}
@@ -583,6 +594,18 @@ func (m *Model) renderHistoryCacheEntry(v view) {
 			}
 			entry.chart = renderPowerHistoryChart(powerFiltered, chartWidth, ch, entry.start, entry.end)
 			entry.chart = renderPanel(fmt.Sprintf("Power History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
+		case hwSectionGPU:
+			gpuFiltered := entry.series
+			if m.gpuSelected != nil {
+				gpuFiltered = nil
+				for _, s := range entry.series {
+					if m.gpuSelected[s.Label] {
+						gpuFiltered = append(gpuFiltered, s)
+					}
+				}
+			}
+			entry.chart = renderGPUHistoryChart(gpuFiltered, chartWidth, ch, entry.start, entry.end)
+			entry.chart = renderPanel(fmt.Sprintf("GPU History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
 		}
 	}
 }
@@ -708,6 +731,15 @@ func (m *Model) regenerateHistoryChart() {
 			}
 			m.cachedHistoryChart = renderPowerHistoryChart(powerFiltered, chartWidth, ch, m.historyStart, m.historyEnd)
 			m.cachedHistoryChart = renderPanel(fmt.Sprintf("Power History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
+		case hwSectionGPU:
+			var gpuFiltered []api.TimeSeries
+			for _, s := range m.historySeries {
+				if m.gpuSelected[s.Label] {
+					gpuFiltered = append(gpuFiltered, s)
+				}
+			}
+			m.cachedHistoryChart = renderGPUHistoryChart(gpuFiltered, chartWidth, ch, m.historyStart, m.historyEnd)
+			m.cachedHistoryChart = renderPanel(fmt.Sprintf("GPU History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
 		default:
 			m.cachedHistoryChart = ""
 		}
@@ -860,12 +892,16 @@ func (m *Model) switchView(v view) tea.Cmd {
 	case viewHardware:
 		m.refreshTempData()
 		m.refreshPowerData()
+		m.refreshGPUData()
 		m.refreshMemData() // for ECC
 		if !m.tempSparkInited {
 			m.initTempSparklines()
 		}
 		if !m.powerSparkInited {
 			m.initPowerSparklines()
+		}
+		if !m.gpuSparkInited {
+			m.initGPUSparklines()
 		}
 	case viewProcess:
 		m.refreshProcessData()
@@ -1049,6 +1085,23 @@ func (m *Model) refreshPowerData() {
 	m.lastDataChange[viewHardware] = time.Now()
 }
 
+func (m *Model) refreshGPUData() {
+	t := time.Now()
+	gpus, err := m.client.GetGPU()
+	if errors.Is(err, ErrNotModified) {
+		m.d("refresh: gpu 304 (%s)", time.Since(t))
+		return
+	}
+	if err != nil {
+		m.d("refresh: gpu err=%v (%s)", err, time.Since(t))
+		m.gpuData = nil
+		return
+	}
+	m.d("refresh: gpu (%s)", time.Since(t))
+	m.gpuData = gpus
+	m.lastDataChange[viewHardware] = time.Now()
+}
+
 func (m *Model) refreshAlertsData() {
 	t := time.Now()
 	alerts, err := m.client.GetAlerts()
@@ -1167,6 +1220,9 @@ func (m *Model) updateTempSparklines(temps []api.TemperatureMetric) {
 	}
 	if m.tempSparkData == nil {
 		m.tempSparkData = make(map[string][]float64)
+	}
+	if m.tempSelected == nil {
+		m.tempSelected = make(map[string]bool)
 	}
 	// Update sensor names list and ensure new sensors get selected by default
 	names := make([]string, len(temps))
@@ -1324,6 +1380,22 @@ func (m *Model) loadSelections() {
 		}
 	}
 
+	// GPU devices
+	if saved, ok := prefs["gpu_selected_devices"]; ok {
+		m.gpuSelected = make(map[string]bool)
+		for _, part := range strings.Split(saved, "\x1f") {
+			if part == "" {
+				continue
+			}
+			if idx := strings.LastIndex(part, ":"); idx != -1 && idx < len(part)-1 {
+				name := part[:idx]
+				m.gpuSelected[name] = part[idx+1:] == "1"
+			} else {
+				m.gpuSelected[part] = true
+			}
+		}
+	}
+
 	// Hardware section
 	if v, ok := prefs["hardware_section"]; ok {
 		switch v {
@@ -1331,6 +1403,8 @@ func (m *Model) loadSelections() {
 			m.hardwareSection = hwSectionPower
 		case "2":
 			m.hardwareSection = hwSectionECC
+		case "3":
+			m.hardwareSection = hwSectionGPU
 		default:
 			m.hardwareSection = hwSectionTemp
 		}
@@ -1674,6 +1748,9 @@ func (m *Model) updatePowerSparklines(zones []api.PowerMetric) {
 	if m.powerSparkData == nil {
 		m.powerSparkData = make(map[string][]float64)
 	}
+	if m.powerSelected == nil {
+		m.powerSelected = make(map[string]bool)
+	}
 	names := make([]string, len(zones))
 	for i, z := range zones {
 		names[i] = z.Zone
@@ -1691,6 +1768,110 @@ func (m *Model) updatePowerSparklines(zones []api.PowerMetric) {
 			vals = vals[len(vals)-maxPoints:]
 		}
 		m.powerSparkData[z.Zone] = vals
+	}
+}
+
+func (m *Model) initGPUSparklines() {
+	m.gpuSparkData = make(map[string][]float64)
+	end := time.Now()
+	start := end.Add(-time.Hour)
+	series, err := m.client.GetHistory("gpu", start, end)
+	if err != nil {
+		return
+	}
+	for _, s := range series {
+		vals := make([]float64, len(s.Points))
+		for i, p := range s.Points {
+			vals[i] = p.Value
+		}
+		m.gpuSparkData[s.Label] = vals
+	}
+	if m.gpuSelected == nil {
+		m.gpuSelected = make(map[string]bool)
+		gpus, err := m.client.GetGPU()
+		if err == nil {
+			m.gpuDeviceNames = make([]string, len(gpus))
+			for i, g := range gpus {
+				m.gpuDeviceNames[i] = g.Name
+				m.gpuSelected[g.Name] = true
+			}
+		}
+		if prefs, err := m.client.GetPreferences(); err == nil {
+			if saved, ok := prefs["gpu_selected_devices"]; ok {
+				for k := range m.gpuSelected {
+					m.gpuSelected[k] = false
+				}
+				for _, part := range strings.Split(saved, "\x1f") {
+					if part == "" {
+						continue
+					}
+					if idx := strings.LastIndex(part, ":"); idx != -1 && idx < len(part)-1 {
+						name := part[:idx]
+						if _, exists := m.gpuSelected[name]; exists {
+							m.gpuSelected[name] = part[idx+1:] == "1"
+						}
+					} else {
+						if _, exists := m.gpuSelected[part]; exists {
+							m.gpuSelected[part] = true
+						}
+					}
+				}
+			}
+		}
+	}
+	m.gpuSparkInited = true
+}
+
+func (m *Model) saveGPUSelection() {
+	var parts []string
+	seen := make(map[string]bool, len(m.gpuDeviceNames))
+	for _, name := range m.gpuDeviceNames {
+		seen[name] = true
+		if m.gpuSelected[name] {
+			parts = append(parts, name+":1")
+		} else {
+			parts = append(parts, name+":0")
+		}
+	}
+	for name, selected := range m.gpuSelected {
+		if !seen[name] {
+			if selected {
+				parts = append(parts, name+":1")
+			} else {
+				parts = append(parts, name+":0")
+			}
+		}
+	}
+	go m.client.SetPreference("gpu_selected_devices", strings.Join(parts, "\x1f"))
+}
+
+func (m *Model) updateGPUSparklines(gpus []api.GPUMetric) {
+	if gpus == nil {
+		return
+	}
+	if m.gpuSparkData == nil {
+		m.gpuSparkData = make(map[string][]float64)
+	}
+	if m.gpuSelected == nil {
+		m.gpuSelected = make(map[string]bool)
+	}
+	names := make([]string, len(gpus))
+	for i, g := range gpus {
+		names[i] = g.Name
+		if _, exists := m.gpuSelected[g.Name]; !exists {
+			m.gpuSelected[g.Name] = true
+		}
+	}
+	m.gpuDeviceNames = names
+
+	const maxPoints = 60
+	for _, g := range gpus {
+		vals := m.gpuSparkData[g.Name]
+		vals = append(vals, g.UtilizationPct)
+		if len(vals) > maxPoints {
+			vals = vals[len(vals)-maxPoints:]
+		}
+		m.gpuSparkData[g.Name] = vals
 	}
 }
 
@@ -1876,13 +2057,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			switch msg.String() {
 			case "tab":
-				m.hardwareSection = (m.hardwareSection + 1) % 3
+				m.hardwareSection = (m.hardwareSection + 1) % 4
 				m.cachedHistoryChart = ""
 				m.regenerateHistoryChart()
 				go m.client.SetPreference("hardware_section", fmt.Sprintf("%d", m.hardwareSection))
 				return m, nil
 			case "shift+tab":
-				m.hardwareSection = (m.hardwareSection + 2) % 3
+				m.hardwareSection = (m.hardwareSection + 3) % 4
 				m.cachedHistoryChart = ""
 				m.regenerateHistoryChart()
 				go m.client.SetPreference("hardware_section", fmt.Sprintf("%d", m.hardwareSection))
@@ -1957,6 +2138,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.powerSelected[name] = !allSelected
 					}
 					m.savePowerSelection()
+					m.regenerateHistoryChart()
+					return m, nil
+				}
+			case hwSectionGPU:
+				switch msg.String() {
+				case "down":
+					if len(m.gpuDeviceNames) > 0 {
+						m.gpuCursor = (m.gpuCursor + 1) % len(m.gpuDeviceNames)
+					}
+					return m, nil
+				case "up":
+					if len(m.gpuDeviceNames) > 0 {
+						m.gpuCursor = (m.gpuCursor - 1 + len(m.gpuDeviceNames)) % len(m.gpuDeviceNames)
+					}
+					return m, nil
+				case " ":
+					if m.gpuCursor < len(m.gpuDeviceNames) {
+						name := m.gpuDeviceNames[m.gpuCursor]
+						m.gpuSelected[name] = !m.gpuSelected[name]
+					}
+					m.saveGPUSelection()
+					m.regenerateHistoryChart()
+					return m, nil
+				case "a":
+					allSelected := true
+					for _, name := range m.gpuDeviceNames {
+						if !m.gpuSelected[name] {
+							allSelected = false
+							break
+						}
+					}
+					for _, name := range m.gpuDeviceNames {
+						m.gpuSelected[name] = !allSelected
+					}
+					m.saveGPUSelection()
 					m.regenerateHistoryChart()
 					return m, nil
 				}
@@ -2486,6 +2702,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateTempSparklines(m.tempData)
 			m.refreshPowerData()
 			m.updatePowerSparklines(m.powerData)
+			m.refreshGPUData()
+			m.updateGPUSparklines(m.gpuData)
 			m.refreshMemData() // for ECC
 		case viewProcess:
 			m.refreshProcessData()
@@ -2512,7 +2730,7 @@ func (m *Model) renderCurrentContent() string {
 	}
 	switch m.current {
 	case viewDashboard:
-		return renderDashboard(m.dashData, m.width, m.dashSparkData, m.netSelected, m.tempSelected, m.powerSelected)
+		return renderDashboard(m.dashData, m.width, m.dashSparkData, m.netSelected, m.tempSelected, m.powerSelected, m.gpuSelected)
 	case viewCPU:
 		return renderCPUView(m.cpuData, m.width, m.cachedHistoryChart)
 	case viewMemory:
@@ -2522,9 +2740,10 @@ func (m *Model) renderCurrentContent() string {
 	case viewNetwork:
 		return renderNetView(m.netData, m.width, m.cachedHistoryChart, m.netSparkData, m.netSelected, m.netCursor, m.netIfaceNames, m.netDisplayBits)
 	case viewHardware:
-		return renderHardwareView(m.tempData, m.powerData, m.eccData, m.width, m.cachedHistoryChart,
+		return renderHardwareView(m.tempData, m.powerData, m.eccData, m.gpuData, m.width, m.cachedHistoryChart,
 			m.tempSparkData, m.tempSelected, m.tempCursor,
 			m.powerSparkData, m.powerSelected, m.powerCursor,
+			m.gpuSparkData, m.gpuSelected, m.gpuCursor,
 			m.hardwareSection)
 	case viewProcess:
 		chart := m.cachedHistoryChart

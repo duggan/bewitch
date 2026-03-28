@@ -51,6 +51,10 @@ type ECCResponse struct {
 	ECC *ECCMetric `json:"ecc"`
 }
 
+type GPUResponse struct {
+	GPUs []GPUMetric `json:"gpus"`
+}
+
 type AlertsResponse struct {
 	Alerts []AlertMetric `json:"alerts"`
 }

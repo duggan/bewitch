@@ -72,6 +72,10 @@ refresh_interval = "2s"
 # interval = "5s"
 # enabled = true  # set to false to disable power collection
 
+[collectors.gpu]
+# interval = "5s"
+# enabled = true  # set to false to disable GPU collection (Intel iGPU via intel_gpu_top, NVIDIA via nvidia-smi)
+
 [collectors.process]
 # interval = "5s"
 # max_processes = 100  # maximum number of processes to track per collection cycle

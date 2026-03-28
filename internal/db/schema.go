@@ -19,6 +19,7 @@ var (
 		"temperature_metrics",
 		"power_metrics",
 		"process_metrics",
+		"gpu_metrics",
 	}
 
 	// DimensionTables lists dimension/lookup tables.

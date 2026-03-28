@@ -50,7 +50,7 @@ func New(db *sql.DB) *Store {
 		procInfoCache: make(map[processKey]bool),
 	}
 	// Initialize caches for each dimension category
-	for _, cat := range []string{"sensor", "interface", "mount", "device", "zone"} {
+	for _, cat := range []string{"sensor", "interface", "mount", "device", "zone", "gpu"} {
 		s.dimCache[cat] = make(map[string]int16)
 	}
 	// Load existing dimension values from DB
@@ -176,6 +176,8 @@ func (s *Store) writeSample(sample collector.Sample) error {
 		return s.writeTemperature(sample, data)
 	case collector.PowerData:
 		return s.writePower(sample, data)
+	case collector.GPUData:
+		return s.writeGPU(sample, data)
 	case collector.ProcessData:
 		return s.writeProcess(sample, data)
 	default:
@@ -253,6 +255,10 @@ func (s *Store) prepareSampleForAppender(sample collector.Sample) error {
 		for _, z := range data.Zones {
 			s.ensureDimensionID("zone", z.Zone)
 		}
+	case collector.GPUData:
+		for _, g := range data.GPUs {
+			s.ensureDimensionID("gpu", g.Name)
+		}
 	case collector.ProcessData:
 		// Insert new process_info records
 		s.prepareProcessInfo(sample, data)
@@ -319,6 +325,8 @@ func (s *Store) writeSampleAppender(driverConn driver.Conn, sample collector.Sam
 		return s.writeTemperatureAppender(driverConn, sample, data)
 	case collector.PowerData:
 		return s.writePowerAppender(driverConn, sample, data)
+	case collector.GPUData:
+		return s.writeGPUAppender(driverConn, sample, data)
 	case collector.ProcessData:
 		return s.writeProcessAppender(driverConn, sample, data)
 	default:
@@ -880,6 +888,39 @@ func (s *Store) writePowerTx(tx *sql.Tx, sample collector.Sample, data collector
 	return nil
 }
 
+func (s *Store) writeGPU(sample collector.Sample, data collector.GPUData) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	if err := s.writeGPUTx(tx, sample, data); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) writeGPUTx(tx *sql.Tx, sample collector.Sample, data collector.GPUData) error {
+	stmt, err := tx.Prepare(`INSERT INTO gpu_metrics (ts, gpu_id, utilization_pct, memory_used_bytes, memory_total_bytes, temp_celsius, power_watts, frequency_mhz, frequency_max_mhz, throttle_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, g := range data.GPUs {
+		gpuID, err := s.getDimensionID(tx, "gpu", g.Name)
+		if err != nil {
+			return fmt.Errorf("get gpu id: %w", err)
+		}
+		if _, err := stmt.Exec(sample.Timestamp, gpuID, g.UtilizationPct,
+			int64(g.MemoryUsedBytes), int64(g.MemoryTotalBytes), g.TempCelsius,
+			g.PowerWatts, int32(g.FrequencyMHz), int32(g.FrequencyMaxMHz), g.ThrottlePct); err != nil {
+			return fmt.Errorf("insert gpu %s: %w", g.Name, err)
+		}
+	}
+	return nil
+}
+
 func (s *Store) writeProcess(sample collector.Sample, data collector.ProcessData) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -1053,6 +1094,24 @@ func (s *Store) writePowerAppender(driverConn driver.Conn, sample collector.Samp
 		zoneID := s.getCachedDimensionID("zone", z.Zone)
 		if err := appender.AppendRow(sample.Timestamp, zoneID, z.Watts); err != nil {
 			return fmt.Errorf("append power %s: %w", z.Zone, err)
+		}
+	}
+	return appender.Flush()
+}
+
+func (s *Store) writeGPUAppender(driverConn driver.Conn, sample collector.Sample, data collector.GPUData) error {
+	appender, err := duckdb.NewAppenderFromConn(driverConn, "", "gpu_metrics")
+	if err != nil {
+		return fmt.Errorf("create appender: %w", err)
+	}
+	defer appender.Close()
+
+	for _, g := range data.GPUs {
+		gpuID := s.getCachedDimensionID("gpu", g.Name)
+		if err := appender.AppendRow(sample.Timestamp, gpuID, g.UtilizationPct,
+			int64(g.MemoryUsedBytes), int64(g.MemoryTotalBytes), g.TempCelsius,
+			g.PowerWatts, int32(g.FrequencyMHz), int32(g.FrequencyMaxMHz), g.ThrottlePct); err != nil {
+			return fmt.Errorf("append gpu %s: %w", g.Name, err)
 		}
 	}
 	return appender.Flush()
