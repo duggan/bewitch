@@ -10,7 +10,7 @@
 set -eu
 
 VERSION="${BEWITCH_VERSION:-$(cat VERSION)}"
-MAINTAINER="Ross <ross@example.com>"
+MAINTAINER="Ross Duggan <ross@bewitch.net>"
 DATE=$(date -R)
 
 cat > debian/changelog <<EOF

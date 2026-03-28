@@ -1,7 +1,7 @@
 Source: bewitch
 Section: admin
 Priority: optional
-Maintainer: Ross <ross@example.com>
+Maintainer: Ross Duggan <ross@bewitch.net>
 Build-Depends: debhelper-compat (= 13)
 Standards-Version: 4.6.0
 Homepage: https://github.com/duggan/bewitch
