@@ -31,7 +31,7 @@ bewitch -addr myserver:9119 -token my-secret`}
         <tr><td><code>3</code></td><td>Memory</td><td>RAM and swap breakdown with history</td></tr>
         <tr><td><code>4</code></td><td>Disk</td><td>Per-mount space, I/O rates, SMART health</td></tr>
         <tr><td><code>5</code></td><td>Network</td><td>Per-interface throughput with bits/bytes toggle</td></tr>
-        <tr><td><code>6</code></td><td>Hardware</td><td>Temperature, power (RAPL), and ECC memory sub-sections</td></tr>
+        <tr><td><code>6</code></td><td>Hardware</td><td>Temperature, power (RAPL), ECC memory, and GPU sub-sections</td></tr>
         <tr><td><code>7</code></td><td>Process</td><td>All processes, sortable, searchable, pinnable</td></tr>
         <tr><td><code>8</code></td><td>Alerts</td><td>Alert rules and fired alerts</td></tr>
       </tbody>
@@ -52,8 +52,8 @@ bewitch -addr myserver:9119 -token my-secret`}
 
     <h2>Hardware View</h2>
     <p>
-      The Hardware view combines temperature sensors, power consumption (RAPL), and ECC memory errors into
-      sub-sections. Use <code>Tab</code> / <code>Shift+Tab</code> to cycle between sub-sections.
+      The Hardware view combines temperature sensors, power consumption (RAPL), ECC memory errors, and GPU
+      metrics into sub-sections. Use <code>Tab</code> / <code>Shift+Tab</code> to cycle between sub-sections.
       Sections without data are dimmed but still accessible. The active sub-section is persisted across sessions.
     </p>
     <table>
@@ -61,7 +61,7 @@ bewitch -addr myserver:9119 -token my-secret`}
         <tr><th>Key</th><th>Action</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>Tab</code> / <code>Shift+Tab</code></td><td>Cycle sub-sections (Temperature, Power, ECC)</td></tr>
+        <tr><td><code>Tab</code> / <code>Shift+Tab</code></td><td>Cycle sub-sections (Temperature, Power, ECC, GPU)</td></tr>
         <tr><td><code>j</code> / <code>k</code></td><td>Navigate sensor/zone list</td></tr>
         <tr><td><code>Space</code></td><td>Toggle sensor/zone in chart</td></tr>
         <tr><td><code>a</code></td><td>Select / deselect all</td></tr>
@@ -116,7 +116,7 @@ bewitch -addr myserver:9119 -token my-secret`}
 
     <h2>Historical Charts</h2>
     <p>
-      CPU, memory, disk, hardware (temperature/power), and process views include a historical braille chart below the live data.
+      CPU, memory, disk, hardware (temperature/power/GPU), and process views include a historical braille chart below the live data.
       Use <code>&lt;</code> / <code>&gt;</code> to cycle through time ranges: 1h, 6h, 24h, 7d, 30d.
     </p>
     <p>

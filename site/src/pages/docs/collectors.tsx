@@ -6,7 +6,7 @@ import { CodeBlock } from '../../components/terminal-block'
 export const CollectorsDocs: FC = () => (
   <DocsLayout title="Collectors" active={`${docsBase}/collectors`}>
     <p>
-      Bewitch has 8 metric collectors. All implement the <code>Collector</code> interface with <code>Name()</code> and <code>Collect()</code> methods.
+      Bewitch has 9 metric collectors. All implement the <code>Collector</code> interface with <code>Name()</code> and <code>Collect()</code> methods.
       Collectors run in parallel via goroutines on each tick. The daemon uses a GCD-based tick scheduler to fire each collector at its configured interval.
     </p>
 
@@ -110,6 +110,43 @@ exclude_mounts = ["/boot/efi"]`}
       <li><strong>Storage:</strong> <code>power_metrics</code> table with dimension IDs for zone names</li>
       <li>Can be disabled via <code>enabled = false</code> in config</li>
     </ul>
+
+    <h2>GPU</h2>
+    <p>
+      Monitors GPU utilization, frequency, power, and memory. Supports Intel iGPUs
+      via <code>intel_gpu_top</code> (long-lived JSON subprocess) and NVIDIA GPUs
+      via <code>nvidia-smi</code> (point-in-time CSV queries). Both backends auto-detect
+      tool availability at startup; if neither is found, the collector produces empty samples.
+    </p>
+
+    <h3>Intel iGPU</h3>
+    <ul>
+      <li>Runs <code>intel_gpu_top -J</code> as a persistent subprocess streaming JSON</li>
+      <li>Detects i915/xe driver via <code>/sys/class/drm/</code></li>
+      <li>Utilization = max engine busy % (Render/3D, Video, etc.)</li>
+      <li>First sample discarded (needs prior period for deltas)</li>
+      <li><strong>Requires:</strong> <code>CAP_PERFMON</code> capability and <code>intel-gpu-tools</code> package</li>
+    </ul>
+
+    <h3>NVIDIA</h3>
+    <ul>
+      <li>Runs <code>nvidia-smi --query-gpu=... --format=csv</code> with 10s timeout</li>
+      <li>Reports utilization, memory used/total, temperature, power, clock speed</li>
+      <li><strong>Requires:</strong> NVIDIA driver with <code>nvidia-smi</code></li>
+    </ul>
+
+    <ul>
+      <li><strong>Metrics:</strong> utilization %, frequency MHz, power watts, memory used/total (NVIDIA), temperature (NVIDIA)</li>
+      <li><strong>Storage:</strong> <code>gpu_metrics</code> table with dimension IDs for GPU names</li>
+      <li>Can be disabled via <code>enabled = false</code> in config</li>
+      <li>Multi-vendor: Intel and NVIDIA backends can be active simultaneously</li>
+    </ul>
+
+    <CodeBlock title="bewitch.toml">
+{`[collectors.gpu]
+# interval = "5s"
+# enabled = true  # Intel iGPU via intel_gpu_top, NVIDIA via nvidia-smi`}
+    </CodeBlock>
 
     <h2>Process</h2>
     <p>

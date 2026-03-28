@@ -163,6 +163,20 @@ sudo systemctl restart bewitchd    # restart after config changes
 sudo journalctl -u bewitchd -f     # follow logs`}
     </CodeBlock>
 
+    <h2>Optional Dependencies</h2>
+    <p>
+      The installer detects hardware and offers to install optional monitoring tools.
+      These can also be installed manually:
+    </p>
+    <ul>
+      <li><code>smartmontools</code> — enhanced SMART disk health via <code>smartctl</code> (installed automatically on Debian/Ubuntu)</li>
+      <li><code>intel-gpu-tools</code> — Intel iGPU monitoring via <code>intel_gpu_top</code></li>
+      <li>NVIDIA driver — provides <code>nvidia-smi</code> for NVIDIA GPU monitoring</li>
+    </ul>
+    <p>
+      Use <code>BEWITCH_NONINTERACTIVE=1</code> to auto-install all detected optional dependencies without prompting.
+    </p>
+
     <h2>File Locations</h2>
     <table>
       <thead>

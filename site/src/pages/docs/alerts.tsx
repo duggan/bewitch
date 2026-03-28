@@ -27,6 +27,9 @@ export const AlertsDocs: FC = () => (
         <tr><td><code>network.rx</code></td><td>Network receive bytes/sec (per interface)</td></tr>
         <tr><td><code>network.tx</code></td><td>Network transmit bytes/sec (per interface)</td></tr>
         <tr><td><code>temperature.sensor</code></td><td>Temperature in &deg;C (per sensor)</td></tr>
+        <tr><td><code>gpu.utilization</code></td><td>GPU utilization % (per device)</td></tr>
+        <tr><td><code>gpu.temperature</code></td><td>GPU temperature in &deg;C (per device)</td></tr>
+        <tr><td><code>gpu.power</code></td><td>GPU power draw in watts (per device)</td></tr>
       </tbody>
     </table>
 

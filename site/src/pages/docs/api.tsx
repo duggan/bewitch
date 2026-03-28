@@ -35,6 +35,7 @@ export const ApiDocs: FC = () => (
         <tr><td><code>GET</code></td><td><code>/api/metrics/network</code></td><td>Network per-interface metrics</td></tr>
         <tr><td><code>GET</code></td><td><code>/api/metrics/temperature</code></td><td>Temperature sensor readings</td></tr>
         <tr><td><code>GET</code></td><td><code>/api/metrics/power</code></td><td>Power consumption per zone</td></tr>
+        <tr><td><code>GET</code></td><td><code>/api/metrics/gpu</code></td><td>GPU utilization, frequency, power, memory</td></tr>
         <tr><td><code>GET</code></td><td><code>/api/metrics/process</code></td><td>All processes (live snapshot)</td></tr>
         <tr><td><code>GET</code></td><td><code>/api/metrics/dashboard</code></td><td>Combined dashboard data</td></tr>
       </tbody>
@@ -55,6 +56,7 @@ export const ApiDocs: FC = () => (
         <tr><td><code>GET</code></td><td><code>/api/history/disk</code></td></tr>
         <tr><td><code>GET</code></td><td><code>/api/history/temperature</code></td></tr>
         <tr><td><code>GET</code></td><td><code>/api/history/power</code></td></tr>
+        <tr><td><code>GET</code></td><td><code>/api/history/gpu</code></td></tr>
         <tr><td><code>GET</code></td><td><code>/api/history/process</code></td></tr>
       </tbody>
     </table>

@@ -5,7 +5,7 @@ import { DocsLayout } from '../../layouts/docs'
 const sections = [
   { slug: '/installation', title: 'Installation', desc: 'Debian package, manual install, and systemd setup.' },
   { slug: '/configuration', title: 'Configuration', desc: 'Complete TOML config reference with all options.' },
-  { slug: '/collectors', title: 'Collectors', desc: 'All 8 metric collectors: CPU, memory, disk, network, ECC, temperature, power, process.' },
+  { slug: '/collectors', title: 'Collectors', desc: 'All 9 metric collectors: CPU, memory, disk, network, ECC, temperature, power, GPU, process.' },
   { slug: '/tui', title: 'TUI Guide', desc: 'Views, navigation, keybindings, debug mode, and process pinning.' },
   { slug: '/alerts', title: 'Alerts', desc: 'Threshold, predictive, and variance rules with multi-channel notifications.' },
   { slug: '/repl', title: 'SQL REPL', desc: 'Interactive DuckDB console with dot-commands and data export.' },
@@ -19,7 +19,7 @@ export const DocsIndex: FC = () => (
   <DocsLayout title="Documentation" active={docsBase}>
     <p>
       Bewitch is a system monitoring daemon (<code>bewitchd</code>) and TUI client (<code>bewitch</code>) for Linux,
-      built with Go and DuckDB. It collects CPU, memory, disk, network, temperature, power, and process metrics,
+      built with Go and DuckDB. It collects CPU, memory, disk, network, temperature, power, GPU, and process metrics,
       stores them in DuckDB, and provides a rich interactive interface with historical charts, alerting, and a SQL REPL.
     </p>
 

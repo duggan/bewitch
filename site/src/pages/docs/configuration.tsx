@@ -120,6 +120,10 @@ refresh_interval = "2s"
 # interval = "5s"
 # enabled = true   # false to disable
 
+[collectors.gpu]
+# interval = "5s"
+# enabled = true   # Intel iGPU via intel_gpu_top, NVIDIA via nvidia-smi
+
 [collectors.process]
 # interval = "5s"
 # max_processes = 100
@@ -143,7 +147,7 @@ bin/bewitch -config dev.toml`}
     </CodeBlock>
     <p>
       Mock mode simulates an 8-core server with 32 GB RAM, two disks, two network interfaces, temperature sensors,
-      power zones, and ~65 processes. Data uses smooth sine waves with jitter for a realistic feel.
+      power zones, two GPUs (Intel + NVIDIA), and ~65 processes. Data uses smooth sine waves with jitter for a realistic feel.
     </p>
   </DocsLayout>
 )

@@ -132,6 +132,7 @@ bewitch snapshot -with-system-tables /tmp/backup.duckdb`}
       <li><code>network_metrics</code> — network throughput</li>
       <li><code>temperature_metrics</code> — sensor temperatures</li>
       <li><code>power_metrics</code> — power consumption</li>
+      <li><code>gpu_metrics</code> — GPU utilization, frequency, power, memory</li>
       <li><code>process_metrics</code> — process resource usage</li>
       <li><code>process_info</code> — enriched process metadata</li>
       <li><code>dimension_values</code> — normalized dimension lookups (mount, device, interface, sensor, zone)</li>
