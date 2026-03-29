@@ -274,7 +274,9 @@ func NewModel(client daemonClient, interval time.Duration, historyRanges []confi
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(tickCmd(m.interval))
+	// Fire an immediate tick so live data loads instantly on startup,
+	// rather than waiting for the first interval to elapse.
+	return func() tea.Msg { return tickMsg(time.Now()) }
 }
 
 func (m *Model) d(format string, args ...any) {
@@ -615,11 +617,7 @@ func (m *Model) renderHistoryCacheEntry(v view) {
 // concurrently in the background. Results arrive as prefetchHistoryResultMsg.
 func (m *Model) prefetchAllHistoryCmds() []tea.Cmd {
 	m.historyCache = make(map[view]*viewHistoryCache)
-	views := []view{viewCPU, viewMemory, viewDisk, viewNetwork}
-	if len(m.tempData) > 0 || len(m.powerData) > 0 {
-		views = append(views, viewHardware)
-	}
-	views = append(views, viewProcess)
+	views := []view{viewCPU, viewMemory, viewDisk, viewNetwork, viewHardware, viewProcess}
 	m.d("prefetch: %d views (async)", len(views))
 	cmds := make([]tea.Cmd, 0, len(views))
 	for _, v := range views {
