@@ -864,10 +864,12 @@ func (m *Model) switchView(v view) tea.Cmd {
 			m.cachedHistoryChart = cached.chart
 		} else if !m.historyFetching[v] {
 			m.d("view: %s→%s (cache miss, async fetch)", viewName(prev), viewName(v))
+			m.cachedHistoryChart = ""
 			m.historyFetching[v] = true
 			cmd = m.prefetchHistoryForCmd(v)
 		} else {
 			m.d("view: %s→%s (cache miss, fetch in flight)", viewName(prev), viewName(v))
+			m.cachedHistoryChart = ""
 		}
 	} else {
 		m.d("view: %s→%s", viewName(prev), viewName(v))
