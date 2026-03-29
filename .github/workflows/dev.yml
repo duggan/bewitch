@@ -30,8 +30,7 @@ jobs:
         run: |
           BASE=$(cat VERSION)
           DATE=$(date -u +%Y%m%d)
-          SHA=$(git rev-parse --short HEAD)
-          echo "version=${BASE}~dev.${DATE}.${SHA}" >> "$GITHUB_OUTPUT"
+          echo "version=${BASE}~dev.${DATE}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
       - name: Build artifacts
         run: >-
