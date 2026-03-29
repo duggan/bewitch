@@ -54,6 +54,18 @@ func (s *Server) getQuerySource(start, end time.Time) querySource {
 	return querySourceBoth
 }
 
+// getQuerySourceForTable is like getQuerySource but downgrades to DuckDB-only
+// when the specific table has no archived Parquet files. This prevents errors
+// when some tables have been archived but others (e.g., newly added gpu_metrics)
+// have not.
+func (s *Server) getQuerySourceForTable(start, end time.Time, table string) querySource {
+	source := s.getQuerySource(start, end)
+	if source != querySourceDuckDB && !hasParquetFiles(s.archivePath, table) {
+		return querySourceDuckDB
+	}
+	return source
+}
+
 // hasAnyParquetFiles returns true if any metric table has archived Parquet files.
 func (s *Server) hasAnyParquetFiles() bool {
 	for _, table := range archiveViewTables {
@@ -653,7 +665,7 @@ func (s *Server) handleHistoryGPU(w http.ResponseWriter, r *http.Request) {
 	}
 	start, end := parseTimeRange(r)
 	bucket := bucketInterval(start, end)
-	source := s.getQuerySource(start, end)
+	source := s.getQuerySourceForTable(start, end, "gpu_metrics")
 
 	var query string
 	var args []interface{}
