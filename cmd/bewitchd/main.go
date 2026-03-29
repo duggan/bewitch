@@ -454,6 +454,11 @@ func main() {
 				sample, err := col.Collect()
 				samples[idx] = sample
 				errors[idx] = err
+				// Push to API cache immediately so fast collectors
+				// don't wait for slow ones (disk/SMART, process, GPU).
+				if err == nil {
+					pushSampleToCache(apiServer, procCollector, sample)
+				}
 			}(i, scheduled[i].collector)
 		}
 		wg.Wait()
@@ -481,20 +486,6 @@ func main() {
 				sc.skipUntilTick = 0
 			}
 		}
-
-		// Build live process snapshot (all processes) and push to API server
-		for _, s := range samples {
-			if s.Kind == "process" {
-				pd := s.Data.(collector.ProcessData)
-				allBasic := procCollector.AllProcessSnapshot()
-				snap := buildProcessSnapshot(&pd, allBasic)
-				apiServer.SetProcessSnapshot(snap)
-				break
-			}
-		}
-
-		// Push latest metrics to API cache (eliminates DB queries from handlers)
-		pushMetricsSnapshot(apiServer, samples)
 
 		// Enqueue samples for async DB write
 		select {
@@ -600,110 +591,111 @@ func buildProcessSnapshot(pd *collector.ProcessData, allBasic []collector.Proces
 	}
 }
 
-// pushMetricsSnapshot converts collected samples to API types and pushes them
-// to the API server cache. Nil values for collectors that didn't run this tick
-// are preserved (SetMetricsSnapshot only overwrites non-nil entries).
-func pushMetricsSnapshot(srv *api.Server, samples []collector.Sample) {
-	var (
-		cpu   []api.CPUCoreMetric
-		mem   *api.MemoryMetric
-		disks []api.DiskMetric
-		net   []api.NetworkMetric
-		temps []api.TemperatureMetric
-		power []api.PowerMetric
-		ecc   *api.ECCMetric
-	)
-	for _, s := range samples {
-		if s.Data == nil {
-			continue
-		}
-		switch d := s.Data.(type) {
-		case collector.CPUData:
-			cpu = make([]api.CPUCoreMetric, len(d.Cores))
-			for i, c := range d.Cores {
-				cpu[i] = api.CPUCoreMetric{
-					Core: c.Core, UserPct: c.UserPct,
-					SystemPct: c.SystemPct, IdlePct: c.IdlePct,
-					IOWaitPct: c.IOWaitPct,
-				}
-			}
-		case collector.MemoryData:
-			mem = &api.MemoryMetric{
-				TotalBytes: d.TotalBytes, UsedBytes: d.UsedBytes,
-				AvailableBytes: d.AvailableBytes, BuffersBytes: d.BuffersBytes,
-				CachedBytes: d.CachedBytes, SwapTotalBytes: d.SwapTotalBytes,
-				SwapUsedBytes: d.SwapUsedBytes,
-			}
-		case collector.DiskData:
-			disks = make([]api.DiskMetric, len(d.Mounts))
-			for i, m := range d.Mounts {
-				disks[i] = api.DiskMetric{
-					Mount: m.Mount, Device: m.Device, Transport: m.Transport,
-					TotalBytes: m.TotalBytes, UsedBytes: m.UsedBytes,
-					FreeBytes: m.FreeBytes, ReadBytesSec: m.ReadBytesSec,
-					WriteBytesSec: m.WriteBytesSec, ReadIOPS: m.ReadIOPS,
-					WriteIOPS: m.WriteIOPS,
-				}
-				if m.SMART != nil && m.SMART.Available {
-					disks[i].SMARTAvailable = true
-					disks[i].SMARTHealthy = m.SMART.Healthy
-					disks[i].SMARTTemperature = m.SMART.Temperature
-					disks[i].SMARTPowerOnHours = m.SMART.PowerOnHours
-					disks[i].SMARTPowerCycles = m.SMART.PowerCycles
-					disks[i].SMARTReadSectors = m.SMART.ReadSectors
-					disks[i].SMARTWrittenSectors = m.SMART.WrittenSectors
-					disks[i].SMARTReallocated = m.SMART.ReallocatedSectors
-					disks[i].SMARTPending = m.SMART.PendingSectors
-					disks[i].SMARTUncorrectable = m.SMART.UncorrectableErrs
-					disks[i].SMARTReadErrorRate = m.SMART.ReadErrorRate
-					disks[i].SMARTAvailableSpare = m.SMART.AvailableSpare
-					disks[i].SMARTPercentUsed = m.SMART.PercentUsed
-				}
-			}
-		case collector.NetworkData:
-			net = make([]api.NetworkMetric, len(d.Interfaces))
-			for i, n := range d.Interfaces {
-				net[i] = api.NetworkMetric{
-					Interface: n.Interface, RxBytesSec: n.RxBytesSec,
-					TxBytesSec: n.TxBytesSec, RxPacketsSec: n.RxPacketsSec,
-					TxPacketsSec: n.TxPacketsSec, RxErrors: n.RxErrors,
-					TxErrors: n.TxErrors,
-				}
-			}
-		case collector.TemperatureData:
-			temps = make([]api.TemperatureMetric, len(d.Sensors))
-			for i, t := range d.Sensors {
-				temps[i] = api.TemperatureMetric{
-					Sensor: t.Sensor, TempCelsius: t.TempCelsius,
-				}
-			}
-		case collector.PowerData:
-			power = make([]api.PowerMetric, len(d.Zones))
-			for i, z := range d.Zones {
-				power[i] = api.PowerMetric{
-					Zone: z.Zone, Watts: z.Watts,
-				}
-			}
-		case collector.ECCData:
-			ecc = &api.ECCMetric{
-				Corrected: d.Corrected, Uncorrected: d.Uncorrected,
-			}
-		case collector.GPUData:
-			gpus := make([]api.GPUMetric, len(d.GPUs))
-			for i, g := range d.GPUs {
-				gpus[i] = api.GPUMetric{
-					Name: g.Name, Index: g.Index, Vendor: g.Vendor,
-					UtilizationPct: g.UtilizationPct,
-					MemoryUsedBytes: g.MemoryUsedBytes, MemoryTotalBytes: g.MemoryTotalBytes,
-					TempCelsius: g.TempCelsius, PowerWatts: g.PowerWatts,
-					FrequencyMHz: g.FrequencyMHz, FrequencyMaxMHz: g.FrequencyMaxMHz,
-					ThrottlePct: g.ThrottlePct,
-				}
-			}
-			srv.SetGPUSnapshot(gpus)
-		}
+// pushSampleToCache converts a single collected sample to its API type and
+// pushes it to the API server cache immediately. Called from each collector
+// goroutine so fast collectors (CPU, memory) don't wait for slow ones
+// (disk/SMART, process, GPU). Thread-safe: SetMetricsSnapshot and friends
+// use internal mutexes.
+func pushSampleToCache(srv *api.Server, procCol collector.ProcessCollectorI, s collector.Sample) {
+	if s.Data == nil {
+		return
 	}
-	srv.SetMetricsSnapshot(cpu, mem, disks, net, temps, power, ecc)
+	switch d := s.Data.(type) {
+	case collector.CPUData:
+		cpu := make([]api.CPUCoreMetric, len(d.Cores))
+		for i, c := range d.Cores {
+			cpu[i] = api.CPUCoreMetric{
+				Core: c.Core, UserPct: c.UserPct,
+				SystemPct: c.SystemPct, IdlePct: c.IdlePct,
+				IOWaitPct: c.IOWaitPct,
+			}
+		}
+		srv.SetMetricsSnapshot(cpu, nil, nil, nil, nil, nil, nil)
+	case collector.MemoryData:
+		mem := &api.MemoryMetric{
+			TotalBytes: d.TotalBytes, UsedBytes: d.UsedBytes,
+			AvailableBytes: d.AvailableBytes, BuffersBytes: d.BuffersBytes,
+			CachedBytes: d.CachedBytes, SwapTotalBytes: d.SwapTotalBytes,
+			SwapUsedBytes: d.SwapUsedBytes,
+		}
+		srv.SetMetricsSnapshot(nil, mem, nil, nil, nil, nil, nil)
+	case collector.DiskData:
+		disks := make([]api.DiskMetric, len(d.Mounts))
+		for i, m := range d.Mounts {
+			disks[i] = api.DiskMetric{
+				Mount: m.Mount, Device: m.Device, Transport: m.Transport,
+				TotalBytes: m.TotalBytes, UsedBytes: m.UsedBytes,
+				FreeBytes: m.FreeBytes, ReadBytesSec: m.ReadBytesSec,
+				WriteBytesSec: m.WriteBytesSec, ReadIOPS: m.ReadIOPS,
+				WriteIOPS: m.WriteIOPS,
+			}
+			if m.SMART != nil && m.SMART.Available {
+				disks[i].SMARTAvailable = true
+				disks[i].SMARTHealthy = m.SMART.Healthy
+				disks[i].SMARTTemperature = m.SMART.Temperature
+				disks[i].SMARTPowerOnHours = m.SMART.PowerOnHours
+				disks[i].SMARTPowerCycles = m.SMART.PowerCycles
+				disks[i].SMARTReadSectors = m.SMART.ReadSectors
+				disks[i].SMARTWrittenSectors = m.SMART.WrittenSectors
+				disks[i].SMARTReallocated = m.SMART.ReallocatedSectors
+				disks[i].SMARTPending = m.SMART.PendingSectors
+				disks[i].SMARTUncorrectable = m.SMART.UncorrectableErrs
+				disks[i].SMARTReadErrorRate = m.SMART.ReadErrorRate
+				disks[i].SMARTAvailableSpare = m.SMART.AvailableSpare
+				disks[i].SMARTPercentUsed = m.SMART.PercentUsed
+			}
+		}
+		srv.SetMetricsSnapshot(nil, nil, disks, nil, nil, nil, nil)
+	case collector.NetworkData:
+		net := make([]api.NetworkMetric, len(d.Interfaces))
+		for i, n := range d.Interfaces {
+			net[i] = api.NetworkMetric{
+				Interface: n.Interface, RxBytesSec: n.RxBytesSec,
+				TxBytesSec: n.TxBytesSec, RxPacketsSec: n.RxPacketsSec,
+				TxPacketsSec: n.TxPacketsSec, RxErrors: n.RxErrors,
+				TxErrors: n.TxErrors,
+			}
+		}
+		srv.SetMetricsSnapshot(nil, nil, nil, net, nil, nil, nil)
+	case collector.TemperatureData:
+		temps := make([]api.TemperatureMetric, len(d.Sensors))
+		for i, t := range d.Sensors {
+			temps[i] = api.TemperatureMetric{
+				Sensor: t.Sensor, TempCelsius: t.TempCelsius,
+			}
+		}
+		srv.SetMetricsSnapshot(nil, nil, nil, nil, temps, nil, nil)
+	case collector.PowerData:
+		power := make([]api.PowerMetric, len(d.Zones))
+		for i, z := range d.Zones {
+			power[i] = api.PowerMetric{
+				Zone: z.Zone, Watts: z.Watts,
+			}
+		}
+		srv.SetMetricsSnapshot(nil, nil, nil, nil, nil, power, nil)
+	case collector.ECCData:
+		ecc := &api.ECCMetric{
+			Corrected: d.Corrected, Uncorrected: d.Uncorrected,
+		}
+		srv.SetMetricsSnapshot(nil, nil, nil, nil, nil, nil, ecc)
+	case collector.GPUData:
+		gpus := make([]api.GPUMetric, len(d.GPUs))
+		for i, g := range d.GPUs {
+			gpus[i] = api.GPUMetric{
+				Name: g.Name, Index: g.Index, Vendor: g.Vendor,
+				UtilizationPct: g.UtilizationPct,
+				MemoryUsedBytes: g.MemoryUsedBytes, MemoryTotalBytes: g.MemoryTotalBytes,
+				TempCelsius: g.TempCelsius, PowerWatts: g.PowerWatts,
+				FrequencyMHz: g.FrequencyMHz, FrequencyMaxMHz: g.FrequencyMaxMHz,
+				ThrottlePct: g.ThrottlePct,
+			}
+		}
+		srv.SetGPUSnapshot(gpus)
+	case collector.ProcessData:
+		allBasic := procCol.AllProcessSnapshot()
+		snap := buildProcessSnapshot(&d, allBasic)
+		srv.SetProcessSnapshot(snap)
+	}
 }
 
 // runScheduledJob starts a goroutine that checks if jobName is overdue,
