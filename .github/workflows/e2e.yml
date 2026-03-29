@@ -48,7 +48,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Tier 1 — always run
           - os: debian-12
             image: debian:bookworm
             arch: amd64
@@ -69,34 +68,55 @@ jobs:
             arch: amd64
             method: tarball
             runner: ubuntu-latest
-          # Tier 2 — main and tags only
+    runs-on: ${{ matrix.runner }}
+    name: ${{ matrix.os }} (${{ matrix.method }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ matrix.arch }}
+          path: dist/
+
+      - name: Run e2e tests
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/dist:/dist:ro" \
+            -v "${{ github.workspace }}/scripts:/scripts:ro" \
+            -e INSTALL_METHOD=${{ matrix.method }} \
+            -e BEWITCH_ARCH=${{ matrix.arch }} \
+            ${{ matrix.image }} \
+            sh /scripts/e2e-test.sh
+
+  e2e-extended:
+    if: github.event_name != 'pull_request'
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
           - os: ubuntu-22.04
             image: ubuntu:22.04
             arch: amd64
             method: deb
             runner: ubuntu-latest
-            tier: 2
           - os: debian-12-arm64
             image: debian:bookworm
             arch: arm64
             method: deb
             runner: ubuntu-24.04-arm
-            tier: 2
           - os: ubuntu-24.04-arm64
             image: ubuntu:24.04
             arch: arm64
             method: tarball
             runner: ubuntu-24.04-arm
-            tier: 2
           - os: archlinux
             image: archlinux:latest
             arch: amd64
             method: tarball
             runner: ubuntu-latest
-            tier: 2
     runs-on: ${{ matrix.runner }}
-    # Skip tier 2 on pull requests
-    if: ${{ matrix.tier != 2 || github.event_name != 'pull_request' }}
     name: ${{ matrix.os }} (${{ matrix.method }})
     steps:
       - uses: actions/checkout@v4
