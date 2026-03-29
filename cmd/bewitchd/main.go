@@ -588,6 +588,7 @@ func buildProcessSnapshot(pd *collector.ProcessData, allBasic []collector.Proces
 		ActiveProcs:   pd.ActiveProcs,
 		TotalCPUPct:   pd.TotalCPUPct,
 		TotalRSSBytes: pd.TotalRSSBytes,
+		EnrichedCount: int32(len(pd.Processes)),
 	}
 }
 

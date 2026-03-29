@@ -1414,40 +1414,19 @@ func (m *Model) loadSelections() {
 }
 
 // selectedProcess returns the currently selected process after applying filter+sort,
-// matching what the user sees on screen.
+// matching what the user sees on screen (enriched first, then non-enriched).
 func (m *Model) selectedProcess() (api.ProcessMetric, bool) {
 	if m.procData == nil || len(m.procData.Processes) == 0 {
 		return api.ProcessMetric{}, false
 	}
-	toDisplay := m.procData.Processes
-	if m.procSearchQuery != "" {
-		queryLower := strings.ToLower(m.procSearchQuery)
-		var filtered []api.ProcessMetric
-		for _, p := range m.procData.Processes {
-			if strings.Contains(strings.ToLower(p.Name), queryLower) ||
-				strings.Contains(strings.ToLower(p.Cmdline), queryLower) {
-				filtered = append(filtered, p)
-			}
-		}
-		toDisplay = filtered
-	}
-	if m.procPinnedOnly {
-		var pinFiltered []api.ProcessMetric
-		for _, p := range toDisplay {
-			if m.pinnedProcesses[p.Name] {
-				pinFiltered = append(pinFiltered, p)
-			}
-		}
-		toDisplay = pinFiltered
-	}
-	if len(toDisplay) == 0 {
+	enriched, nonEnriched := orderedProcessList(m.procData.Processes, m.procSearchQuery, m.pinnedProcesses, m.procPinnedOnly, m.procSortBy)
+	// Combine in the same order as the render: enriched first, then non-enriched
+	combined := append(enriched, nonEnriched...)
+	if len(combined) == 0 {
 		return api.ProcessMetric{}, false
 	}
-	sorted := make([]api.ProcessMetric, len(toDisplay))
-	copy(sorted, toDisplay)
-	sortProcesses(sorted, m.procSortBy)
-	if m.procCursor < len(sorted) {
-		return sorted[m.procCursor], true
+	if m.procCursor < len(combined) {
+		return combined[m.procCursor], true
 	}
 	return api.ProcessMetric{}, false
 }
@@ -2217,12 +2196,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "down":
-				maxIdx := 49
-				if (m.procSearchQuery != "" || m.procPinnedOnly) && m.procFilteredLen > 0 {
-					maxIdx = m.procFilteredLen - 1
-					if maxIdx > 49 {
-						maxIdx = 49
-					}
+				maxIdx := m.procFilteredLen - 1
+				if maxIdx < 0 {
+					maxIdx = 0
 				}
 				m.procCursor++
 				if m.procCursor > maxIdx {

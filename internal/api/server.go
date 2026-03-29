@@ -356,6 +356,7 @@ func (s *Server) getCachedDashboard() (*DashboardData, uint64) {
 				ActiveProcs:   snap.ActiveProcs,
 				TotalCPUPct:   snap.TotalCPUPct,
 				TotalRSSBytes: snap.TotalRSSBytes,
+				EnrichedCount: snap.EnrichedCount,
 			}
 		}
 		mc.dash = dash

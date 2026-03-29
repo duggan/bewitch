@@ -108,7 +108,7 @@ type ProcessMetric struct {
 	NumFDs       int32   `json:"num_fds"`
 	NumThreads   int32   `json:"num_threads"`
 	StartTimeNs  int64   `json:"start_time_ns"`
-	Enriched     bool    `json:"-"` // true = full data (Phase 2), false = lightweight (Phase 1 only)
+	Enriched     bool    `json:"enriched"` // true = full data (Phase 2), false = lightweight (Phase 1 only)
 }
 
 type ProcessResponse struct {
@@ -118,6 +118,7 @@ type ProcessResponse struct {
 	ActiveProcs   int32           `json:"active_procs"`
 	TotalCPUPct   float64         `json:"total_cpu_pct"`
 	TotalRSSBytes uint64          `json:"total_rss_bytes"`
+	EnrichedCount int32           `json:"enriched_count"` // number of fully enriched (Phase 2) processes
 }
 
 type AlertMetric struct {

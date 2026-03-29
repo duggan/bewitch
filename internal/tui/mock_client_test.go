@@ -153,10 +153,11 @@ func newMockClient() *mockClient {
 			{Zone: "package-0", Watts: 45.5},
 		},
 		procs: &api.ProcessResponse{
-			TotalProcs:   150,
-			RunningProcs: 3,
-			ActiveProcs:  10,
-			TotalCPUPct:  35.0,
+			TotalProcs:    150,
+			RunningProcs:  3,
+			ActiveProcs:   10,
+			TotalCPUPct:   35.0,
+			EnrichedCount: 3,
 			Processes: []api.ProcessMetric{
 				{PID: 1, Name: "systemd", State: "S", CPUUserPct: 0.1, RSSBytes: 10_000_000, NumThreads: 1, Enriched: true},
 				{PID: 100, Name: "nginx", State: "S", CPUUserPct: 5.0, RSSBytes: 50_000_000, NumThreads: 4, NumFDs: 120, Enriched: true, Cmdline: "nginx: master process"},
