@@ -1,0 +1,118 @@
+name: E2E Installation Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute version
+        id: version
+        run: |
+          BASE=$(cat VERSION)
+          SHA=$(git rev-parse --short HEAD)
+          echo "version=${BASE}~e2e.${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build artifacts
+        run: >-
+          docker build -f Dockerfile.build
+          --build-arg BEWITCH_VERSION=${{ steps.version.outputs.version }}
+          -o dist .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.arch }}
+          path: dist/
+
+  e2e:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Tier 1 — always run
+          - os: debian-12
+            image: debian:bookworm
+            arch: amd64
+            method: deb
+            runner: ubuntu-latest
+          - os: ubuntu-24.04
+            image: ubuntu:24.04
+            arch: amd64
+            method: deb
+            runner: ubuntu-latest
+          - os: rocky-9
+            image: rockylinux:9
+            arch: amd64
+            method: tarball
+            runner: ubuntu-latest
+          - os: fedora
+            image: fedora:latest
+            arch: amd64
+            method: tarball
+            runner: ubuntu-latest
+          # Tier 2 — main and tags only
+          - os: ubuntu-22.04
+            image: ubuntu:22.04
+            arch: amd64
+            method: deb
+            runner: ubuntu-latest
+            tier: 2
+          - os: debian-12-arm64
+            image: debian:bookworm
+            arch: arm64
+            method: deb
+            runner: ubuntu-24.04-arm
+            tier: 2
+          - os: ubuntu-24.04-arm64
+            image: ubuntu:24.04
+            arch: arm64
+            method: tarball
+            runner: ubuntu-24.04-arm
+            tier: 2
+          - os: archlinux
+            image: archlinux:latest
+            arch: amd64
+            method: tarball
+            runner: ubuntu-latest
+            tier: 2
+    runs-on: ${{ matrix.runner }}
+    # Skip tier 2 on pull requests
+    if: ${{ matrix.tier != 2 || github.event_name != 'pull_request' }}
+    name: ${{ matrix.os }} (${{ matrix.method }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ matrix.arch }}
+          path: dist/
+
+      - name: Run e2e tests
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/dist:/dist:ro" \
+            -v "${{ github.workspace }}/scripts:/scripts:ro" \
+            -e INSTALL_METHOD=${{ matrix.method }} \
+            -e BEWITCH_ARCH=${{ matrix.arch }} \
+            ${{ matrix.image }} \
+            sh /scripts/e2e-test.sh
