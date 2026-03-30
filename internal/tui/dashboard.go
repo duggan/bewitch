@@ -385,18 +385,17 @@ func buildGPUPanel(dash *api.DashboardData, width int, selected map[string]bool)
 		barWidth = 40
 	}
 	var b strings.Builder
-	for i, g := range dash.GPU {
+	shown := 0
+	for _, g := range dash.GPU {
 		if len(selected) > 0 && !selected[g.Name] {
 			continue
 		}
-		if i > 0 {
+		if shown > 0 {
 			b.WriteString("\n")
 		}
-		name := g.Name
-		if len(name) > 16 {
-			name = name[:16]
-		}
-		b.WriteString(labelStyle.Render(name) + renderBar(g.UtilizationPct, barWidth) +
+		shown++
+		b.WriteString(lipgloss.NewStyle().Foreground(colorMagenta).Render(g.Name) + "\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(colorDeepPurple).Render("└── ") + renderBar(g.UtilizationPct, barWidth) +
 			valueStyle.Render(fmt.Sprintf(" %.0f%%  %dMHz", g.UtilizationPct, g.FrequencyMHz)))
 	}
 	return b.String()
