@@ -58,8 +58,8 @@ jobs:
             arch: amd64
             method: deb
             runner: ubuntu-latest
-          - os: rocky-9
-            image: rockylinux:9
+          - os: rocky-10
+            image: rockylinux/rockylinux:10
             arch: amd64
             method: tarball
             runner: ubuntu-latest

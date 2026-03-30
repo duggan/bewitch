@@ -77,8 +77,8 @@ install_bewitch() {
 check_versions() {
     info "checking versions"
 
-    BEWITCHD_VER=$(bewitchd -version 2>&1) || fail "bewitchd -version failed"
-    BEWITCH_VER=$(bewitch -version 2>&1) || fail "bewitch -version failed"
+    BEWITCHD_VER=$(bewitchd -version 2>&1) || fail "bewitchd -version failed: $BEWITCHD_VER"
+    BEWITCH_VER=$(bewitch -version 2>&1) || fail "bewitch -version failed: $BEWITCH_VER"
 
     echo "$BEWITCHD_VER" | grep -q "bewitchd" || fail "bewitchd -version output unexpected: $BEWITCHD_VER"
     echo "$BEWITCH_VER" | grep -q "bewitch" || fail "bewitch -version output unexpected: $BEWITCH_VER"
