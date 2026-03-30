@@ -46,3 +46,22 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: site
           command: pages deploy dist --project-name=bewitch --branch=${{ github.head_ref || github.ref_name }} --commit-dirty=true
+
+      - name: Deploy dev docs to R2
+        if: github.ref == 'refs/heads/main'
+        run: |
+          VERSION=$(cat VERSION)
+          STABLE=$(cat LATEST_STABLE)
+          if [ "$VERSION" != "$STABLE" ]; then
+            echo "VERSION ($VERSION) != LATEST_STABLE ($STABLE), deploying dev docs..."
+            cd site
+            VITE_DOCS_BASE=/docs/dev bun run build
+            cd ..
+            npm install -g wrangler
+            scripts/upload-dev-docs.sh site/dist
+          else
+            echo "VERSION matches LATEST_STABLE, skipping dev docs."
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

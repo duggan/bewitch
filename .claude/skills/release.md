@@ -15,7 +15,7 @@ Examples:
 ## What This Skill Does
 
 1. **Updates changelogs** via `/changelog` (`CHANGELOG.md`, docs site, `debian/changelog`)
-2. **Updates `VERSION`** file with the new version
+2. **Updates `VERSION`** and `LATEST_STABLE` files with the new version
 3. **Adds version** to the docs site version dropdown in `site/src/versions.ts`
 4. **Commits** the version bump and changelog
 5. **Tags** the release as `v<version>`
@@ -31,8 +31,14 @@ The main site (changelog, version dropdown) deploys automatically via `deploy-si
 
 ## Versioning
 
-The `VERSION` file at the repo root is the single source of truth. It is injected into both Go binaries (`bewitch` and `bewitchd`) at build time via `-ldflags "-X main.version=..."`. Both binaries support `--version`; `bewitch` also supports the `version` subcommand.
+Two version files at the repo root:
 
+- **`VERSION`** — the current version. Injected into both Go binaries at build time via `-ldflags "-X main.version=..."`. Both binaries support `--version`; `bewitch` also supports the `version` subcommand. Between releases, this is bumped to the next expected version.
+- **`LATEST_STABLE`** — the latest stable release version. Used by the docs site to determine the version dropdown label. Updated only during a release (matches `VERSION` at release time, falls behind when `VERSION` is bumped for the next dev cycle).
+
+When `VERSION` differs from `LATEST_STABLE`, the docs site shows a `-dev` entry at `/docs/dev` and the `deploy-site.yml` workflow uploads dev docs to R2. When they match, only stable docs are shown.
+
+Version vs revision:
 - **Version** (e.g., `0.2.0`): Bump for code changes
 - **Revision** (e.g., `-1`, `-2`): Bump for packaging-only changes to same upstream version (lives in `debian/changelog` only)
 
@@ -41,8 +47,8 @@ The `VERSION` file at the repo root is the single source of truth. It is injecte
 When invoked:
 
 1. Run `/changelog <version>` to update all changelogs (CHANGELOG.md, docs site, debian/changelog)
-2. Update the `VERSION` file with the new version
-3. Update `site/src/versions.ts`: add a new versioned-docs entry and update the first entry's label to `v<version>` (the `/docs` path always shows the latest stable version)
+2. Update `VERSION` and `LATEST_STABLE` files with the new version
+3. Add a new versioned-docs entry to `site/src/versions.ts`
 4. Commit all changes
 5. Tag the release as `v<version>`
 6. Ask the user if they want to push now. If yes, run `git push origin main v<version>`

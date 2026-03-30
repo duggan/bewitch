@@ -6,6 +6,7 @@ import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 const version = (await readFile(resolve(__dirname, '../VERSION'), 'utf-8')).trim()
+const latestStable = (await readFile(resolve(__dirname, '../LATEST_STABLE'), 'utf-8')).trim()
 
 // After build, rewrite CSS links in generated HTML to point to the hashed CSS file
 function rewriteCssLinks(): Plugin {
@@ -68,6 +69,7 @@ export default defineConfig({
   ],
   define: {
     __BEWITCH_VERSION__: JSON.stringify(version),
+    __BEWITCH_LATEST_STABLE__: JSON.stringify(latestStable),
   },
   build: {
     rollupOptions: {
