@@ -2,6 +2,28 @@
 
 All notable changes to bewitch are documented here.
 
+## [0.4.0] - 2026-03-30
+
+### Added
+
+- GPU collector with Intel iGPU (`intel_gpu_top`) and NVIDIA (`nvidia-smi`) support
+- Actionable hints in GPU view when monitoring tools are missing
+- Per-collector API cache push for immediate data freshness
+- Load live data and hardware history immediately on startup
+- Show enriched processes above the fold in process view
+- Copy-to-clipboard button on docs code blocks
+- E2E installation testing workflow
+
+### Fixed
+
+- Stale history chart shown on view switch cache miss
+- Maintainer email in Debian packaging
+- Dev version ordering (full timestamp instead of git SHA)
+
+### Changed
+
+- Enhanced installer with optional dependency prompts, dev channel, and version stamping
+
 ## [0.3.1] - 2026-03-16
 
 ### Fixed

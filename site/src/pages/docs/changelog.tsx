@@ -9,6 +9,29 @@ export const ChangelogDocs: FC = () => (
       <a href="https://github.com/duggan/bewitch/blob/main/CHANGELOG.md">CHANGELOG.md</a> on GitHub.
     </p>
 
+    <h2>0.4.0</h2>
+    <p class="text-muted text-sm">2026-03-30</p>
+    <h3>Added</h3>
+    <ul>
+      <li>GPU collector with Intel iGPU (<code>intel_gpu_top</code>) and NVIDIA (<code>nvidia-smi</code>) support</li>
+      <li>Actionable hints in GPU view when monitoring tools are missing</li>
+      <li>Per-collector API cache push for immediate data freshness</li>
+      <li>Load live data and hardware history immediately on startup</li>
+      <li>Show enriched processes above the fold in process view</li>
+      <li>Copy-to-clipboard button on docs code blocks</li>
+      <li>E2E installation testing workflow</li>
+    </ul>
+    <h3>Fixed</h3>
+    <ul>
+      <li>Stale history chart shown on view switch cache miss</li>
+      <li>Maintainer email in Debian packaging</li>
+      <li>Dev version ordering (full timestamp instead of git SHA)</li>
+    </ul>
+    <h3>Changed</h3>
+    <ul>
+      <li>Enhanced installer with optional dependency prompts, dev channel, and version stamping</li>
+    </ul>
+
     <h2>0.3.1</h2>
     <p class="text-muted text-sm">2026-03-16</p>
     <h3>Fixed</h3>

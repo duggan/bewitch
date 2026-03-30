@@ -1,0 +1,15 @@
+bewitch (0.4.0-1) unstable; urgency=medium
+
+  * GPU collector with Intel iGPU (intel_gpu_top) and NVIDIA (nvidia-smi) support
+  * Actionable hints in GPU view when monitoring tools are missing
+  * Per-collector API cache push for immediate data freshness
+  * Load live data and hardware history immediately on startup
+  * Show enriched processes above the fold in process view
+  * Copy-to-clipboard button on docs code blocks
+  * E2E installation testing workflow
+  * Fix stale history chart shown on view switch cache miss
+  * Fix maintainer email in Debian packaging
+  * Fix dev version ordering (full timestamp instead of git SHA)
+  * Enhanced installer with optional dependency prompts, dev channel, and version stamping
+
+ -- Ross Duggan <ross@duggan.ie>  Mon, 30 Mar 2026 11:55:13 +0100
