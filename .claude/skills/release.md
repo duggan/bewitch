@@ -42,7 +42,7 @@ When invoked:
 
 1. Run `/changelog <version>` to update all changelogs (CHANGELOG.md, docs site, debian/changelog)
 2. Update the `VERSION` file with the new version
-3. Add the new version to the docs site version dropdown in `site/src/versions.ts`
+3. Update `site/src/versions.ts`: add a new versioned-docs entry and update the first entry's label to `v<version>` (the `/docs` path always shows the latest stable version)
 4. Commit all changes
 5. Tag the release as `v<version>`
 6. Ask the user if they want to push now. If yes, run `git push origin main v<version>`
