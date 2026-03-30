@@ -30,6 +30,7 @@ document.addEventListener('click', function(e) {
   var btn = e.target.closest('.copy-btn');
   if (!btn) return;
   var text = btn.dataset.copy;
+  if (!text) { var code = btn.closest('div').parentElement.querySelector('code'); if (code) text = code.innerText; }
   if (!text) return;
   navigator.clipboard.writeText(text).then(function() {
     var orig = btn.textContent;
