@@ -53,14 +53,17 @@ func validateCapturePath(s string) error {
 	return nil
 }
 
-func defaultCapturePath(v view) string {
+func defaultCapturePath(v view, dir string) string {
 	name := strings.ToLower(viewName(v))
 	ts := time.Now().Format("20060102-150405")
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
+	if dir == "" {
+		var err error
+		dir, err = os.UserHomeDir()
+		if err != nil {
+			dir = "."
+		}
 	}
-	return filepath.Join(home, fmt.Sprintf("bewitch-%s-%s.png", name, ts))
+	return filepath.Join(expandHome(dir), fmt.Sprintf("bewitch-%s-%s.png", name, ts))
 }
 
 // expandHome expands a leading ~ to the user's home directory.

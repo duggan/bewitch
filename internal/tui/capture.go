@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"fmt"
 	"image/color"
+	"image/png"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/duggan/bewitch/internal/config"
 )
 
 // CaptureCell represents a single character cell with style information.
@@ -27,6 +30,63 @@ var (
 	defaultCaptureFG = color.RGBA{0xF8, 0xF8, 0xF2, 0xFF} // colorText #F8F8F2
 	defaultCaptureBG = color.RGBA{0x1A, 0x1A, 0x2E, 0xFF} // colorDarkBg #1A1A2E
 )
+
+// CaptureSettings holds resolved capture configuration for rendering.
+type CaptureSettings struct {
+	Directory   string
+	DPI         int
+	Compression png.CompressionLevel
+	Background  color.RGBA
+	Foreground  color.RGBA
+}
+
+// DefaultCaptureSettings returns settings with sensible defaults.
+func DefaultCaptureSettings() CaptureSettings {
+	return CaptureSettings{
+		DPI:         144,
+		Compression: png.BestCompression,
+		Background:  defaultCaptureBG,
+		Foreground:  defaultCaptureFG,
+	}
+}
+
+// CaptureSettingsFromConfig builds CaptureSettings from the config, falling back to defaults.
+func CaptureSettingsFromConfig(cfg config.CaptureConfig) CaptureSettings {
+	s := DefaultCaptureSettings()
+	if cfg.Directory != "" {
+		s.Directory = cfg.Directory
+	}
+	s.DPI = cfg.GetDPI()
+	switch cfg.GetCompression() {
+	case "none":
+		s.Compression = png.NoCompression
+	case "default":
+		s.Compression = png.DefaultCompression
+	default:
+		s.Compression = png.BestCompression
+	}
+	if c, err := parseHexColor(cfg.Background); err == nil {
+		s.Background = c
+	}
+	if c, err := parseHexColor(cfg.Foreground); err == nil {
+		s.Foreground = c
+	}
+	return s
+}
+
+// parseHexColor parses a "#RRGGBB" hex color string.
+func parseHexColor(s string) (color.RGBA, error) {
+	s = strings.TrimPrefix(s, "#")
+	if len(s) != 6 {
+		return color.RGBA{}, fmt.Errorf("invalid hex color: %q", s)
+	}
+	var r, g, b uint8
+	_, err := fmt.Sscanf(s, "%02x%02x%02x", &r, &g, &b)
+	if err != nil {
+		return color.RGBA{}, fmt.Errorf("invalid hex color: %q", s)
+	}
+	return color.RGBA{r, g, b, 0xFF}, nil
+}
 
 // ANSI 16-color palette (standard + bright).
 var ansi16Colors = [16]color.RGBA{
@@ -74,15 +134,17 @@ func ansi256Color(idx int) color.RGBA {
 
 // sgrState tracks the current SGR (Select Graphic Rendition) style.
 type sgrState struct {
-	fg   color.RGBA
-	bg   color.RGBA
-	bold bool
+	fg      color.RGBA
+	bg      color.RGBA
+	bold    bool
+	resetFG color.RGBA // color to restore on SGR 0/39
+	resetBG color.RGBA // color to restore on SGR 0/49
 }
 
 // ParseANSI parses an ANSI-styled string into a CaptureGrid.
 // It handles SGR sequences for foreground/background colors and bold.
 // Non-SGR escape sequences are silently consumed.
-func ParseANSI(s string) *CaptureGrid {
+func ParseANSI(s string, fg, bg color.RGBA) *CaptureGrid {
 	lines := strings.Split(s, "\n")
 	grid := &CaptureGrid{
 		Cells:  make([][]CaptureCell, len(lines)),
@@ -90,7 +152,7 @@ func ParseANSI(s string) *CaptureGrid {
 	}
 
 	for i, line := range lines {
-		row := parseANSILine(line)
+		row := parseANSILine(line, fg, bg)
 		grid.Cells[i] = row
 		if len(row) > grid.Width {
 			grid.Width = len(row)
@@ -101,9 +163,9 @@ func ParseANSI(s string) *CaptureGrid {
 }
 
 // parseANSILine parses a single line of ANSI text into cells.
-func parseANSILine(line string) []CaptureCell {
+func parseANSILine(line string, fg, bg color.RGBA) []CaptureCell {
 	var cells []CaptureCell
-	state := sgrState{fg: defaultCaptureFG, bg: defaultCaptureBG}
+	state := sgrState{fg: fg, bg: bg, resetFG: fg, resetBG: bg}
 	p := ansi.NewParser()
 
 	var parserState byte
@@ -157,8 +219,8 @@ func parseANSILine(line string) []CaptureCell {
 func applySGR(state *sgrState, params ansi.Params) {
 	if len(params) == 0 {
 		// SGR with no params = reset
-		state.fg = defaultCaptureFG
-		state.bg = defaultCaptureBG
+		state.fg = state.resetFG
+		state.bg = state.resetBG
 		state.bold = false
 		return
 	}
@@ -169,8 +231,8 @@ func applySGR(state *sgrState, params ansi.Params) {
 
 		switch {
 		case p == 0:
-			state.fg = defaultCaptureFG
-			state.bg = defaultCaptureBG
+			state.fg = state.resetFG
+			state.bg = state.resetBG
 			state.bold = false
 		case p == 1:
 			state.bold = true
@@ -185,9 +247,9 @@ func applySGR(state *sgrState, params ansi.Params) {
 		case p >= 100 && p <= 107:
 			state.bg = ansi16Colors[p-100+8]
 		case p == 39:
-			state.fg = defaultCaptureFG
+			state.fg = state.resetFG
 		case p == 49:
-			state.bg = defaultCaptureBG
+			state.bg = state.resetBG
 		case p == 38 || p == 48:
 			// Extended color: 38;5;N (256-color) or 38;2;R;G;B (truecolor)
 			isFG := p == 38

@@ -194,9 +194,10 @@ type Model struct {
 	captureFormActive bool
 	captureForm       *huh.Form
 	captureFormState  *captureFormState
-	capturedContent   string    // ANSI string captured when 'x' pressed
-	captureFlash      string    // success/error message shown briefly
-	captureFlashUntil time.Time // when flash message expires
+	capturedContent   string          // ANSI string captured when 'x' pressed
+	captureFlash      string          // success/error message shown briefly
+	captureFlashUntil time.Time       // when flash message expires
+	captureSettings   CaptureSettings // PNG rendering settings from config
 	// Status data (fetched once at startup, rendered per-view)
 	statusData map[string]any
 	// Last time fresh data arrived per view (for staleness detection)
@@ -205,7 +206,7 @@ type Model struct {
 	debug *debugLog
 }
 
-func NewModel(client daemonClient, interval time.Duration, historyRanges []config.HistoryRange, enableDebug bool) Model {
+func NewModel(client daemonClient, interval time.Duration, historyRanges []config.HistoryRange, captureSettings CaptureSettings, enableDebug bool) Model {
 	// Initialize alert table
 	columns := []table.Column{
 		{Title: "Time", Width: 14},
@@ -243,15 +244,16 @@ func NewModel(client daemonClient, interval time.Duration, historyRanges []confi
 		dbg = newDebugLog(100)
 	}
 	m := Model{
-		client:         client,
-		current:        viewDashboard,
-		width:          80,
-		height:         24,
-		interval:       interval,
-		historyRanges:  historyRanges,
-		historyRange:   defaultIdx,
-		alertTable:     t,
-		debug:          dbg,
+		client:          client,
+		current:         viewDashboard,
+		width:           80,
+		height:          24,
+		interval:        interval,
+		historyRanges:   historyRanges,
+		historyRange:    defaultIdx,
+		alertTable:      t,
+		debug:           dbg,
+		captureSettings: captureSettings,
 		lastDataChange:  make(map[view]time.Time),
 		historyFetching: make(map[view]bool),
 	}
@@ -1889,8 +1891,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.captureForm = nil
 				m.captureFormState = nil
 				m.capturedContent = ""
+				settings := m.captureSettings
 				return m, func() tea.Msg {
-					return runCapture(state, content)
+					return runCapture(state, content, settings)
 				}
 			}
 			if f.State == huh.StateAborted {
@@ -2445,7 +2448,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "x":
 			m.capturedContent = m.captureViewContent()
 			m.captureFormState = &captureFormState{
-				path: defaultCapturePath(m.current),
+				path: defaultCapturePath(m.current, m.captureSettings.Directory),
 			}
 			m.captureForm = buildCaptureForm(m.captureFormState)
 			m.captureFormActive = true
@@ -2775,12 +2778,12 @@ func (m *Model) captureViewContent() string {
 }
 
 // runCapture performs the actual file write. Called as an async tea.Cmd.
-func runCapture(state *captureFormState, content string) captureResultMsg {
+func runCapture(state *captureFormState, content string, settings CaptureSettings) captureResultMsg {
 	path := expandHome(state.path)
 	if !strings.HasSuffix(path, ".png") {
 		path += ".png"
 	}
-	grid := ParseANSI(content)
+	grid := ParseANSI(content, settings.Foreground, settings.Background)
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -2788,7 +2791,7 @@ func runCapture(state *captureFormState, content string) captureResultMsg {
 	}
 	defer f.Close()
 
-	if err := RenderPNG(grid, f); err != nil {
+	if err := RenderPNG(grid, f, settings); err != nil {
 		return captureResultMsg{err: err}
 	}
 	return captureResultMsg{path: path}

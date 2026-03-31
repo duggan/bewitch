@@ -696,6 +696,84 @@ cmd = "notify-send"
 	})
 }
 
+func TestCaptureConfigGetDPI(t *testing.T) {
+	tests := []struct {
+		name string
+		dpi  int
+		want int
+	}{
+		{"zero defaults to 144", 0, 144},
+		{"negative defaults to 144", -1, 144},
+		{"72 returns 72", 72, 72},
+		{"144 returns 144", 144, 144},
+		{"216 returns 216", 216, 216},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := CaptureConfig{DPI: tt.dpi}
+			if got := c.GetDPI(); got != tt.want {
+				t.Errorf("GetDPI() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCaptureConfigGetCompression(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"empty defaults to best", "", "best"},
+		{"best", "best", "best"},
+		{"default", "default", "default"},
+		{"none", "none", "none"},
+		{"invalid defaults to best", "turbo", "best"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := CaptureConfig{Compression: tt.input}
+			if got := c.GetCompression(); got != tt.want {
+				t.Errorf("GetCompression() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadCaptureConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.toml")
+	os.WriteFile(path, []byte(`[daemon]
+
+[tui.capture]
+directory = "~/screenshots"
+dpi = 216
+compression = "none"
+background = "#000000"
+foreground = "#FFFFFF"
+`), 0644)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cap := cfg.TUI.Capture
+	if cap.Directory != "~/screenshots" {
+		t.Errorf("directory = %q", cap.Directory)
+	}
+	if cap.GetDPI() != 216 {
+		t.Errorf("dpi = %d", cap.GetDPI())
+	}
+	if cap.GetCompression() != "none" {
+		t.Errorf("compression = %q", cap.GetCompression())
+	}
+	if cap.Background != "#000000" {
+		t.Errorf("background = %q", cap.Background)
+	}
+	if cap.Foreground != "#FFFFFF" {
+		t.Errorf("foreground = %q", cap.Foreground)
+	}
+}
+
 func TestValidateAuth(t *testing.T) {
 	tests := []struct {
 		name     string

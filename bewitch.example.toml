@@ -45,6 +45,13 @@ evaluation_interval = "10s"
 refresh_interval = "2s"
 # history_ranges = ["1h", "6h", "24h", "7d", "30d"]  # time range presets for history charts
 
+# [tui.capture]
+# directory = "~/screenshots"    # default save directory; empty = home directory
+# dpi = 144                      # render DPI; 72 = 1x, 144 = 2x (default), 216 = 3x
+# compression = "best"           # PNG compression: "default", "best", "none"
+# background = "#1A1A2E"         # canvas background color
+# foreground = "#F8F8F2"         # default text color
+
 [collectors.cpu]
 # interval = "1s"  # override default_interval for CPU collection
 

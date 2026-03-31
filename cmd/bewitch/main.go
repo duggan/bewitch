@@ -98,8 +98,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	captureSettings := tui.CaptureSettingsFromConfig(cfg.TUI.Capture)
+
 	client := makeClient(cfg, *addr, tlsCfg, effectiveToken)
-	model := tui.NewModel(client, refreshInterval, historyRanges, *debug)
+	model := tui.NewModel(client, refreshInterval, historyRanges, captureSettings, *debug)
 
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

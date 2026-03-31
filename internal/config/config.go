@@ -75,8 +75,35 @@ type CommandDest struct {
 }
 
 type TUIConfig struct {
-	RefreshInterval string   `toml:"refresh_interval"`
-	HistoryRanges   []string `toml:"history_ranges"`
+	RefreshInterval string        `toml:"refresh_interval"`
+	HistoryRanges   []string      `toml:"history_ranges"`
+	Capture         CaptureConfig `toml:"capture"`
+}
+
+type CaptureConfig struct {
+	Directory   string `toml:"directory"`   // default save directory; empty = home directory
+	DPI         int    `toml:"dpi"`         // render DPI; default 144 (2x); 72 = 1x, 216 = 3x
+	Compression string `toml:"compression"` // "default", "best", "none"; default "best"
+	Background  string `toml:"background"`  // hex background color; default "#1A1A2E"
+	Foreground  string `toml:"foreground"`  // hex foreground color; default "#F8F8F2"
+}
+
+// GetDPI returns the configured DPI, defaulting to 144.
+func (c *CaptureConfig) GetDPI() int {
+	if c.DPI <= 0 {
+		return 144
+	}
+	return c.DPI
+}
+
+// GetCompression returns the configured compression level string, defaulting to "best".
+func (c *CaptureConfig) GetCompression() string {
+	switch c.Compression {
+	case "default", "best", "none":
+		return c.Compression
+	default:
+		return "best"
+	}
 }
 
 type CollectorsConfig struct {

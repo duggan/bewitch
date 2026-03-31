@@ -13,14 +13,14 @@ import (
 // helper creates a Model with mock data and triggers WindowSizeMsg so m.ready=true.
 func readyModel(t *testing.T) Model {
 	t.Helper()
-	m := NewModel(newMockClient(), time.Second, config.DefaultHistoryRanges, false)
+	m := NewModel(newMockClient(), time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
 	// Send WindowSizeMsg to initialize viewport
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	return updated.(Model)
 }
 
 func TestUpdateWindowSize(t *testing.T) {
-	m := NewModel(newMockClient(), time.Second, config.DefaultHistoryRanges, false)
+	m := NewModel(newMockClient(), time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
 	if m.ready {
 		t.Fatal("model should not be ready before WindowSizeMsg")
 	}
@@ -159,7 +159,7 @@ func TestUpdateTick(t *testing.T) {
 func TestUpdateHardwareTabAlwaysVisible(t *testing.T) {
 	// Hardware tab is always visible regardless of data
 	mock := newMockClient()
-	m := NewModel(mock, time.Second, config.DefaultHistoryRanges, false)
+	m := NewModel(mock, time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
 
 	hasHW := false
 	for _, v := range m.visibleTabs {
@@ -178,7 +178,7 @@ func TestUpdateHardwareTabAlwaysVisible(t *testing.T) {
 		procs: &api.ProcessResponse{},
 		prefs: map[string]string{},
 	}
-	m2 := NewModel(mock2, time.Second, config.DefaultHistoryRanges, false)
+	m2 := NewModel(mock2, time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
 
 	hasHW = false
 	for _, v := range m2.visibleTabs {

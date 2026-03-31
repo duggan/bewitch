@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 
 func newTestModel(t *testing.T) Model {
 	t.Helper()
-	return NewModel(newMockClient(), time.Second, config.DefaultHistoryRanges, false)
+	return NewModel(newMockClient(), time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
 }
 
 func TestInitialRender(t *testing.T) {
@@ -140,7 +140,7 @@ func TestDynamicTabHiding(t *testing.T) {
 		procs: &api.ProcessResponse{},
 		prefs: map[string]string{},
 	}
-	m := NewModel(mock, time.Second, config.DefaultHistoryRanges, false)
+	m := NewModel(mock, time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
 
 	tm := teatest.NewTestModel(t, m,
 		teatest.WithInitialTermSize(120, 40))
@@ -160,7 +160,7 @@ func TestDynamicTabHiding(t *testing.T) {
 func TestHardwareTabAlwaysVisible(t *testing.T) {
 	// Hardware tab is always present regardless of data availability
 	mockFull := newMockClient()
-	mFull := NewModel(mockFull, time.Second, config.DefaultHistoryRanges, false)
+	mFull := NewModel(mockFull, time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
 
 	hasHW := false
 	for _, v := range mFull.visibleTabs {
@@ -179,7 +179,7 @@ func TestHardwareTabAlwaysVisible(t *testing.T) {
 		procs: &api.ProcessResponse{},
 		prefs: map[string]string{},
 	}
-	mEmpty := NewModel(mockEmpty, time.Second, config.DefaultHistoryRanges, false)
+	mEmpty := NewModel(mockEmpty, time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
 
 	hasHW = false
 	for _, v := range mEmpty.visibleTabs {
