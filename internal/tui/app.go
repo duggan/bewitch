@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -73,6 +74,11 @@ type notifyTestResultMsg struct {
 	results []NotifyTestResult
 	err     error
 	sentAt  time.Time
+}
+
+type captureResultMsg struct {
+	path string
+	err  error
 }
 
 type notifyLogEntry struct {
@@ -184,6 +190,13 @@ type Model struct {
 	datePicker       datePickerModel
 	customStart      *time.Time // non-nil = custom range active
 	customEnd        *time.Time
+	// Screen capture overlay
+	captureFormActive bool
+	captureForm       *huh.Form
+	captureFormState  *captureFormState
+	capturedContent   string    // ANSI string captured when 'x' pressed
+	captureFlash      string    // success/error message shown briefly
+	captureFlashUntil time.Time // when flash message expires
 	// Status data (fetched once at startup, rendered per-view)
 	statusData map[string]any
 	// Last time fresh data arrived per view (for staleness detection)
@@ -1857,6 +1870,40 @@ func (m *Model) updateGPUSparklines(gpus []api.GPUMetric) {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// If capture form is active, route ALL messages to it
+	if m.captureFormActive && m.captureForm != nil {
+		if msg, ok := msg.(tea.KeyMsg); ok && msg.String() == "esc" {
+			m.captureFormActive = false
+			m.captureForm = nil
+			m.captureFormState = nil
+			m.capturedContent = ""
+			return m, tickCmd(m.interval)
+		}
+		form, cmd := m.captureForm.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			m.captureForm = f
+			if f.State == huh.StateCompleted {
+				m.captureFormActive = false
+				state := m.captureFormState
+				content := m.capturedContent
+				m.captureForm = nil
+				m.captureFormState = nil
+				m.capturedContent = ""
+				return m, func() tea.Msg {
+					return runCapture(state, content)
+				}
+			}
+			if f.State == huh.StateAborted {
+				m.captureFormActive = false
+				m.captureForm = nil
+				m.captureFormState = nil
+				m.capturedContent = ""
+				return m, tickCmd(m.interval)
+			}
+		}
+		return m, cmd
+	}
+
 	// If alert form is active, route ALL messages to it (not just KeyMsg)
 	if m.alertFormActive && m.alertForm != nil {
 		if msg, ok := msg.(tea.KeyMsg); ok && msg.String() == "esc" {
@@ -2395,12 +2442,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.datePicker = newDatePicker(m.historyRanges)
 				m.datePickerActive = true
 			}
+		case "x":
+			m.capturedContent = m.captureViewContent()
+			m.captureFormState = &captureFormState{
+				path: defaultCapturePath(m.current),
+			}
+			m.captureForm = buildCaptureForm(m.captureFormState)
+			m.captureFormActive = true
+			return m, m.captureForm.Init()
 		default:
 			// Pass to viewport for scrolling
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
 		}
+	case captureResultMsg:
+		if msg.err != nil {
+			m.captureFlash = "Export failed: " + msg.err.Error()
+		} else {
+			m.captureFlash = "Saved to " + msg.path
+		}
+		m.captureFlashUntil = time.Now().Add(3 * time.Second)
+		return m, tickCmd(m.interval)
 	case notifyTestResultMsg:
 		m.notifySending = false
 		if msg.err != nil {
@@ -2698,6 +2761,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// captureViewContent returns the full rendered frame (tab bar + content + status bar)
+// for screen capture. Called before showing the capture dialog so the dialog itself
+// is not included.
+func (m *Model) captureViewContent() string {
+	header := renderTabBar(m.current, m.width, m.visibleTabs)
+	content := m.renderCurrentContent()
+	var gutter string
+	if m.statusData != nil {
+		gutter = "\n" + renderStatusBar(buildStatusBar(m.statusData, m.current, m.lastDataChange[m.current]), m.width)
+	}
+	return header + content + gutter
+}
+
+// runCapture performs the actual file write. Called as an async tea.Cmd.
+func runCapture(state *captureFormState, content string) captureResultMsg {
+	path := expandHome(state.path)
+	if !strings.HasSuffix(path, ".png") {
+		path += ".png"
+	}
+	grid := ParseANSI(content)
+
+	f, err := os.Create(path)
+	if err != nil {
+		return captureResultMsg{err: err}
+	}
+	defer f.Close()
+
+	if err := RenderPNG(grid, f); err != nil {
+		return captureResultMsg{err: err}
+	}
+	return captureResultMsg{path: path}
+}
+
 func (m *Model) renderCurrentContent() string {
 	if m.datePickerActive {
 		return renderPanel("Select Time Range", m.datePicker.view(m.width-6), m.width)
@@ -2750,7 +2846,10 @@ func (m Model) View() string {
 	header := renderTabBar(m.current, m.width, m.visibleTabs)
 
 	var gutter string
-	if m.statusData != nil {
+	if m.captureFlash != "" && time.Now().Before(m.captureFlashUntil) {
+		flash := lipgloss.NewStyle().Foreground(colorGreen).Render(m.captureFlash)
+		gutter = lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(flash)
+	} else if m.statusData != nil {
 		gutter = renderStatusBar(buildStatusBar(m.statusData, m.current, m.lastDataChange[m.current]), m.width)
 	}
 
@@ -2762,6 +2861,13 @@ func (m Model) View() string {
 	if m.ready {
 		m.viewport.SetContent(m.renderCurrentContent())
 		viewportView := m.viewport.View()
+
+		// Overlay capture form as a popover
+		if m.captureFormActive && m.captureForm != nil {
+			popup := renderPanel("Export Screenshot", m.captureForm.View(), 62) +
+			"\n" + helpStyle.Render("esc: cancel")
+			viewportView = placeOverlay(viewportView, popup, m.width, m.viewport.Height)
+		}
 
 		// Show scroll indicator if content is scrollable
 		totalLines := m.viewport.TotalLineCount()
