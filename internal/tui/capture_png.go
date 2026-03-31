@@ -13,11 +13,11 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-//go:embed fonts/JetBrainsMono-Regular.ttf
-var jbMonoRegularTTF []byte
+//go:embed fonts/NotoSansMono-Regular.ttf
+var notoMonoRegularTTF []byte
 
-//go:embed fonts/JetBrainsMono-Bold.ttf
-var jbMonoBoldTTF []byte
+//go:embed fonts/NotoSansMono-Bold.ttf
+var notoMonoBoldTTF []byte
 
 //go:embed fonts/NotoSansSymbols2-Subset.ttf
 var notoSymbols2TTF []byte
@@ -27,8 +27,8 @@ var notoSymbolsMoonTTF []byte
 
 const (
 	pngFontSize = 14.0
-	pngDPI      = 72.0
-	pngPadding  = 8
+	pngDPI      = 144.0 // 2x for crisp rendering on HiDPI displays
+	pngPadding  = 16
 )
 
 var (
@@ -40,7 +40,7 @@ var (
 	pngCellH       int
 )
 
-// initPNGFont lazily initializes the embedded JetBrains Mono font faces and cell metrics.
+// initPNGFont lazily initializes the embedded Noto Sans Mono font faces and cell metrics.
 func initPNGFont() {
 	pngFontOnce.Do(func() {
 		opts := &opentype.FaceOptions{
@@ -49,25 +49,25 @@ func initPNGFont() {
 			Hinting: font.HintingFull,
 		}
 
-		fRegular, err := opentype.Parse(jbMonoRegularTTF)
+		fRegular, err := opentype.Parse(notoMonoRegularTTF)
 		if err != nil {
-			panic("capture: failed to parse JetBrains Mono Regular: " + err.Error())
+			panic("capture: failed to parse Noto Sans Mono Regular: " + err.Error())
 		}
 		pngFaceRegular, err = opentype.NewFace(fRegular, opts)
 		if err != nil {
 			panic("capture: failed to create regular font face: " + err.Error())
 		}
 
-		fBold, err := opentype.Parse(jbMonoBoldTTF)
+		fBold, err := opentype.Parse(notoMonoBoldTTF)
 		if err != nil {
-			panic("capture: failed to parse JetBrains Mono Bold: " + err.Error())
+			panic("capture: failed to parse Noto Sans Mono Bold: " + err.Error())
 		}
 		pngFaceBold, err = opentype.NewFace(fBold, opts)
 		if err != nil {
 			panic("capture: failed to create bold font face: " + err.Error())
 		}
 
-		// Load fallback fonts for glyphs missing from JetBrains Mono
+		// Load fallback fonts for glyphs missing from Noto Sans Mono
 		for _, fb := range []struct {
 			name string
 			data []byte
@@ -164,5 +164,6 @@ func RenderPNG(grid *CaptureGrid, w io.Writer) error {
 		}
 	}
 
-	return png.Encode(w, img)
+	enc := &png.Encoder{CompressionLevel: png.BestCompression}
+	return enc.Encode(w, img)
 }
