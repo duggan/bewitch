@@ -85,7 +85,7 @@ func main() {
 		log.Infof("mock mode enabled: using synthetic data")
 
 		// Seed historical data so TUI charts have data immediately
-		if err := st.SeedMockHistory(1*time.Hour, 5*time.Second); err != nil {
+		if err := st.SeedMockHistory(); err != nil {
 			log.Errorf("seeding mock history: %v", err)
 		}
 		// Seed demo alert rules and fired alerts

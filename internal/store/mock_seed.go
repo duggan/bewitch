@@ -19,10 +19,27 @@ func smoothWaveAt(t, min, max, periodSec, phase float64) float64 {
 	return math.Max(min, math.Min(max, val))
 }
 
-// SeedMockHistory populates the database with realistic historical data for
-// all collectors. This makes mock mode useful for demos and screenshots by
-// giving the TUI's historical charts data to display immediately.
-func (s *Store) SeedMockHistory(duration time.Duration, interval time.Duration) error {
+// mockTier defines a time tier for history seeding with age-appropriate granularity.
+type mockTier struct {
+	age      time.Duration // how far back this tier starts (from now)
+	interval time.Duration // sample interval within this tier
+}
+
+// mockTiers defines the time tiers for mock history seeding, ordered from
+// oldest to newest. Coarser intervals for older data match the history API's
+// bucket aggregation, keeping total row count manageable.
+var mockTiers = []mockTier{
+	{30 * 24 * time.Hour, 15 * time.Minute}, // 7d–30d ago: 6-hour buckets
+	{7 * 24 * time.Hour, 5 * time.Minute},   // 1d–7d ago: 1-hour buckets
+	{24 * time.Hour, 30 * time.Second},       // 1h–24h ago: 10-min buckets
+	{1 * time.Hour, 5 * time.Second},         // last 1h: 1-min buckets
+}
+
+// SeedMockHistory populates the database with 30 days of realistic historical
+// data for all collectors. Uses tiered intervals (coarser for older data) to
+// keep startup fast while giving the TUI's historical charts data at every
+// zoom level.
+func (s *Store) SeedMockHistory() error {
 	// Check if history already exists (idempotent)
 	var count int
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM cpu_metrics").Scan(&count); err == nil && count > 0 {
@@ -31,10 +48,21 @@ func (s *Store) SeedMockHistory(duration time.Duration, interval time.Duration) 
 	}
 
 	now := time.Now()
-	start := now.Add(-duration)
-	steps := int(duration / interval)
 
-	log.Infof("seeding %d data points of mock history (%v at %v intervals)", steps, duration, interval)
+	// Count total steps for logging
+	totalSteps := 0
+	for i, tier := range mockTiers {
+		var end time.Time
+		if i+1 < len(mockTiers) {
+			end = now.Add(-mockTiers[i+1].age)
+		} else {
+			end = now
+		}
+		start := now.Add(-tier.age)
+		totalSteps += int(end.Sub(start) / tier.interval)
+	}
+
+	log.Infof("seeding %d data points of mock history (30 days, tiered intervals)", totalSteps)
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -114,9 +142,18 @@ func (s *Store) SeedMockHistory(duration time.Duration, interval time.Duration) 
 		numCores     = 8
 	)
 
-	for i := 0; i < steps; i++ {
-		ts := start.Add(time.Duration(i) * interval)
-		t := float64(ts.UnixNano()) / 1e9
+	for ti, tier := range mockTiers {
+		tierStart := now.Add(-tier.age)
+		var tierEnd time.Time
+		if ti+1 < len(mockTiers) {
+			tierEnd = now.Add(-mockTiers[ti+1].age)
+		} else {
+			tierEnd = now
+		}
+		steps := int(tierEnd.Sub(tierStart) / tier.interval)
+		for i := 0; i < steps; i++ {
+			ts := tierStart.Add(time.Duration(i) * tier.interval)
+			t := float64(ts.UnixNano()) / 1e9
 
 		// CPU - aggregate + 8 cores
 		{
@@ -235,6 +272,7 @@ func (s *Store) SeedMockHistory(duration time.Duration, interval time.Duration) 
 			)
 		}
 	}
+	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
@@ -303,7 +341,7 @@ func SeedMockAlerts(db *sql.DB) error {
 	tx.Exec("INSERT INTO alert_rule_variance (rule_id, metric, delta_threshold, min_count, duration) VALUES (?, 'memory.variance', 5, 10, '30m')", ruleIDs[5])
 
 	// Set history range preference to 1h so charts show the seeded data nicely
-	tx.Exec("INSERT INTO preferences (key, value) VALUES ('history_range', '1h') ON CONFLICT (key) DO UPDATE SET value = '1h'")
+	tx.Exec("INSERT INTO preferences (key, value) VALUES ('history_range', '30d') ON CONFLICT (key) DO UPDATE SET value = '30d'")
 
 	// Insert some fired alerts with realistic timestamps and messages
 	now := time.Now()
