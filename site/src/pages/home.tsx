@@ -84,8 +84,8 @@ export const Home: FC = () => (
               class={`w-full block transition-opacity duration-300 ${i === 0 ? 'opacity-100' : 'opacity-0 absolute inset-0'}`}
               data-slide-img={i}
               loading={i === 0 ? 'eager' : 'lazy'}
-              width="1152"
-              height="864"
+              width="2072"
+              height="1280"
             />
           ))}
         </div>

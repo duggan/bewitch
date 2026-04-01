@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 type view int
@@ -2843,6 +2845,135 @@ func (m *Model) renderCurrentContent() string {
 	default:
 		return ""
 	}
+}
+
+// SetSize sets the terminal dimensions for the model and updates visible tabs.
+func (m *Model) SetSize(w, h int) {
+	m.width = w
+	m.height = h
+	m.updateVisibleTabs()
+}
+
+// captureFileName maps views to website-compatible filenames.
+var captureFileName = map[view]string{
+	viewDashboard: "dashboard",
+	viewCPU:       "cpu",
+	viewMemory:    "memory",
+	viewDisk:      "disk",
+	viewNetwork:   "network",
+	viewHardware:  "hardware",
+	viewProcess:   "process",
+	viewAlerts:    "alerts",
+}
+
+// CaptureAllViews renders all views to PNG files in dir.
+// Returns the image dimensions and list of files written.
+func (m *Model) CaptureAllViews(dir string) (imgW, imgH int, files []string, err error) {
+	// Force truecolor output so lipgloss renders ANSI color sequences
+	// even when not connected to a terminal.
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	lipgloss.SetHasDarkBackground(true)
+
+	// Reset hardware section to temperature (default) for consistent screenshots.
+	m.hardwareSection = hwSectionTemp
+
+	// Clear ETag cache so history fetches don't return 304 from
+	// initDashSparklines' earlier requests for the same time range.
+	if dc, ok := m.client.(*DaemonClient); ok {
+		dc.etagsMu.Lock()
+		dc.etags = make(map[string]string)
+		dc.etagsMu.Unlock()
+	}
+
+	// Ensure selection maps are initialized so history chart rendering
+	// doesn't filter out all series. In normal TUI operation these are
+	// populated by updateNetSparklines/updateTempSparklines on tick,
+	// but CaptureAllViews bypasses the event loop.
+	if m.netSelected == nil && m.netData != nil {
+		m.netSelected = make(map[string]bool)
+		for _, n := range m.netData {
+			m.netSelected[n.Interface] = true
+		}
+	}
+	if m.tempSelected == nil && m.tempData != nil {
+		m.tempSelected = make(map[string]bool)
+		for _, t := range m.tempData {
+			m.tempSelected[t.Sensor] = true
+		}
+	}
+	if m.powerSelected == nil && m.powerData != nil {
+		m.powerSelected = make(map[string]bool)
+		for _, p := range m.powerData {
+			m.powerSelected[p.Zone] = true
+		}
+	}
+
+	// Fetch history data synchronously for all views that have charts.
+	end := time.Now()
+	start := end.Add(-m.historyRanges[m.historyRange].Duration)
+
+	views := []view{viewDashboard, viewCPU, viewMemory, viewDisk, viewNetwork, viewHardware, viewProcess, viewAlerts}
+	for _, v := range views {
+		name, ok := captureFileName[v]
+		if !ok {
+			name = strings.ToLower(viewName(v))
+		}
+		m.current = v
+
+		// Fetch and render history chart for views that support it.
+		metric := viewMetric(v)
+		if v == viewHardware {
+			metric = "temperature"
+		}
+		if metric != "" {
+			series, herr := m.client.GetHistory(metric, start, end)
+			if herr == nil && len(series) > 0 {
+				m.historySeries = series
+				m.historyStart = start
+				m.historyEnd = end
+				m.regenerateHistoryChart()
+			} else {
+				m.cachedHistoryChart = ""
+			}
+		} else {
+			m.cachedHistoryChart = ""
+		}
+
+		content := m.captureViewContent()
+
+		// Pad or truncate to exactly m.height lines so all screenshots
+		// have consistent pixel dimensions.
+		lines := strings.Split(content, "\n")
+		if len(lines) > m.height {
+			lines = lines[:m.height]
+		}
+		for len(lines) < m.height {
+			lines = append(lines, "")
+		}
+		content = strings.Join(lines, "\n")
+
+		grid := ParseANSI(content, m.captureSettings.Foreground, m.captureSettings.Background)
+
+		path := filepath.Join(dir, name+".png")
+		f, ferr := os.Create(path)
+		if ferr != nil {
+			return 0, 0, files, fmt.Errorf("creating %s: %w", path, ferr)
+		}
+		if rerr := RenderPNG(grid, f, m.captureSettings); rerr != nil {
+			f.Close()
+			return 0, 0, files, fmt.Errorf("rendering %s: %w", path, rerr)
+		}
+		f.Close()
+		files = append(files, path)
+
+		if imgW == 0 {
+			padding := m.captureSettings.DPI / 9
+			initPNGFont(float64(m.captureSettings.DPI))
+			imgW = grid.Width*pngFonts.cellW + padding*2
+			imgH = grid.Height*pngFonts.cellH + padding*2
+		}
+	}
+	return imgW, imgH, files, nil
 }
 
 func (m Model) View() string {

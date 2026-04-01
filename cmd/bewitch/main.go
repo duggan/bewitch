@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,6 +79,9 @@ func main() {
 			return
 		case "snapshot":
 			runSnapshot(cfg, *addr, tlsCfg, effectiveToken)
+			return
+		case "capture-views":
+			runCaptureViews(cfg, *addr, tlsCfg, effectiveToken)
 			return
 		default:
 			fmt.Fprintf(os.Stderr, "unknown command: %s\n", flag.Arg(0))
@@ -295,4 +299,77 @@ func runSnapshot(cfg *config.Config, addr string, tlsCfg *tls.Config, token stri
 		os.Exit(1)
 	}
 	fmt.Printf("snapshot created: %s (%.1f MB)\n", resp.Path, float64(resp.SizeBytes)/(1024*1024))
+}
+
+func runCaptureViews(cfg *config.Config, addr string, tlsCfg *tls.Config, token string) {
+	args := flag.Args()[1:] // skip "capture-views"
+	cols, rows := 120, 32
+	var dir string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--cols", "-cols":
+			i++
+			if i >= len(args) {
+				fmt.Fprintf(os.Stderr, "missing value for --cols\n")
+				os.Exit(1)
+			}
+			v, err := strconv.Atoi(args[i])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "invalid --cols value: %s\n", args[i])
+				os.Exit(1)
+			}
+			cols = v
+		case "--rows", "-rows":
+			i++
+			if i >= len(args) {
+				fmt.Fprintf(os.Stderr, "missing value for --rows\n")
+				os.Exit(1)
+			}
+			v, err := strconv.Atoi(args[i])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "invalid --rows value: %s\n", args[i])
+				os.Exit(1)
+			}
+			rows = v
+		default:
+			if dir != "" {
+				fmt.Fprintf(os.Stderr, "unexpected argument: %s\n", args[i])
+				os.Exit(1)
+			}
+			dir = args[i]
+		}
+	}
+
+	if dir == "" {
+		fmt.Fprintf(os.Stderr, "usage: bewitch capture-views [--cols N] [--rows N] <dir>\n")
+		os.Exit(1)
+	}
+	if !filepath.IsAbs(dir) {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: resolving path: %v\n", err)
+			os.Exit(1)
+		}
+		dir = abs
+	}
+
+	captureSettings := tui.CaptureSettingsFromConfig(cfg.TUI.Capture)
+	client := makeClient(cfg, addr, tlsCfg, token)
+	historyRanges, _ := cfg.TUI.ParseHistoryRanges()
+	if historyRanges == nil {
+		historyRanges = config.DefaultHistoryRanges
+	}
+	model := tui.NewModel(client, 2*time.Second, historyRanges, captureSettings, false)
+	model.SetSize(cols, rows)
+
+	fmt.Printf("capturing all views (%dx%d) to %s ...\n", cols, rows, dir)
+	imgW, imgH, files, err := model.CaptureAllViews(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "capture failed: %v\n", err)
+		os.Exit(1)
+	}
+	for _, f := range files {
+		fmt.Printf("  %s\n", filepath.Base(f))
+	}
+	fmt.Printf("done: %d files, %dx%d pixels\n", len(files), imgW, imgH)
 }
