@@ -7,13 +7,13 @@ import { InstallCommand } from '../components/install-command'
 import { TerminalBlock } from '../components/terminal-block'
 
 const features = [
-  { icon: '\u{1F4CA}', title: 'CPU Monitoring', description: 'Per-core usage tracking with aggregate metrics, historical charts, and automatic delta computation.' },
-  { icon: '\u{1F9E0}', title: 'Memory + ECC', description: 'Real-time memory usage, available/free breakdown, ECC error tracking for server reliability.' },
-  { icon: '\u{1F4BE}', title: 'Disk + SMART', description: 'Space usage, I/O rates, and SMART health per physical device. NVMe and SATA supported.' },
-  { icon: '\u{1F310}', title: 'Network', description: 'Per-interface RX/TX throughput with bits/bytes toggle and historical bandwidth charts.' },
-  { icon: '\u{1F529}', title: 'Hardware', description: 'Temperature sensors, power consumption (RAPL), and ECC memory errors in one unified view with sub-tab navigation.' },
-  { icon: '\u{1F504}', title: 'Process Tracking', description: 'All processes visible, top N enriched. Glob-pattern pinning for critical services. Sortable, searchable.' },
-  { icon: '\u{1F514}', title: 'Multi-Channel Alerts', description: 'Threshold, predictive, and variance rules. Notify via email or shell command.' },
+  { icon: 'cpu', title: 'CPU Monitoring', description: 'Per-core usage tracking with aggregate metrics, historical charts, and automatic delta computation.' },
+  { icon: 'memory-stick', title: 'Memory + ECC', description: 'Real-time memory usage, available/free breakdown, ECC error tracking for server reliability.' },
+  { icon: 'hard-drive', title: 'Disk + SMART', description: 'Space usage, I/O rates, and SMART health per physical device. NVMe and SATA supported.' },
+  { icon: 'network', title: 'Network', description: 'Per-interface RX/TX throughput with bits/bytes toggle and historical bandwidth charts.' },
+  { icon: 'thermometer', title: 'Hardware', description: 'Temperature sensors, GPU monitoring (Intel and NVIDIA), power consumption (RAPL), and ECC memory errors in one unified view with sub-tab navigation.' },
+  { icon: 'list-tree', title: 'Process Tracking', description: 'All processes visible, top N enriched. Glob-pattern pinning for critical services. Sortable, searchable.' },
+  { icon: 'bell-ring', title: 'Multi-Channel Alerts', description: 'Threshold, predictive, and variance rules. Notify via email or shell command.' },
 ]
 
 export const Home: FC = () => (
