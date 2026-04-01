@@ -152,6 +152,7 @@ body::after {
   margin-bottom: 1rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid rgba(124, 77, 255, 0.2);
+  scroll-margin-top: 4.5rem;
 }
 
 .docs-content h3 {
@@ -161,6 +162,7 @@ body::after {
   font-weight: 600;
   margin-top: 2rem;
   margin-bottom: 0.75rem;
+  scroll-margin-top: 4.5rem;
 }
 
 .docs-content p {
