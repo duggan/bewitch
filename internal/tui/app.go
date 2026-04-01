@@ -2092,15 +2092,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "tab":
 				m.hardwareSection = (m.hardwareSection + 1) % 4
 				m.cachedHistoryChart = ""
-				m.regenerateHistoryChart()
+				delete(m.historyCache, viewHardware)
+				m.historyFetching[viewHardware] = true
 				go m.client.SetPreference("hardware_section", fmt.Sprintf("%d", m.hardwareSection))
-				return m, nil
+				return m, m.fetchHistoryCmd()
 			case "shift+tab":
 				m.hardwareSection = (m.hardwareSection + 3) % 4
 				m.cachedHistoryChart = ""
-				m.regenerateHistoryChart()
+				delete(m.historyCache, viewHardware)
+				m.historyFetching[viewHardware] = true
 				go m.client.SetPreference("hardware_section", fmt.Sprintf("%d", m.hardwareSection))
-				return m, nil
+				return m, m.fetchHistoryCmd()
 			}
 			// Delegate to active sub-section
 			switch m.hardwareSection {
