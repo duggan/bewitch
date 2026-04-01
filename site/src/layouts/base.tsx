@@ -19,7 +19,7 @@ export const Base: FC<PropsWithChildren<{ title?: string; description?: string }
       <meta name="twitter:card" content="summary_large_image" />
       <link rel="icon" href="/favicon.png" type="image/png" />
       <link rel="preconnect" href="https://fonts.bunny.net" />
-      <link rel="stylesheet" href="https://fonts.bunny.net/css?family=jetbrains-mono:400,500,600,700&display=swap" />
+      <link rel="stylesheet" href="https://fonts.bunny.net/css?family=noto-sans-mono:400,500,600,700&display=swap" />
       <link rel="stylesheet" href="/src/global.css" />
     </head>
     <body class="min-h-screen bg-body-bg text-text antialiased">
