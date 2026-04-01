@@ -7,13 +7,13 @@ import { InstallCommand } from '../components/install-command'
 import { TerminalBlock } from '../components/terminal-block'
 
 const features = [
-  { icon: 'cpu', title: 'CPU Monitoring', description: 'Per-core usage tracking with aggregate metrics, historical charts, and automatic delta computation.' },
-  { icon: 'memory-stick', title: 'Memory + ECC', description: 'Real-time memory usage, available/free breakdown, ECC error tracking for server reliability.' },
-  { icon: 'hard-drive', title: 'Disk + SMART', description: 'Space usage, I/O rates, and SMART health per physical device. NVMe and SATA supported.' },
-  { icon: 'network', title: 'Network', description: 'Per-interface RX/TX throughput with bits/bytes toggle and historical bandwidth charts.' },
-  { icon: 'thermometer', title: 'Hardware', description: 'Temperature sensors, GPU monitoring (Intel and NVIDIA), power consumption (RAPL), and ECC memory errors in one unified view with sub-tab navigation.' },
-  { icon: 'list-tree', title: 'Process Tracking', description: 'All processes visible, top N enriched. Glob-pattern pinning for critical services. Sortable, searchable.' },
-  { icon: 'bell-ring', title: 'Multi-Channel Alerts', description: 'Threshold, predictive, and variance rules. Notify via email or shell command.' },
+  { icon: 'cpu', title: 'CPU Monitoring', description: 'Per-core usage tracking with aggregate metrics, historical charts, and automatic delta computation.', href: '/docs/collectors#cpu' },
+  { icon: 'memory-stick', title: 'Memory + ECC', description: 'Real-time memory usage, available/free breakdown, ECC error tracking for server reliability.', href: '/docs/collectors#memory' },
+  { icon: 'hard-drive', title: 'Disk + SMART', description: 'Space usage, I/O rates, and SMART health per physical device. NVMe and SATA supported.', href: '/docs/collectors#disk' },
+  { icon: 'network', title: 'Network', description: 'Per-interface RX/TX throughput with bits/bytes toggle and historical bandwidth charts.', href: '/docs/collectors#network' },
+  { icon: 'thermometer', title: 'Hardware', description: 'Temperature sensors, GPU monitoring (Intel and NVIDIA), power consumption (RAPL), and ECC memory errors in one unified view with sub-tab navigation.', href: '/docs/collectors#temperature' },
+  { icon: 'list-tree', title: 'Process Tracking', description: 'All processes visible, top N enriched. Glob-pattern pinning for critical services. Sortable, searchable.', href: '/docs/collectors#process' },
+  { icon: 'bell-ring', title: 'Multi-Channel Alerts', description: 'Threshold, predictive, and variance rules. Notify via email or shell command.', href: '/docs/alerts' },
 ]
 
 export const Home: FC = () => (
@@ -50,7 +50,7 @@ export const Home: FC = () => (
       </h2>
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {features.map(f => (
-          <FeatureCard icon={f.icon} title={f.title} description={f.description} />
+          <FeatureCard icon={f.icon} title={f.title} description={f.description} href={f.href} />
         ))}
       </div>
     </section>
