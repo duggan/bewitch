@@ -84,14 +84,17 @@ func main() {
 	if cfg.Daemon.Mock {
 		log.Infof("mock mode enabled: using synthetic data")
 
-		// Seed historical data so TUI charts have data immediately
-		if err := st.SeedMockHistory(); err != nil {
-			log.Errorf("seeding mock history: %v", err)
-		}
-		// Seed demo alert rules and fired alerts
-		if err := store.SeedMockAlerts(database); err != nil {
-			log.Errorf("seeding mock alerts: %v", err)
-		}
+		// Seed historical data and demo alerts in the background so the
+		// daemon socket comes up immediately (seeding can take 10+ seconds
+		// on slow CI machines).
+		go func() {
+			if err := st.SeedMockHistory(); err != nil {
+				log.Errorf("seeding mock history: %v", err)
+			}
+			if err := store.SeedMockAlerts(database); err != nil {
+				log.Errorf("seeding mock alerts: %v", err)
+			}
+		}()
 		cpuCollector = collector.NewMockCPUCollector()
 		memCollector = collector.NewMockMemoryCollector()
 		diskCollector = collector.NewMockDiskCollector()
