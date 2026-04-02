@@ -2878,40 +2878,8 @@ func (m *Model) CaptureAllViews(dir string) (imgW, imgH int, files []string, err
 	// Reset hardware section to temperature (default) for consistent screenshots.
 	m.hardwareSection = hwSectionTemp
 
-	// Clear ETag cache so history fetches don't return 304 from
-	// initDashSparklines' earlier requests for the same time range.
-	if dc, ok := m.client.(*DaemonClient); ok {
-		dc.etagsMu.Lock()
-		dc.etags = make(map[string]string)
-		dc.etagsMu.Unlock()
-	}
-
-	// Ensure selection maps are initialized so history chart rendering
-	// doesn't filter out all series. In normal TUI operation these are
-	// populated by updateNetSparklines/updateTempSparklines on tick,
-	// but CaptureAllViews bypasses the event loop.
-	if m.netSelected == nil && m.netData != nil {
-		m.netSelected = make(map[string]bool)
-		for _, n := range m.netData {
-			m.netSelected[n.Interface] = true
-		}
-	}
-	if m.tempSelected == nil && m.tempData != nil {
-		m.tempSelected = make(map[string]bool)
-		for _, t := range m.tempData {
-			m.tempSelected[t.Sensor] = true
-		}
-	}
-	if m.powerSelected == nil && m.powerData != nil {
-		m.powerSelected = make(map[string]bool)
-		for _, p := range m.powerData {
-			m.powerSelected[p.Zone] = true
-		}
-	}
-
-	// Fetch history data synchronously for all views that have charts.
-	end := time.Now()
-	start := end.Add(-m.historyRanges[m.historyRange].Duration)
+	m.clearETagCache()
+	m.initSelectionMaps()
 
 	views := []view{viewDashboard, viewCPU, viewMemory, viewDisk, viewNetwork, viewHardware, viewProcess, viewAlerts}
 	for _, v := range views {
@@ -2921,37 +2889,10 @@ func (m *Model) CaptureAllViews(dir string) (imgW, imgH int, files []string, err
 		}
 		m.current = v
 
-		// Fetch and render history chart for views that support it.
-		metric := viewMetric(v)
-		if v == viewHardware {
-			metric = "temperature"
-		}
-		if metric != "" {
-			series, herr := m.client.GetHistory(metric, start, end)
-			if herr == nil && len(series) > 0 {
-				m.historySeries = series
-				m.historyStart = start
-				m.historyEnd = end
-				m.regenerateHistoryChart()
-			} else {
-				m.cachedHistoryCharts[m.current] = ""
-			}
-		} else {
-			m.cachedHistoryCharts[m.current] = ""
-		}
+		m.fetchHistoryForCapture(v)
 
 		content := m.captureViewContent()
-
-		// Pad or truncate to exactly m.height lines so all screenshots
-		// have consistent pixel dimensions.
-		lines := strings.Split(content, "\n")
-		if len(lines) > m.height {
-			lines = lines[:m.height]
-		}
-		for len(lines) < m.height {
-			lines = append(lines, "")
-		}
-		content = strings.Join(lines, "\n")
+		content = m.normalizeFrameHeight(content)
 
 		grid := ParseANSI(content, m.captureSettings.Foreground, m.captureSettings.Background)
 

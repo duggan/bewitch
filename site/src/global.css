@@ -232,3 +232,40 @@ body::after {
 .docs-content td code {
   font-size: 0.8rem;
 }
+
+/* Terminal demo */
+.demo-terminal-mount {
+  background: #1A1A2E;
+  padding: 4px;
+}
+
+.demo-terminal-mount .xterm {
+  padding: 2px 4px;
+}
+
+.demo-terminal-mount .xterm-viewport {
+  overflow: hidden !important;
+}
+
+#demo-terminal:focus {
+  outline: 1px solid var(--color-deep-purple);
+  outline-offset: -1px;
+}
+
+/* Scale terminal to fit on smaller screens */
+@media (max-width: 1024px) {
+  .demo-terminal-mount {
+    overflow: hidden;
+  }
+  .demo-terminal-mount .xterm {
+    transform: scale(0.78);
+    transform-origin: top left;
+  }
+}
+
+@media (max-width: 768px) {
+  .demo-terminal-mount .xterm {
+    transform: scale(0.52);
+    transform-origin: top left;
+  }
+}

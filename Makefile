@@ -1,4 +1,4 @@
-.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install
+.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install demo-frames
 
 VERSION := $(shell cat VERSION)
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
@@ -56,6 +56,16 @@ stamp-install:
 	@V=$$(cat VERSION) && \
 	sed 's/^VERSION="[^"]*"/VERSION="'"$$V"'"/' site/public/install.sh > site/public/install.sh.tmp && \
 	mv site/public/install.sh.tmp site/public/install.sh
+
+demo-frames: build
+	@echo "Starting mock daemon..."
+	@bin/bewitchd -config data/bewitch.toml & DAEMON_PID=$$!; \
+	sleep 3; \
+	bin/bewitch -config data/bewitch.toml capture-frames \
+		--cols 120 --rows 32 --frames 5 --delay 400ms \
+		site/public/demo-frames.json; \
+	kill $$DAEMON_PID 2>/dev/null; \
+	wait $$DAEMON_PID 2>/dev/null || true
 
 deploy:
 	cd site && bun run build
