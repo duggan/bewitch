@@ -1,3 +1,8 @@
+---
+name: capture-screenshots
+description: "Capture Website Screenshots. Capture high-resolution PNG screenshots of all bewitch TUI views for the website homepage using mock data."
+---
+
 # /capture-screenshots - Capture Website Screenshots
 
 Capture high-resolution PNG screenshots of all bewitch TUI views for the website homepage.

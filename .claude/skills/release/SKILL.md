@@ -1,3 +1,9 @@
+---
+name: release
+description: "Package Release. Prepare a new release by updating the version, changelog, debian packaging, and tagging for CI."
+argument-hint: "<version> [description]"
+---
+
 # /release - Package Release
 
 Prepare a new release by updating the version, changelog, and tagging for CI.

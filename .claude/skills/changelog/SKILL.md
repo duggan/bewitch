@@ -1,3 +1,9 @@
+---
+name: changelog
+description: "Update Changelog. Add entries to CHANGELOG.md, the docs site changelog page, and debian/changelog for a new version."
+argument-hint: "<version> [description...]"
+---
+
 # /changelog - Update Changelog
 
 Add entries to the project changelog (`CHANGELOG.md`), the docs site changelog page (`site/src/pages/docs/changelog.tsx`), and the Debian changelog (`debian/changelog`).
