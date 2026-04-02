@@ -1,0 +1,298 @@
+// Dynamic import for code splitting — ghostty-web WASM loads only when needed
+type GhosttyModule = typeof import('ghostty-web')
+
+interface DemoStateMap {
+  cols: number
+  rows: number
+  states: Record<string, string[]>
+  transitions: Record<string, Record<string, string>>
+  initial: string
+}
+
+const VIEW_NAMES = ['dashboard', 'cpu', 'memory', 'disk', 'network', 'hardware', 'process', 'alerts']
+const FRAME_INTERVAL = 800 // ms between frame advances
+const IDLE_RESUME_DELAY = 2000 // ms before resuming after interaction
+
+export async function initTerminalDemo() {
+  const mount = document.getElementById('demo-terminal-mount')
+  if (!mount) return
+
+  // On small screens, keep the static PNG fallback instead of the terminal
+  if (window.innerWidth <= 768) return
+
+  let data: DemoStateMap
+  let ghostty: GhosttyModule
+  try {
+    const [r, mod] = await Promise.all([
+      fetch('/demo-frames.json'),
+      import('ghostty-web'),
+    ])
+    data = await r.json()
+    ghostty = mod
+  } catch {
+    return // Fallback: leave the noscript/PNG content visible
+  }
+
+  await ghostty.init()
+  setup(mount, data, ghostty)
+}
+
+function setup(mount: HTMLElement, data: DemoStateMap, ghostty: GhosttyModule) {
+  const term = new ghostty.Terminal({
+    cols: data.cols,
+    rows: data.rows,
+    cursorBlink: false,
+    disableStdin: true,
+    fontFamily: '"Noto Sans Mono", "Noto Sans Symbols 2", monospace',
+    fontSize: 14,
+    theme: {
+      background: '#1A1A2E',
+      foreground: '#F8F8F2',
+      cursor: '#1A1A2E', // hide cursor
+      selectionBackground: '#BB86FC40',
+    },
+  })
+
+  const fallback = document.getElementById('demo-fallback')
+  if (fallback) fallback.style.display = 'none'
+  mount.style.display = 'block'
+  term.open(mount)
+
+  // ghostty-web adds contenteditable + a hidden textarea for keyboard input.
+  // Since we're read-only, strip those so the outer container keeps focus
+  // and our keydown handler fires instead of ghostty's input handler.
+  mount.removeAttribute('contenteditable')
+  mount.removeAttribute('role')
+  mount.removeAttribute('aria-multiline')
+  mount.removeAttribute('aria-label')
+  mount.tabIndex = -1
+  const hiddenInput = mount.querySelector('textarea')
+  if (hiddenInput) {
+    hiddenInput.tabIndex = -1
+    hiddenInput.style.display = 'none'
+  }
+
+  // Prevent ghostty-web internals from stealing focus and scrolling the page.
+  // Override focus() on mount and its children to always use preventScroll.
+  for (const el of [mount, ...Array.from(mount.querySelectorAll('*'))]) {
+    const htmlEl = el as HTMLElement
+    htmlEl.focus = function() {
+      HTMLElement.prototype.focus.call(this, { preventScroll: true })
+    }
+  }
+
+  // Adjust container height when terminal is scaled via CSS transform
+  function adjustHeight() {
+    const canvas = mount.querySelector('canvas') as HTMLElement | null
+    if (!canvas) return
+    const style = window.getComputedStyle(mount)
+    const matrix = new DOMMatrix(style.transform)
+    const scale = matrix.a // scaleX from the transform matrix
+    if (scale > 0 && scale < 1) {
+      const parent = mount.parentElement
+      if (parent) parent.style.height = `${mount.offsetHeight * scale}px`
+    } else {
+      const parent = mount.parentElement
+      if (parent) parent.style.height = ''
+    }
+  }
+  adjustHeight()
+  window.addEventListener('resize', adjustHeight)
+
+  let currentState = data.initial
+  let currentFrame = 0
+  let scrollOffset = 0
+  let animTimer: ReturnType<typeof setInterval> | null = null
+  let idleTimer: ReturnType<typeof setTimeout> | null = null
+  let paused = false
+
+  function getFrames(): string[] {
+    return data.states[currentState] || []
+  }
+
+  // Get the total number of lines in the current frame (for scroll limits)
+  function currentTotalLines(): number {
+    const frames = getFrames()
+    if (frames.length === 0) return data.rows
+    return frames[currentFrame].split('\n').length
+  }
+
+  function maxScroll(): number {
+    return Math.max(0, currentTotalLines() - data.rows)
+  }
+
+  function writeFrame(frame: string) {
+    // Write a viewport window of data.rows lines starting at scrollOffset.
+    const lines = frame.split('\n')
+    let buf = '\x1b[H' // cursor to row 1, col 1
+    for (let i = 0; i < data.rows; i++) {
+      if (i > 0) buf += `\x1b[${i + 1};1H` // move to row i+1, col 1
+      buf += '\x1b[2K' // clear entire line
+      const lineIdx = i + scrollOffset
+      if (lineIdx < lines.length) buf += lines[lineIdx]
+    }
+    term.write(buf)
+  }
+
+  function renderCurrent() {
+    const frames = getFrames()
+    if (frames.length > 0) writeFrame(frames[currentFrame])
+  }
+
+  // Guard scroll position around operations that trigger ghostty-web repaints,
+  // which can cause deferred native focus-scroll via the hidden textarea.
+  function guardScroll(fn: () => void) {
+    const y = window.scrollY
+    fn()
+    if (window.scrollY !== y) window.scrollTo(window.scrollX, y)
+    requestAnimationFrame(() => {
+      if (window.scrollY !== y) window.scrollTo(window.scrollX, y)
+    })
+  }
+
+  function switchState(newState: string) {
+    if (!data.states[newState]) return
+    currentState = newState
+    currentFrame = 0
+    scrollOffset = 0
+    guardScroll(renderCurrent)
+    updateTabOverlay()
+  }
+
+  function advanceFrame() {
+    const frames = getFrames()
+    if (frames.length <= 1) return
+    currentFrame = (currentFrame + 1) % frames.length
+    renderCurrent()
+  }
+
+  function startAnimation() {
+    stopAnimation()
+    paused = false
+    animTimer = setInterval(advanceFrame, FRAME_INTERVAL)
+  }
+
+  function stopAnimation() {
+    if (animTimer !== null) {
+      clearInterval(animTimer)
+      animTimer = null
+    }
+  }
+
+  function pauseAnimation() {
+    paused = true
+    stopAnimation()
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => {
+      if (paused) startAnimation()
+    }, IDLE_RESUME_DELAY)
+  }
+
+  // Determine which view is active from the current state key
+  function currentViewIndex(): number {
+    const base = currentState.split('/')[0]
+    return VIEW_NAMES.indexOf(base)
+  }
+
+  // Build tab overlay for click/touch interaction
+  const overlay = document.getElementById('demo-tab-overlay')
+  const tabButtons = overlay?.querySelectorAll<HTMLElement>('[data-demo-tab]')
+
+  function updateTabOverlay() {
+    const active = currentViewIndex()
+    tabButtons?.forEach((btn, i) => {
+      if (i === active) {
+        btn.className = 'px-3 py-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer border-pink text-pink bg-pink/5'
+      } else {
+        btn.className = 'px-3 py-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer border-transparent text-dim hover:text-muted'
+      }
+    })
+  }
+
+  tabButtons?.forEach((btn, i) => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault()) // prevent focus scroll
+    btn.addEventListener('click', () => {
+      // Use number key transition to switch to this view's tab
+      const key = String(i + 1)
+      const target = data.transitions[currentState]?.[key]
+      if (target) {
+        switchState(target)
+      } else if (i === currentViewIndex()) {
+        // Already on this view, ignore
+      } else {
+        // Fallback: try the base view name
+        const base = VIEW_NAMES[i]
+        if (data.states[base]) switchState(base)
+      }
+      pauseAnimation()
+    })
+  })
+
+  // Keyboard and focus handling
+  const container = document.getElementById('demo-terminal')
+  if (container) {
+    container.setAttribute('tabindex', '0')
+
+    // Click anywhere on the demo → focus the container (not ghostty internals)
+    container.addEventListener('click', () => container.focus({ preventScroll: true }))
+
+    // Use capture phase so we intercept before ghostty-web can eat the event
+    container.addEventListener('keydown', (e: KeyboardEvent) => {
+      let key = e.key
+
+      // Normalize key names to match our transition table
+      if (e.shiftKey && key === 'Tab') key = 'Shift+Tab'
+
+      // Check transition table first (view switches, range changes, sort, etc.)
+      const target = data.transitions[currentState]?.[key]
+      if (target) {
+        e.preventDefault()
+        e.stopPropagation()
+        switchState(target)
+        pauseAnimation()
+        return
+      }
+
+      // Viewport scrolling — j/k/ArrowUp/ArrowDown scroll within the view
+      const max = maxScroll()
+      if (max > 0) {
+        let scrollDelta = 0
+        if (key === 'j' || key === 'ArrowDown') scrollDelta = 1
+        else if (key === 'k' || key === 'ArrowUp') scrollDelta = -1
+        else if (key === 'PageDown' || (e.ctrlKey && key === 'd')) scrollDelta = Math.floor(data.rows / 2)
+        else if (key === 'PageUp' || (e.ctrlKey && key === 'u')) scrollDelta = -Math.floor(data.rows / 2)
+        else if (key === 'Home' || key === 'g') scrollDelta = -scrollOffset
+        else if (key === 'End' || key === 'G') scrollDelta = max - scrollOffset
+
+        if (scrollDelta !== 0) {
+          e.preventDefault()
+          e.stopPropagation()
+          const newOffset = Math.max(0, Math.min(max, scrollOffset + scrollDelta))
+          if (newOffset !== scrollOffset) {
+            scrollOffset = newOffset
+            guardScroll(renderCurrent)
+          }
+          pauseAnimation()
+          return
+        }
+      }
+
+      // Prevent arrow keys and Tab from triggering browser navigation
+      if (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'Tab') {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }, true) // capture phase
+
+    // Pause on hover
+    container.addEventListener('mouseenter', () => pauseAnimation())
+    container.addEventListener('mouseleave', () => {
+      if (idleTimer) clearTimeout(idleTimer)
+      idleTimer = setTimeout(startAnimation, IDLE_RESUME_DELAY)
+    })
+  }
+
+  // Show initial state and start
+  switchState(data.initial)
+  startAnimation()
+}

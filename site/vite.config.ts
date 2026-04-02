@@ -8,16 +8,15 @@ import { join, resolve } from 'node:path'
 const version = (await readFile(resolve(__dirname, '../VERSION'), 'utf-8')).trim()
 const latestStable = (await readFile(resolve(__dirname, '../LATEST_STABLE'), 'utf-8')).trim()
 
-// After build, rewrite CSS links in generated HTML to point to the hashed CSS file
-function rewriteCssLinks(): Plugin {
+// After build, rewrite CSS/JS links in generated HTML to point to hashed asset files
+function rewriteAssetLinks(): Plugin {
   return {
-    name: 'rewrite-css-links',
+    name: 'rewrite-asset-links',
     apply: 'build',
     async writeBundle(options) {
       const outDir = options.dir || 'dist'
       const assets = await readdir(join(outDir, 'assets')).catch(() => [] as string[])
       const cssFile = (assets as string[]).find(f => f.endsWith('.css'))
-      if (!cssFile) return
 
       const htmlFiles: string[] = []
       async function walk(dir: string) {
@@ -32,9 +31,15 @@ function rewriteCssLinks(): Plugin {
 
       for (const file of htmlFiles) {
         let html = await readFile(file, 'utf-8')
+        if (cssFile) {
+          html = html.replace(
+            '<link rel="stylesheet" href="/src/global.css"/>',
+            `<link rel="stylesheet" href="/assets/${cssFile}"/>`
+          )
+        }
         html = html.replace(
-          '<link rel="stylesheet" href="/src/global.css"/>',
-          `<link rel="stylesheet" href="/assets/${cssFile}"/>`
+          '<script type="module" src="/src/client.ts"></script>',
+          '<script type="module" src="/assets/client.js"></script>'
         )
         await writeFile(file, html)
       }
@@ -64,7 +69,7 @@ export default defineConfig({
     tailwindcss(),
     ssg({ entry: 'src/index.tsx' }),
     devServer({ entry: 'src/index.tsx' }),
-    rewriteCssLinks(),
+    rewriteAssetLinks(),
     stampInstallVersion(),
   ],
   define: {

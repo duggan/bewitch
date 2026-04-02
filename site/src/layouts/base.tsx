@@ -19,8 +19,9 @@ export const Base: FC<PropsWithChildren<{ title?: string; description?: string }
       <meta name="twitter:card" content="summary_large_image" />
       <link rel="icon" href="/favicon.png" type="image/png" />
       <link rel="preconnect" href="https://fonts.bunny.net" />
-      <link rel="stylesheet" href="https://fonts.bunny.net/css?family=noto-sans-mono:400,500,600,700&display=swap" />
+      <link rel="stylesheet" href="https://fonts.bunny.net/css?family=noto-sans-mono:400,500,600,700|noto-sans-symbols-2:400&display=swap" />
       <link rel="stylesheet" href="/src/global.css" />
+      <script type="module" src="/src/client.ts"></script>
     </head>
     <body class="min-h-screen bg-body-bg text-text antialiased">
       {children}
@@ -55,31 +56,6 @@ document.addEventListener('click', function(e) {
   }
 });
 
-(function() {
-  var tabs = document.getElementById('demo-tabs');
-  var slides = document.getElementById('demo-slides');
-  if (!tabs || !slides) return;
-  var btns = tabs.querySelectorAll('button[data-slide]');
-  var imgs = slides.querySelectorAll('img[data-slide-img]');
-  var current = 0;
-  var timer;
-  function show(n) {
-    imgs[current].classList.remove('opacity-100');
-    imgs[current].classList.add('opacity-0', 'absolute', 'inset-0');
-    btns[current].className = 'px-3 py-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer border-transparent text-dim hover:text-muted';
-    current = n;
-    imgs[current].classList.remove('opacity-0', 'absolute', 'inset-0');
-    imgs[current].classList.add('opacity-100');
-    btns[current].className = 'px-3 py-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer border-pink text-pink bg-pink/5';
-  }
-  function advance() { show((current + 1) % imgs.length); }
-  function startTimer() { timer = setInterval(advance, 3000); }
-  function resetTimer() { clearInterval(timer); startTimer(); }
-  btns.forEach(function(btn, i) {
-    btn.addEventListener('click', function() { show(i); resetTimer(); });
-  });
-  startTimer();
-})();
 `
       }} />
     </body>

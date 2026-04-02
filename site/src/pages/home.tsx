@@ -60,12 +60,12 @@ export const Home: FC = () => (
       <h2 class="font-mono font-bold text-xl text-purple glow-purple mb-8 text-center">
         See it in action
       </h2>
-      <div class="glow-box rounded-lg overflow-hidden border border-deep-purple/50" id="demo-slideshow">
-        <div class="flex items-center gap-0 font-mono text-xs border-b border-deep-purple/30 overflow-x-auto" id="demo-tabs">
+      <div class="glow-box rounded-lg overflow-hidden border border-deep-purple/50" id="demo-terminal">
+        <div class="flex items-center gap-0 font-mono text-xs border-b border-deep-purple/30 overflow-x-auto" id="demo-tab-overlay">
           {['Dashboard', 'CPU', 'Memory', 'Disk', 'Network', 'Hardware', 'Process', 'Alerts'].map((tab, i) => (
             <button
               type="button"
-              data-slide={i}
+              data-demo-tab={i}
               class={`px-3 py-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
                 i === 0
                   ? 'border-pink text-pink bg-pink/5'
@@ -76,18 +76,20 @@ export const Home: FC = () => (
             </button>
           ))}
         </div>
-        <div class="relative bg-body-bg" id="demo-slides">
-          {['dashboard', 'cpu', 'memory', 'disk', 'network', 'hardware', 'process', 'alerts'].map((view, i) => (
-            <img
-              src={`/screenshots/${view}.png`}
-              alt={`${view} view`}
-              class={`w-full block transition-opacity duration-300 ${i === 0 ? 'opacity-100' : 'opacity-0 absolute inset-0'}`}
-              data-slide-img={i}
-              loading={i === 0 ? 'eager' : 'lazy'}
-              width="2072"
-              height="1280"
-            />
-          ))}
+        <div id="demo-terminal-mount" class="demo-terminal-mount" style="display:none"></div>
+        {/* Fallback: static PNG for no-JS / before xterm loads */}
+        <div id="demo-fallback" class="relative bg-body-bg">
+          <img
+            src="/screenshots/dashboard.png"
+            alt="bewitch dashboard view"
+            class="w-full block"
+            loading="eager"
+            width="2072"
+            height="1280"
+          />
+        </div>
+        <div class="text-center text-dim text-xs py-2 font-mono">
+          Press 1–8 to switch views · &lt;/&gt; change time range · Tab cycles hardware sections
         </div>
       </div>
     </section>

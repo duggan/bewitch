@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/json"
 	"crypto/x509"
 	"encoding/hex"
 	"flag"
@@ -82,6 +83,9 @@ func main() {
 			return
 		case "capture-views":
 			runCaptureViews(cfg, *addr, tlsCfg, effectiveToken)
+			return
+		case "capture-frames":
+			runCaptureFrames(cfg, *addr, tlsCfg, effectiveToken)
 			return
 		default:
 			fmt.Fprintf(os.Stderr, "unknown command: %s\n", flag.Arg(0))
@@ -372,4 +376,130 @@ func runCaptureViews(cfg *config.Config, addr string, tlsCfg *tls.Config, token 
 		fmt.Printf("  %s\n", filepath.Base(f))
 	}
 	fmt.Printf("done: %d files, %dx%d pixels\n", len(files), imgW, imgH)
+}
+
+func runCaptureFrames(cfg *config.Config, addr string, tlsCfg *tls.Config, token string) {
+	args := flag.Args()[1:] // skip "capture-frames"
+	cols, rows := 120, 32
+	frames := 5
+	delay := 400 * time.Millisecond
+	var outPath string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--cols", "-cols":
+			i++
+			if i >= len(args) {
+				fmt.Fprintf(os.Stderr, "missing value for --cols\n")
+				os.Exit(1)
+			}
+			v, err := strconv.Atoi(args[i])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "invalid --cols value: %s\n", args[i])
+				os.Exit(1)
+			}
+			cols = v
+		case "--rows", "-rows":
+			i++
+			if i >= len(args) {
+				fmt.Fprintf(os.Stderr, "missing value for --rows\n")
+				os.Exit(1)
+			}
+			v, err := strconv.Atoi(args[i])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "invalid --rows value: %s\n", args[i])
+				os.Exit(1)
+			}
+			rows = v
+		case "--frames", "-frames":
+			i++
+			if i >= len(args) {
+				fmt.Fprintf(os.Stderr, "missing value for --frames\n")
+				os.Exit(1)
+			}
+			v, err := strconv.Atoi(args[i])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "invalid --frames value: %s\n", args[i])
+				os.Exit(1)
+			}
+			frames = v
+		case "--delay", "-delay":
+			i++
+			if i >= len(args) {
+				fmt.Fprintf(os.Stderr, "missing value for --delay\n")
+				os.Exit(1)
+			}
+			v, err := time.ParseDuration(args[i])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "invalid --delay value: %s\n", args[i])
+				os.Exit(1)
+			}
+			delay = v
+		default:
+			if outPath != "" {
+				fmt.Fprintf(os.Stderr, "unexpected argument: %s\n", args[i])
+				os.Exit(1)
+			}
+			outPath = args[i]
+		}
+	}
+
+	if outPath == "" {
+		fmt.Fprintf(os.Stderr, "usage: bewitch capture-frames [--cols N] [--rows N] [--frames N] [--delay duration] <output.json>\n")
+		os.Exit(1)
+	}
+	if !filepath.IsAbs(outPath) {
+		abs, err := filepath.Abs(outPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: resolving path: %v\n", err)
+			os.Exit(1)
+		}
+		outPath = abs
+	}
+
+	captureSettings := tui.CaptureSettingsFromConfig(cfg.TUI.Capture)
+	client := makeClient(cfg, addr, tlsCfg, token)
+	historyRanges, _ := cfg.TUI.ParseHistoryRanges()
+	if historyRanges == nil {
+		historyRanges = config.DefaultHistoryRanges
+	}
+	model := tui.NewModel(client, 2*time.Second, historyRanges, captureSettings, false)
+	model.SetSize(cols, rows)
+
+	fmt.Printf("capturing state-mapped ANSI frames (%dx%d, %d frames/state, %s delay) ...\n", cols, rows, frames, delay)
+	stateMap, err := model.CaptureStateMappedANSI(frames, delay)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "capture failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	f, err := os.Create(outPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating output file: %v\n", err)
+		os.Exit(1)
+	}
+	defer f.Close()
+
+	enc := json.NewEncoder(f)
+	if err := enc.Encode(stateMap); err != nil {
+		fmt.Fprintf(os.Stderr, "error writing JSON: %v\n", err)
+		os.Exit(1)
+	}
+
+	totalFrames := 0
+	for _, stateFrames := range stateMap.States {
+		totalFrames += len(stateFrames)
+	}
+	fi, _ := f.Stat()
+	fmt.Printf("done: %d states, %d total frames, %s\n", len(stateMap.States), totalFrames, formatBytes(fi.Size()))
+}
+
+func formatBytes(b int64) string {
+	switch {
+	case b >= 1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(b)/(1024*1024))
+	case b >= 1024:
+		return fmt.Sprintf("%.1f KB", float64(b)/1024)
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
