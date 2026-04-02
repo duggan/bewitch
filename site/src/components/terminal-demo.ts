@@ -57,10 +57,15 @@ function setup(mount: HTMLElement, data: DemoStateMap, ghostty: GhosttyModule) {
   if (fallback) fallback.style.display = 'none'
   mount.style.display = 'block'
 
-  // ghostty-web calls focus() on elements it creates during term.open(),
-  // which scrolls the page to the demo. Save/restore scroll position around
-  // the entire initialization sequence.
-  const savedScrollY = window.scrollY
+  // ghostty-web calls focus() during term.open(), which scrolls the page
+  // to the demo element. Safari defers this scroll past rAF, so the only
+  // reliable fix is to lock document scrolling during initialization.
+  const scrollY = window.scrollY
+  const html = document.documentElement
+  html.style.overflow = 'hidden'
+  html.style.position = 'fixed'
+  html.style.top = `-${scrollY}px`
+  html.style.width = '100%'
 
   term.open(mount)
 
@@ -86,10 +91,12 @@ function setup(mount: HTMLElement, data: DemoStateMap, ghostty: GhosttyModule) {
     }
   }
 
-  // Restore scroll position that term.open() may have disrupted.
-  // Safari defers focus-triggered scrolls, so restore on next frame too.
-  window.scrollTo(window.scrollX, savedScrollY)
-  requestAnimationFrame(() => window.scrollTo(window.scrollX, savedScrollY))
+  // Unlock scrolling and restore position.
+  html.style.overflow = ''
+  html.style.position = ''
+  html.style.top = ''
+  html.style.width = ''
+  window.scrollTo(0, scrollY)
 
   // Adjust container height when terminal is scaled via CSS transform
   function adjustHeight() {
