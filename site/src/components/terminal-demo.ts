@@ -57,17 +57,17 @@ function setup(mount: HTMLElement, data: DemoStateMap, ghostty: GhosttyModule) {
   if (fallback) fallback.style.display = 'none'
   mount.style.display = 'block'
 
-  // ghostty-web calls focus() during term.open(), which scrolls the page
-  // to the demo element. Safari defers this scroll past rAF, so the only
-  // reliable fix is to lock document scrolling during initialization.
-  const scrollY = window.scrollY
-  const html = document.documentElement
-  html.style.overflow = 'hidden'
-  html.style.position = 'fixed'
-  html.style.top = `-${scrollY}px`
-  html.style.width = '100%'
+  // Temporarily patch focus() to prevent ghostty-web's internal focus calls
+  // from scrolling the page during initialization. Safari defers focus-scroll
+  // so preventScroll on the prototype is the only reliable approach.
+  const origFocus = HTMLElement.prototype.focus
+  HTMLElement.prototype.focus = function(opts?: FocusOptions) {
+    origFocus.call(this, { ...opts, preventScroll: true })
+  }
 
   term.open(mount)
+
+  HTMLElement.prototype.focus = origFocus
 
   // Strip contenteditable + hidden textarea ghostty-web adds for keyboard input.
   // We handle all input via the outer container's keydown handler.
@@ -86,17 +86,10 @@ function setup(mount: HTMLElement, data: DemoStateMap, ghostty: GhosttyModule) {
   // to always use preventScroll, preventing future scroll jumps.
   for (const el of [mount, ...Array.from(mount.querySelectorAll('*'))]) {
     const htmlEl = el as HTMLElement
-    htmlEl.focus = function() {
-      HTMLElement.prototype.focus.call(this, { preventScroll: true })
+    htmlEl.focus = function(opts?: FocusOptions) {
+      origFocus.call(this, { ...opts, preventScroll: true })
     }
   }
-
-  // Unlock scrolling and restore position.
-  html.style.overflow = ''
-  html.style.position = ''
-  html.style.top = ''
-  html.style.width = ''
-  window.scrollTo(0, scrollY)
 
   // Adjust container height when terminal is scaled via CSS transform
   function adjustHeight() {
