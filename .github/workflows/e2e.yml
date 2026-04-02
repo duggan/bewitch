@@ -2,9 +2,13 @@ name: E2E Installation Tests
 
 on:
   pull_request:
+    paths-ignore:
+      - 'site/**'
   push:
     branches: [main]
     tags: ['v*']
+    paths-ignore:
+      - 'site/**'
   workflow_dispatch:
 
 permissions:
