@@ -173,7 +173,7 @@ type Model struct {
 	procPinnedLastFetchEnd time.Time        // end time of last pinned fetch (for incremental)
 	procPinnedNames        []string         // sorted pinned names at last fetch (detect changes)
 	// Cached rendered chart strings (regenerated only when history data changes)
-	cachedHistoryChart string
+	cachedHistoryCharts map[view]string
 	// Per-view history cache for instant view switching
 	historyCache    map[view]*viewHistoryCache
 	historyFetching map[view]bool // per-view: true while async history fetch is in flight
@@ -257,7 +257,8 @@ func NewModel(client daemonClient, interval time.Duration, historyRanges []confi
 		debug:           dbg,
 		captureSettings: captureSettings,
 		lastDataChange:  make(map[view]time.Time),
-		historyFetching: make(map[view]bool),
+		cachedHistoryCharts: make(map[view]string),
+		historyFetching:     make(map[view]bool),
 	}
 	m.loadHistoryRange()
 	m.loadSelections()
@@ -676,7 +677,7 @@ func (m *Model) historyTimeRange() (time.Time, time.Time) {
 
 func (m *Model) regenerateHistoryChart() {
 	if len(m.historySeries) == 0 {
-		m.cachedHistoryChart = ""
+		m.cachedHistoryCharts[m.current] = ""
 		return
 	}
 	chartWidth := m.width - 4 // panel border (2) + padding (2)
@@ -686,7 +687,7 @@ func (m *Model) regenerateHistoryChart() {
 	case viewProcess:
 		topCPUChart := renderProcessHistoryChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd, m.pinnedProcesses)
 		topCPUChart = renderPanel(fmt.Sprintf("Process CPU History [%s]", rangeLabel), topCPUChart+historyHelpInline(rangeLabel), m.width)
-		m.cachedHistoryChart = topCPUChart
+		m.cachedHistoryCharts[m.current] = topCPUChart
 		// Always sync per-view cache with the top CPU chart (create if needed).
 		// switchView() will overlay the pinned chart when appropriate.
 		if m.historyCache == nil {
@@ -707,14 +708,14 @@ func (m *Model) regenerateHistoryChart() {
 		}
 		return
 	case viewCPU:
-		m.cachedHistoryChart = renderPercentChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd)
-		m.cachedHistoryChart = renderPanel(fmt.Sprintf("CPU History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
+		m.cachedHistoryCharts[m.current] = renderPercentChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd)
+		m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("CPU History [%s]", rangeLabel), m.cachedHistoryCharts[m.current]+historyHelpInline(rangeLabel), m.width)
 	case viewMemory:
-		m.cachedHistoryChart = renderPercentChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd)
-		m.cachedHistoryChart = renderPanel(fmt.Sprintf("Memory History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
+		m.cachedHistoryCharts[m.current] = renderPercentChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd)
+		m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("Memory History [%s]", rangeLabel), m.cachedHistoryCharts[m.current]+historyHelpInline(rangeLabel), m.width)
 	case viewDisk:
-		m.cachedHistoryChart = renderPercentChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd)
-		m.cachedHistoryChart = renderPanel(fmt.Sprintf("Disk History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
+		m.cachedHistoryCharts[m.current] = renderPercentChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd)
+		m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("Disk History [%s]", rangeLabel), m.cachedHistoryCharts[m.current]+historyHelpInline(rangeLabel), m.width)
 	case viewNetwork:
 		// Filter to only selected interfaces
 		var netFiltered []api.TimeSeries
@@ -725,8 +726,8 @@ func (m *Model) regenerateHistoryChart() {
 				netFiltered = append(netFiltered, s)
 			}
 		}
-		m.cachedHistoryChart = renderNetHistoryChart(netFiltered, chartWidth, ch, m.historyStart, m.historyEnd, m.netDisplayBits)
-		m.cachedHistoryChart = renderPanel(fmt.Sprintf("Network History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
+		m.cachedHistoryCharts[m.current] = renderNetHistoryChart(netFiltered, chartWidth, ch, m.historyStart, m.historyEnd, m.netDisplayBits)
+		m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("Network History [%s]", rangeLabel), m.cachedHistoryCharts[m.current]+historyHelpInline(rangeLabel), m.width)
 	case viewHardware:
 		switch m.hardwareSection {
 		case hwSectionTemp:
@@ -736,8 +737,8 @@ func (m *Model) regenerateHistoryChart() {
 					tempFiltered = append(tempFiltered, s)
 				}
 			}
-			m.cachedHistoryChart = renderTempHistoryChart(tempFiltered, chartWidth, ch, m.historyStart, m.historyEnd)
-			m.cachedHistoryChart = renderPanel(fmt.Sprintf("Temperature History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
+			m.cachedHistoryCharts[m.current] = renderTempHistoryChart(tempFiltered, chartWidth, ch, m.historyStart, m.historyEnd)
+			m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("Temperature History [%s]", rangeLabel), m.cachedHistoryCharts[m.current]+historyHelpInline(rangeLabel), m.width)
 		case hwSectionPower:
 			var powerFiltered []api.TimeSeries
 			for _, s := range m.historySeries {
@@ -745,8 +746,8 @@ func (m *Model) regenerateHistoryChart() {
 					powerFiltered = append(powerFiltered, s)
 				}
 			}
-			m.cachedHistoryChart = renderPowerHistoryChart(powerFiltered, chartWidth, ch, m.historyStart, m.historyEnd)
-			m.cachedHistoryChart = renderPanel(fmt.Sprintf("Power History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
+			m.cachedHistoryCharts[m.current] = renderPowerHistoryChart(powerFiltered, chartWidth, ch, m.historyStart, m.historyEnd)
+			m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("Power History [%s]", rangeLabel), m.cachedHistoryCharts[m.current]+historyHelpInline(rangeLabel), m.width)
 		case hwSectionGPU:
 			var gpuFiltered []api.TimeSeries
 			for _, s := range m.historySeries {
@@ -754,18 +755,18 @@ func (m *Model) regenerateHistoryChart() {
 					gpuFiltered = append(gpuFiltered, s)
 				}
 			}
-			m.cachedHistoryChart = renderGPUHistoryChart(gpuFiltered, chartWidth, ch, m.historyStart, m.historyEnd)
-			m.cachedHistoryChart = renderPanel(fmt.Sprintf("GPU History [%s]", rangeLabel), m.cachedHistoryChart+historyHelpInline(rangeLabel), m.width)
+			m.cachedHistoryCharts[m.current] = renderGPUHistoryChart(gpuFiltered, chartWidth, ch, m.historyStart, m.historyEnd)
+			m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("GPU History [%s]", rangeLabel), m.cachedHistoryCharts[m.current]+historyHelpInline(rangeLabel), m.width)
 		default:
-			m.cachedHistoryChart = ""
+			m.cachedHistoryCharts[m.current] = ""
 		}
 	default:
-		m.cachedHistoryChart = ""
+		m.cachedHistoryCharts[m.current] = ""
 	}
 	// Sync per-view cache
 	if m.historyCache != nil {
 		if entry, ok := m.historyCache[m.current]; ok {
-			entry.chart = m.cachedHistoryChart
+			entry.chart = m.cachedHistoryCharts[m.current]
 		}
 	}
 }
@@ -876,15 +877,13 @@ func (m *Model) switchView(v view) tea.Cmd {
 			m.historySeries = cached.series
 			m.historyStart = cached.start
 			m.historyEnd = cached.end
-			m.cachedHistoryChart = cached.chart
+			m.cachedHistoryCharts[m.current] = cached.chart
 		} else if !m.historyFetching[v] {
 			m.d("view: %s→%s (cache miss, async fetch)", viewName(prev), viewName(v))
-			m.cachedHistoryChart = ""
 			m.historyFetching[v] = true
 			cmd = m.prefetchHistoryForCmd(v)
 		} else {
 			m.d("view: %s→%s (cache miss, fetch in flight)", viewName(prev), viewName(v))
-			m.cachedHistoryChart = ""
 		}
 	} else {
 		m.d("view: %s→%s", viewName(prev), viewName(v))
@@ -2091,14 +2090,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "tab":
 				m.hardwareSection = (m.hardwareSection + 1) % 4
-				m.cachedHistoryChart = ""
+				m.cachedHistoryCharts[m.current] = ""
 				delete(m.historyCache, viewHardware)
 				m.historyFetching[viewHardware] = true
 				go m.client.SetPreference("hardware_section", fmt.Sprintf("%d", m.hardwareSection))
 				return m, m.fetchHistoryCmd()
 			case "shift+tab":
 				m.hardwareSection = (m.hardwareSection + 3) % 4
-				m.cachedHistoryChart = ""
+				m.cachedHistoryCharts[m.current] = ""
 				delete(m.historyCache, viewHardware)
 				m.historyFetching[viewHardware] = true
 				go m.client.SetPreference("hardware_section", fmt.Sprintf("%d", m.hardwareSection))
@@ -2240,7 +2239,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.pinnedProcesses) > 0 {
 					m.procChartPinned = !m.procChartPinned
 					m.d("tab: procChartPinned=%v pinnedChart=%d topCPUChart=%d",
-						m.procChartPinned, len(m.procPinnedChart), len(m.cachedHistoryChart))
+						m.procChartPinned, len(m.procPinnedChart), len(m.cachedHistoryCharts[m.current]))
 					if m.procChartPinned && m.procPinnedChart == "" {
 						// Pinned chart not yet available — kick off async fetch.
 						m.d("tab: pinned chart empty, fetching async")
@@ -2571,7 +2570,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.historyStart = msg.windowStart
 				m.historyEnd = msg.end
 				m.regenerateHistoryChart()
-				cache.chart = m.cachedHistoryChart
+				cache.chart = m.cachedHistoryCharts[m.current]
 				if m.ready {
 					m.viewport.SetContent(m.renderCurrentContent())
 				}
@@ -2611,7 +2610,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			isCustom := m.customStart != nil && m.customEnd != nil
 			m.historyCache[m.current] = &viewHistoryCache{
 				series:       m.historySeries,
-				chart:        m.cachedHistoryChart,
+				chart:        m.cachedHistoryCharts[m.current],
 				start:        m.historyStart,
 				end:          m.historyEnd,
 				lastFetchEnd: msg.end,
@@ -2714,7 +2713,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.historyStart = msg.start
 			m.historyEnd = msg.end
 			if cached := m.historyCache[msg.forView]; cached != nil {
-				m.cachedHistoryChart = cached.chart
+				m.cachedHistoryCharts[m.current] = cached.chart
 			}
 			if m.ready {
 				m.viewport.SetContent(m.renderCurrentContent())
@@ -2813,21 +2812,21 @@ func (m *Model) renderCurrentContent() string {
 	case viewDashboard:
 		return renderDashboard(m.dashData, m.width, m.dashSparkData, m.netSelected, m.tempSelected, m.powerSelected, m.gpuSelected)
 	case viewCPU:
-		return renderCPUView(m.cpuData, m.width, m.cachedHistoryChart)
+		return renderCPUView(m.cpuData, m.width, m.cachedHistoryCharts[m.current])
 	case viewMemory:
-		return renderMemView(m.memData, m.width, m.cachedHistoryChart)
+		return renderMemView(m.memData, m.width, m.cachedHistoryCharts[m.current])
 	case viewDisk:
-		return renderDiskView(m.diskData, m.width, m.cachedHistoryChart)
+		return renderDiskView(m.diskData, m.width, m.cachedHistoryCharts[m.current])
 	case viewNetwork:
-		return renderNetView(m.netData, m.width, m.cachedHistoryChart, m.netSparkData, m.netSelected, m.netCursor, m.netIfaceNames, m.netDisplayBits)
+		return renderNetView(m.netData, m.width, m.cachedHistoryCharts[m.current], m.netSparkData, m.netSelected, m.netCursor, m.netIfaceNames, m.netDisplayBits)
 	case viewHardware:
-		return renderHardwareView(m.tempData, m.powerData, m.eccData, m.gpuData, m.width, m.cachedHistoryChart,
+		return renderHardwareView(m.tempData, m.powerData, m.eccData, m.gpuData, m.width, m.cachedHistoryCharts[m.current],
 			m.tempSparkData, m.tempSelected, m.tempCursor,
 			m.powerSparkData, m.powerSelected, m.powerCursor,
 			m.gpuSparkData, m.gpuSelected, m.gpuCursor, m.gpuHints,
 			m.hardwareSection)
 	case viewProcess:
-		chart := m.cachedHistoryChart
+		chart := m.cachedHistoryCharts[m.current]
 		if m.procChartPinned && m.procPinnedChart != "" {
 			chart = m.procPinnedChart
 		}
@@ -2837,7 +2836,7 @@ func (m *Model) renderCurrentContent() string {
 				which = "topCPU(pinned-empty)"
 			}
 			m.d("render: using=%s pinnedLen=%d topCPULen=%d",
-				which, len(m.procPinnedChart), len(m.cachedHistoryChart))
+				which, len(m.procPinnedChart), len(m.cachedHistoryCharts[m.current]))
 		}
 		c, fl := renderProcessView(m.procData, m.width, chart, m.procSortBy, m.procCursor, m.procSearchActive, m.procSearchQuery, m.pinnedProcesses, m.procPinnedOnly, m.procChartPinned)
 		m.procFilteredLen = fl
@@ -2935,10 +2934,10 @@ func (m *Model) CaptureAllViews(dir string) (imgW, imgH int, files []string, err
 				m.historyEnd = end
 				m.regenerateHistoryChart()
 			} else {
-				m.cachedHistoryChart = ""
+				m.cachedHistoryCharts[m.current] = ""
 			}
 		} else {
-			m.cachedHistoryChart = ""
+			m.cachedHistoryCharts[m.current] = ""
 		}
 
 		content := m.captureViewContent()
