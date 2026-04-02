@@ -87,7 +87,9 @@ function setup(mount: HTMLElement, data: DemoStateMap, ghostty: GhosttyModule) {
   }
 
   // Restore scroll position that term.open() may have disrupted.
+  // Safari defers focus-triggered scrolls, so restore on next frame too.
   window.scrollTo(window.scrollX, savedScrollY)
+  requestAnimationFrame(() => window.scrollTo(window.scrollX, savedScrollY))
 
   // Adjust container height when terminal is scaled via CSS transform
   function adjustHeight() {
