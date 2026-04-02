@@ -2,6 +2,25 @@
 
 All notable changes to bewitch are documented here.
 
+## [0.5.0] - 2026-04-02
+
+### Added
+
+- Screen capture to PNG via `x` key with configurable `[tui.capture]` settings
+- `capture-views` subcommand for batch screenshot capture
+- Dev docs channel with automatic publishing for pre-release versions
+
+### Changed
+
+- Restart bewitchd automatically on package upgrade via `dh_installsystemd`
+
+### Fixed
+
+- DuckDB WAL replay crash by checkpointing after migrations
+- History chart flicker on tab switch via per-view chart cache
+- Empty history charts when switching hardware sub-tabs
+- Docs version dropdown not showing latest stable release
+
 ## [0.4.0] - 2026-03-30
 
 ### Added

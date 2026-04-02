@@ -9,6 +9,26 @@ export const ChangelogDocs: FC = () => (
       <a href="https://github.com/duggan/bewitch/blob/main/CHANGELOG.md">CHANGELOG.md</a> on GitHub.
     </p>
 
+    <h2>0.5.0</h2>
+    <p class="text-muted text-sm">2026-04-02</p>
+    <h3>Added</h3>
+    <ul>
+      <li>Screen capture to PNG via <code>x</code> key with configurable <code>[tui.capture]</code> settings</li>
+      <li><code>capture-views</code> subcommand for batch screenshot capture</li>
+      <li>Dev docs channel with automatic publishing for pre-release versions</li>
+    </ul>
+    <h3>Changed</h3>
+    <ul>
+      <li>Restart bewitchd automatically on package upgrade via <code>dh_installsystemd</code></li>
+    </ul>
+    <h3>Fixed</h3>
+    <ul>
+      <li>DuckDB WAL replay crash by checkpointing after migrations</li>
+      <li>History chart flicker on tab switch via per-view chart cache</li>
+      <li>Empty history charts when switching hardware sub-tabs</li>
+      <li>Docs version dropdown not showing latest stable release</li>
+    </ul>
+
     <h2>0.4.0</h2>
     <p class="text-muted text-sm">2026-03-30</p>
     <h3>Added</h3>

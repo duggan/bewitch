@@ -1,3 +1,16 @@
+bewitch (0.5.0-1) unstable; urgency=medium
+
+  * Screen capture to PNG via 'x' key with configurable [tui.capture] settings
+  * capture-views subcommand for batch screenshot capture
+  * Dev docs channel with automatic publishing for pre-release versions
+  * Restart bewitchd automatically on package upgrade via dh_installsystemd
+  * Fix DuckDB WAL replay crash by checkpointing after migrations
+  * Fix history chart flicker on tab switch via per-view chart cache
+  * Fix empty history charts when switching hardware sub-tabs
+  * Fix docs version dropdown not showing latest stable release
+
+ -- Ross Duggan <ross@duggan.ie>  Thu, 02 Apr 2026 11:56:28 +0100
+
 bewitch (0.4.0-1) unstable; urgency=medium
 
   * GPU collector with Intel iGPU (intel_gpu_top) and NVIDIA (nvidia-smi) support
