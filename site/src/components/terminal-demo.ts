@@ -57,17 +57,15 @@ function setup(mount: HTMLElement, data: DemoStateMap, ghostty: GhosttyModule) {
   if (fallback) fallback.style.display = 'none'
   mount.style.display = 'block'
 
-  // Override focus on mount BEFORE term.open() — ghostty-web calls focus()
-  // during initialization which scrolls the page to the demo element.
-  mount.focus = function() {
-    HTMLElement.prototype.focus.call(this, { preventScroll: true })
-  }
+  // ghostty-web calls focus() on elements it creates during term.open(),
+  // which scrolls the page to the demo. Save/restore scroll position around
+  // the entire initialization sequence.
+  const savedScrollY = window.scrollY
 
   term.open(mount)
 
-  // ghostty-web adds contenteditable + a hidden textarea for keyboard input.
-  // Since we're read-only, strip those so the outer container keeps focus
-  // and our keydown handler fires instead of ghostty's input handler.
+  // Strip contenteditable + hidden textarea ghostty-web adds for keyboard input.
+  // We handle all input via the outer container's keydown handler.
   mount.removeAttribute('contenteditable')
   mount.removeAttribute('role')
   mount.removeAttribute('aria-multiline')
@@ -79,13 +77,17 @@ function setup(mount: HTMLElement, data: DemoStateMap, ghostty: GhosttyModule) {
     hiddenInput.style.display = 'none'
   }
 
-  // Extend focus override to all ghostty-web internal elements.
-  for (const el of Array.from(mount.querySelectorAll('*'))) {
+  // Override focus() on mount and all ghostty-web internal elements
+  // to always use preventScroll, preventing future scroll jumps.
+  for (const el of [mount, ...Array.from(mount.querySelectorAll('*'))]) {
     const htmlEl = el as HTMLElement
     htmlEl.focus = function() {
       HTMLElement.prototype.focus.call(this, { preventScroll: true })
     }
   }
+
+  // Restore scroll position that term.open() may have disrupted.
+  window.scrollTo(window.scrollX, savedScrollY)
 
   // Adjust container height when terminal is scaled via CSS transform
   function adjustHeight() {
