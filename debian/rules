@@ -13,5 +13,8 @@ override_dh_auto_test:
 override_dh_auto_install:
 	# Handled by debian/install
 
+override_dh_installsystemd:
+	dh_installsystemd --name=bewitchd --restart-after-upgrade
+
 override_dh_dwz:
 	# Skip dwz - doesn't work with Go binaries
