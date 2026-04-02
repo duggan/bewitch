@@ -36,6 +36,13 @@ func Open(path string, checkpointThreshold string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("running migrations: %w", err)
 	}
+	// Force a checkpoint after migrations to flush WAL to the main DB file.
+	// This prevents WAL replay failures on next startup caused by a DuckDB bug
+	// where ALTER TABLE SET DEFAULT nextval() cannot be replayed.
+	if _, err := db.Exec("CHECKPOINT"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("checkpointing after migrations: %w", err)
+	}
 	// Cache Parquet file metadata in memory so repeated queries against
 	// archived Parquet files skip metadata I/O.
 	if _, err := db.Exec("SET parquet_metadata_cache = true"); err != nil {
