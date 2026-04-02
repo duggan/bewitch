@@ -56,6 +56,13 @@ function setup(mount: HTMLElement, data: DemoStateMap, ghostty: GhosttyModule) {
   const fallback = document.getElementById('demo-fallback')
   if (fallback) fallback.style.display = 'none'
   mount.style.display = 'block'
+
+  // Override focus on mount BEFORE term.open() — ghostty-web calls focus()
+  // during initialization which scrolls the page to the demo element.
+  mount.focus = function() {
+    HTMLElement.prototype.focus.call(this, { preventScroll: true })
+  }
+
   term.open(mount)
 
   // ghostty-web adds contenteditable + a hidden textarea for keyboard input.
@@ -72,9 +79,8 @@ function setup(mount: HTMLElement, data: DemoStateMap, ghostty: GhosttyModule) {
     hiddenInput.style.display = 'none'
   }
 
-  // Prevent ghostty-web internals from stealing focus and scrolling the page.
-  // Override focus() on mount and its children to always use preventScroll.
-  for (const el of [mount, ...Array.from(mount.querySelectorAll('*'))]) {
+  // Extend focus override to all ghostty-web internal elements.
+  for (const el of Array.from(mount.querySelectorAll('*'))) {
     const htmlEl = el as HTMLElement
     htmlEl.focus = function() {
       HTMLElement.prototype.focus.call(this, { preventScroll: true })
