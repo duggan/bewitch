@@ -31,7 +31,7 @@ RUN VERSION=$(cat VERSION) && \
     mkdir -p /tarball/bewitch-${VERSION}-linux-${ARCH} && \
     cp bin/bewitchd bin/bewitch /tarball/bewitch-${VERSION}-linux-${ARCH}/ && \
     cp bewitch.example.toml /tarball/bewitch-${VERSION}-linux-${ARCH}/ && \
-    cp debian/bewitchd.service /tarball/bewitch-${VERSION}-linux-${ARCH}/ && \
+    cp debian/bewitch.bewitchd.service /tarball/bewitch-${VERSION}-linux-${ARCH}/bewitchd.service && \
     tar -czf /bewitch-${VERSION}-linux-${ARCH}.tar.gz \
         -C /tarball bewitch-${VERSION}-linux-${ARCH}
 
