@@ -465,8 +465,8 @@ func runCaptureFrames(cfg *config.Config, addr string, tlsCfg *tls.Config, token
 	model := tui.NewModel(client, 2*time.Second, historyRanges, captureSettings, false)
 	model.SetSize(cols, rows)
 
-	fmt.Printf("capturing ANSI frames (%dx%d, %d frames/view, %s delay) ...\n", cols, rows, frames, delay)
-	frameSet, err := model.CaptureAllViewsANSI(frames, delay)
+	fmt.Printf("capturing state-mapped ANSI frames (%dx%d, %d frames/state, %s delay) ...\n", cols, rows, frames, delay)
+	stateMap, err := model.CaptureStateMappedANSI(frames, delay)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "capture failed: %v\n", err)
 		os.Exit(1)
@@ -480,17 +480,17 @@ func runCaptureFrames(cfg *config.Config, addr string, tlsCfg *tls.Config, token
 	defer f.Close()
 
 	enc := json.NewEncoder(f)
-	if err := enc.Encode(frameSet); err != nil {
+	if err := enc.Encode(stateMap); err != nil {
 		fmt.Fprintf(os.Stderr, "error writing JSON: %v\n", err)
 		os.Exit(1)
 	}
 
 	totalFrames := 0
-	for _, viewFrames := range frameSet.Views {
-		totalFrames += len(viewFrames)
+	for _, stateFrames := range stateMap.States {
+		totalFrames += len(stateFrames)
 	}
 	fi, _ := f.Stat()
-	fmt.Printf("done: %d views, %d total frames, %s\n", len(frameSet.Views), totalFrames, formatBytes(fi.Size()))
+	fmt.Printf("done: %d states, %d total frames, %s\n", len(stateMap.States), totalFrames, formatBytes(fi.Size()))
 }
 
 func formatBytes(b int64) string {

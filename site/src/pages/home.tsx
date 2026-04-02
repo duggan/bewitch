@@ -89,7 +89,7 @@ export const Home: FC = () => (
           />
         </div>
         <div class="text-center text-dim text-xs py-2 font-mono">
-          Press 1–8 to switch views · Arrow keys to navigate
+          Press 1–8 to switch views · &lt;/&gt; change time range · Tab cycles hardware sections
         </div>
       </div>
     </section>

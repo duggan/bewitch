@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -8,62 +9,253 @@ import (
 	"github.com/muesli/termenv"
 )
 
-// ANSIFrameSet holds pre-rendered ANSI frames for all views, suitable for
-// playback in a browser terminal emulator (e.g. xterm.js).
-type ANSIFrameSet struct {
-	Cols  int                 `json:"cols"`
-	Rows  int                 `json:"rows"`
-	Views map[string][]string `json:"views"`
+// DemoState identifies a unique renderable TUI state.
+type DemoState struct {
+	View            view
+	HistoryRange    int           // index into historyRanges
+	HardwareSection int           // hwSectionTemp..hwSectionGPU (hardware view only)
+	ProcessSort     procSortField // process view only
 }
 
-// CaptureAllViewsANSI renders all views to ANSI strings, capturing multiple
-// frames per view with a delay between each to show data changing over time.
-// The mock daemon must be running so fresh data is available between frames.
-func (m *Model) CaptureAllViewsANSI(frameCount int, frameDelay time.Duration) (*ANSIFrameSet, error) {
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	lipgloss.SetHasDarkBackground(true)
-
-	m.hardwareSection = hwSectionTemp
-
-	// Clear ETag cache so fetches don't return 304.
-	if dc, ok := m.client.(*DaemonClient); ok {
-		dc.etagsMu.Lock()
-		dc.etags = make(map[string]string)
-		dc.etagsMu.Unlock()
+// StateKey returns a string identifier for this state, used as JSON map key
+// and transition table reference. Format: "view" or "view/qualifier/range".
+func (s DemoState) StateKey(rangeLabels []string) string {
+	base := captureFileName[s.View]
+	switch s.View {
+	case viewDashboard, viewAlerts:
+		return base
+	case viewHardware:
+		section := [...]string{"temp", "power", "ecc", "gpu"}[s.HardwareSection]
+		return fmt.Sprintf("%s/%s/%s", base, section, rangeLabels[s.HistoryRange])
+	case viewProcess:
+		sort := [...]string{"cpu", "mem", "pid", "name", "threads", "fds"}[s.ProcessSort]
+		return fmt.Sprintf("%s/%s/%s", base, sort, rangeLabels[s.HistoryRange])
+	default:
+		return fmt.Sprintf("%s/%s", base, rangeLabels[s.HistoryRange])
 	}
+}
 
-	// Initialize selection maps (same as CaptureAllViews).
-	m.initSelectionMaps()
+// DemoStateMap is the complete output for the browser demo player.
+type DemoStateMap struct {
+	Cols        int                        `json:"cols"`
+	Rows        int                        `json:"rows"`
+	States      map[string][]string        `json:"states"`      // stateKey → ANSI frames
+	Transitions map[string]map[string]string `json:"transitions"` // stateKey → { key → stateKey }
+	Initial     string                     `json:"initial"`
+}
 
-	result := &ANSIFrameSet{
-		Cols:  m.width,
-		Rows:  m.height,
-		Views: make(map[string][]string),
-	}
-
+// EnumerateStates returns all valid DemoState combinations for the given config.
+func EnumerateStates(numRanges int) []DemoState {
+	var states []DemoState
 	views := []view{viewDashboard, viewCPU, viewMemory, viewDisk, viewNetwork, viewHardware, viewProcess, viewAlerts}
 
 	for _, v := range views {
-		name := captureFileName[v]
-		m.current = v
+		switch v {
+		case viewDashboard, viewAlerts:
+			states = append(states, DemoState{View: v})
+		case viewHardware:
+			for sec := hwSectionTemp; sec <= hwSectionGPU; sec++ {
+				for r := 0; r < numRanges; r++ {
+					states = append(states, DemoState{View: v, HistoryRange: r, HardwareSection: sec})
+				}
+			}
+		case viewProcess:
+			for sort := procSortCPU; sort <= procSortFDs; sort++ {
+				for r := 0; r < numRanges; r++ {
+					states = append(states, DemoState{View: v, HistoryRange: r, ProcessSort: sort})
+				}
+			}
+		default:
+			for r := 0; r < numRanges; r++ {
+				states = append(states, DemoState{View: v, HistoryRange: r})
+			}
+		}
+	}
+	return states
+}
 
-		// Fetch history once per view (charts don't change between frames).
-		m.fetchHistoryForCapture(v)
+// BuildTransitions computes the key→state transition table for all states.
+func BuildTransitions(states []DemoState, rangeLabels []string) map[string]map[string]string {
+	numRanges := len(rangeLabels)
+	numViews := int(viewCount)
+	keyMap := make(map[string]string, len(states))
+	for _, s := range states {
+		keyMap[s.StateKey(rangeLabels)] = "" // just for existence check later
+	}
 
-		frames := make([]string, 0, frameCount)
+	result := make(map[string]map[string]string, len(states))
+	for _, s := range states {
+		key := s.StateKey(rangeLabels)
+		t := make(map[string]string)
+
+		// Number keys 1-8: switch view, preserve range
+		for vi := 0; vi < numViews; vi++ {
+			target := DemoState{View: view(vi), HistoryRange: s.HistoryRange}
+			switch view(vi) {
+			case viewDashboard, viewAlerts:
+				target.HistoryRange = 0
+			case viewHardware:
+				target.HardwareSection = s.HardwareSection
+			case viewProcess:
+				target.ProcessSort = s.ProcessSort
+			}
+			targetKey := target.StateKey(rangeLabels)
+			if _, ok := keyMap[targetKey]; ok && targetKey != key {
+				t[fmt.Sprintf("%d", vi+1)] = targetKey
+			}
+		}
+
+		// Arrow keys: prev/next view
+		prevView := (int(s.View) - 1 + numViews) % numViews
+		nextView := (int(s.View) + 1) % numViews
+		prevState := DemoState{View: view(prevView), HistoryRange: s.HistoryRange}
+		nextState := DemoState{View: view(nextView), HistoryRange: s.HistoryRange}
+		switch view(prevView) {
+		case viewDashboard, viewAlerts:
+			prevState.HistoryRange = 0
+		case viewHardware:
+			prevState.HardwareSection = s.HardwareSection
+		case viewProcess:
+			prevState.ProcessSort = s.ProcessSort
+		}
+		switch view(nextView) {
+		case viewDashboard, viewAlerts:
+			nextState.HistoryRange = 0
+		case viewHardware:
+			nextState.HardwareSection = s.HardwareSection
+		case viewProcess:
+			nextState.ProcessSort = s.ProcessSort
+		}
+		if pk := prevState.StateKey(rangeLabels); pk != key {
+			t["ArrowLeft"] = pk
+		}
+		if nk := nextState.StateKey(rangeLabels); nk != key {
+			t["ArrowRight"] = nk
+		}
+
+		// < / > : history range navigation (views that have ranges)
+		switch s.View {
+		case viewDashboard, viewAlerts:
+			// no range navigation
+		default:
+			if s.HistoryRange > 0 {
+				prev := s
+				prev.HistoryRange--
+				t["<"] = prev.StateKey(rangeLabels)
+				t[","] = prev.StateKey(rangeLabels)
+			}
+			if s.HistoryRange < numRanges-1 {
+				next := s
+				next.HistoryRange++
+				t[">"] = next.StateKey(rangeLabels)
+				t["."] = next.StateKey(rangeLabels)
+			}
+		}
+
+		// Tab / Shift+Tab: hardware section cycling
+		if s.View == viewHardware {
+			nextSec := s
+			nextSec.HardwareSection = (s.HardwareSection + 1) % 4
+			prevSec := s
+			prevSec.HardwareSection = (s.HardwareSection + 3) % 4
+			t["Tab"] = nextSec.StateKey(rangeLabels)
+			t["Shift+Tab"] = prevSec.StateKey(rangeLabels)
+		}
+
+		// Process sort keys
+		if s.View == viewProcess {
+			sortKeys := []struct {
+				key  string
+				sort procSortField
+			}{
+				{"c", procSortCPU}, {"m", procSortMem}, {"p", procSortPID},
+				{"n", procSortName}, {"t", procSortThreads}, {"f", procSortFDs},
+			}
+			for _, sk := range sortKeys {
+				if sk.sort != s.ProcessSort {
+					target := s
+					target.ProcessSort = sk.sort
+					t[sk.key] = target.StateKey(rangeLabels)
+				}
+			}
+		}
+
+		result[key] = t
+	}
+	return result
+}
+
+// CaptureStateMappedANSI renders all enumerated TUI states to ANSI strings,
+// capturing multiple frames per state with a delay between each to show data
+// changing over time. Returns a complete DemoStateMap for the browser player.
+func (m *Model) CaptureStateMappedANSI(frameCount int, frameDelay time.Duration) (*DemoStateMap, error) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	lipgloss.SetHasDarkBackground(true)
+
+	m.clearETagCache()
+	m.initSelectionMaps()
+
+	rangeLabels := make([]string, len(m.historyRanges))
+	for i, r := range m.historyRanges {
+		rangeLabels[i] = r.Label
+	}
+
+	allStates := EnumerateStates(len(m.historyRanges))
+	transitions := BuildTransitions(allStates, rangeLabels)
+
+	result := &DemoStateMap{
+		Cols:        m.width,
+		Rows:        m.height,
+		States:      make(map[string][]string, len(allStates)),
+		Transitions: transitions,
+		Initial:     "dashboard",
+	}
+
+	// Group states by (view, historyRange) so we can share fetched history data.
+	// Within a group, we vary only hardwareSection or processSort which don't
+	// require re-fetching history.
+	type groupKey struct {
+		v     view
+		rng   int
+	}
+	groups := make(map[groupKey][]DemoState)
+	var groupOrder []groupKey
+	for _, s := range allStates {
+		gk := groupKey{s.View, s.HistoryRange}
+		if _, seen := groups[gk]; !seen {
+			groupOrder = append(groupOrder, gk)
+		}
+		groups[gk] = append(groups[gk], s)
+	}
+
+	for _, gk := range groupOrder {
+		statesInGroup := groups[gk]
+		m.current = gk.v
+		m.historyRange = gk.rng
+
+		// Fetch history once for this (view, range) group.
+		m.fetchHistoryForCapture(gk.v)
+
+		// For each frame tick, refresh data then render all states in this group.
 		for f := 0; f < frameCount; f++ {
 			if f > 0 {
-				// Wait for mock data to shift, then refresh metrics.
 				time.Sleep(frameDelay)
 				m.clearETagCache()
 			}
-			m.refreshDataForView(v)
-			frame := m.captureViewContent()
-			frame = m.normalizeFrameHeight(frame)
-			frames = append(frames, frame)
-		}
+			m.refreshDataForView(gk.v)
 
-		result.Views[name] = frames
+			for _, s := range statesInGroup {
+				// Set the state-specific model fields.
+				m.hardwareSection = s.HardwareSection
+				m.procSortBy = s.ProcessSort
+
+				frame := m.renderCurrentContent()
+				frame = m.normalizeFrameHeight(frame)
+
+				key := s.StateKey(rangeLabels)
+				result.States[key] = append(result.States[key], frame)
+			}
+		}
 	}
 
 	return result, nil

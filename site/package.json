@@ -8,7 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@xterm/xterm": "^6.0.0",
+    "ghostty-web": "^0.4.0",
     "hono": "^4.7.0"
   },
   "devDependencies": {

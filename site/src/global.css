@@ -237,14 +237,7 @@ body::after {
 .demo-terminal-mount {
   background: #1A1A2E;
   padding: 4px;
-}
-
-.demo-terminal-mount .xterm {
-  padding: 2px 4px;
-}
-
-.demo-terminal-mount .xterm-viewport {
-  overflow: hidden !important;
+  overflow: hidden;
 }
 
 #demo-terminal:focus {
@@ -252,20 +245,27 @@ body::after {
   outline-offset: -1px;
 }
 
-/* Scale terminal to fit on smaller screens */
-@media (max-width: 1024px) {
+/* Scale terminal to fit on smaller screens (ghostty-web renders to canvas) */
+@media (max-width: 1200px) {
   .demo-terminal-mount {
-    overflow: hidden;
-  }
-  .demo-terminal-mount .xterm {
-    transform: scale(0.78);
+    transform: scale(0.82);
     transform-origin: top left;
   }
 }
 
-@media (max-width: 768px) {
-  .demo-terminal-mount .xterm {
-    transform: scale(0.52);
+@media (max-width: 1024px) {
+  .demo-terminal-mount {
+    transform: scale(0.68);
     transform-origin: top left;
+  }
+}
+
+/* On small screens, hide the interactive terminal and show the PNG fallback */
+@media (max-width: 768px) {
+  .demo-terminal-mount {
+    display: none !important;
+  }
+  #demo-fallback {
+    display: block !important;
   }
 }
