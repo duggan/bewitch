@@ -121,7 +121,7 @@ sudo dpkg -i bewitch_${v}-1_*.deb`}
       <li>Creates the <code>bewitch</code> system user and group</li>
       <li>Installs binaries to <code>/usr/local/bin/</code></li>
       <li>Sets up <code>/var/lib/bewitch/</code> with correct ownership</li>
-      <li>Installs the systemd service (<code>bewitchd.service</code>)</li>
+      <li>Installs, enables, and starts the systemd service (<code>bewitchd.service</code>)</li>
       <li>Copies example config to <code>/etc/bewitch.toml</code></li>
       <li>Configures disk and SMART access permissions</li>
     </ul>
@@ -145,7 +145,10 @@ sudo systemctl daemon-reload`}
     </CodeBlock>
 
     <h2>systemd Service</h2>
-    <p>Start and enable the daemon:</p>
+    <p>
+      The install script and <code>.deb</code> package automatically enable and start the daemon.
+      For build-from-source installs, start it manually:
+    </p>
 
     <CodeBlock title="start the daemon">
 {`sudo systemctl enable --now bewitchd`}

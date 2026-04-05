@@ -321,21 +321,7 @@ export const Home: FC = () => (
           </TerminalBlock>
         </div>
         <div>
-          <p class="font-mono text-xs text-dim mb-2">2. Configure</p>
-          <TerminalBlock>
-            <span class="text-purple">$</span>{" "}
-            <span class="text-text">sudo vim /etc/bewitch.toml</span>
-          </TerminalBlock>
-        </div>
-        <div>
-          <p class="font-mono text-xs text-dim mb-2">3. Start the daemon</p>
-          <TerminalBlock>
-            <span class="text-purple">$</span>{" "}
-            <span class="text-text">sudo systemctl enable --now bewitchd</span>
-          </TerminalBlock>
-        </div>
-        <div>
-          <p class="font-mono text-xs text-dim mb-2">4. Launch the TUI</p>
+          <p class="font-mono text-xs text-dim mb-2">2. Launch the TUI</p>
           <TerminalBlock>
             <span class="text-purple">$</span>{" "}
             <span class="text-text">bewitch</span>

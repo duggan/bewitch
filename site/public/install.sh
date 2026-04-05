@@ -246,6 +246,11 @@ else
             /etc/systemd/system/bewitchd.service
         systemctl daemon-reload
         info "service" "installed bewitchd.service"
+        if systemctl enable --now bewitchd 2>/dev/null; then
+            info "service" "bewitchd enabled and started"
+        else
+            info "note" "start manually with: sudo systemctl enable --now bewitchd"
+        fi
     fi
 fi
 
@@ -255,7 +260,6 @@ echo ""
 info "done!" "bewitch installed successfully"
 echo ""
 echo "  Get started:"
-echo "    sudo systemctl enable --now bewitchd"
 echo "    bewitch"
 echo ""
 echo "  Configuration: /etc/bewitch.toml"
