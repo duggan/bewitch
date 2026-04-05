@@ -5,7 +5,7 @@ export const Footer: FC = () => (
     <div class="max-w-6xl mx-auto px-6 flex flex-col items-center gap-4 text-center">
       <img src="/favicon.png" alt="" class="w-10 h-10 opacity-60" width="40" height="40" />
       <p class="text-muted text-sm font-mono">
-        Built with Go and DuckDB
+        A charming system monitor
       </p>
       <div class="flex items-center gap-6 text-xs font-mono text-dim">
         <a

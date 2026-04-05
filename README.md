@@ -1,10 +1,10 @@
 # Bewitch
 
-A charming server monitoring system for Linux, built with Go.
+A charming server monitoring system for Linux.
 
 Bewitch is comprised of two applications:
 
-- **bewitchd** — a daemon that continuously collects system metrics and stores them in DuckDB
+- **bewitchd** — a daemon that continuously collects system metrics and stores them for querying
 - **bewitch** — a TUI that provides a rich, interactive interface to the collected data
 
 ## Features
@@ -12,12 +12,12 @@ Bewitch is comprised of two applications:
 - **Metrics collection** — CPU (per-core), memory, disk (space + I/O + SMART health), network, ECC errors, temperature sensors, power consumption (powercap/RAPL), process tracking (all processes visible, top N enriched with full details)
 - **Process pinning** — pin processes by glob pattern (config or TUI) to always collect full metrics, regardless of CPU/memory ranking
 - **Per-collector intervals** — each collector has a configurable collection interval (e.g., CPU at 1s, disk at 30s, ECC at 60s) with a global default; failing collectors automatically back off exponentially and recover on success
-- **Persistent storage** — DuckDB with automatic WAL checkpointing, optional retention pruning, scheduled or on-demand compaction, and Parquet archival for long-term storage
+- **Persistent storage** — embedded database with automatic WAL checkpointing, optional retention pruning, scheduled or on-demand compaction, and Parquet archival for long-term storage
 - **Alerting** — threshold, predictive (linear regression), and variance alert rules, manageable from the TUI
 - **Webhook delivery** — alert notifications to external services
 - **TUI dashboard** — real-time system overview with detail views per subsystem; status bar indicates stale data when a collector stops producing updates
 - **Historical charts** — high-resolution braille charts for CPU, memory, disk, hardware (temperature/power), and process CPU with selectable time ranges and dynamic height
-- **Interactive SQL REPL** — `bewitch repl` opens an interactive DuckDB query console against the daemon, with multi-line editing, dot-commands (`.tables`, `.schema`, `.metrics`, `.dimensions`, `.export`), persistent history, tab completion, piped input support, and read-only enforcement via DuckDB's statement parser
+- **Interactive SQL REPL** — `bewitch repl` opens an interactive SQL console against the daemon, with multi-line editing, dot-commands (`.tables`, `.schema`, `.metrics`, `.dimensions`, `.export`), persistent history, tab completion, piped input support, and read-only enforcement
 - **Remote access with TLS** — optional TCP listener with auto-generated self-signed certificates, SSH-style trust-on-first-use fingerprint pinning, and bearer token authentication
 - **Unix socket API** — daemon control without network exposure, JSON API
 

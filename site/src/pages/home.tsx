@@ -184,7 +184,7 @@ export const Home: FC = () => (
             Your metrics in SQL
           </h3>
           <p class="text-muted text-sm leading-relaxed">
-            Query your metrics directly with DuckDB SQL. Interactive REPL with
+            Query your metrics directly with SQL. Interactive REPL with
             tab completion, multi-line editing, dot-commands, and data export to
             CSV, Parquet, or JSON.
           </p>

@@ -2,7 +2,7 @@ import type { FC, PropsWithChildren } from 'hono/jsx'
 
 export const Base: FC<PropsWithChildren<{ title?: string; description?: string }>> = ({
   title = 'bewitch — a charming system monitor for Linux',
-  description = 'Beautiful TUI system monitoring with DuckDB storage, multi-channel alerting, interactive SQL REPL, and remote access with TLS.',
+  description = 'Beautiful TUI system monitoring with persistent storage, multi-channel alerting, interactive SQL REPL, and remote access with TLS.',
   children,
 }) => (
   <html lang="en">
