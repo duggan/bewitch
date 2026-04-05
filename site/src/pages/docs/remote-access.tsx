@@ -101,15 +101,14 @@ bewitch -addr myserver:9119 -token secret snapshot /tmp/remote.duckdb`}
 
     <h2>How It Works</h2>
     <p>
-      The daemon runs two <code>http.Server</code> instances sharing the same mux. The unix socket server
-      has no auth middleware (filesystem permissions suffice). The TCP server wraps the mux with bearer token
-      middleware. Both servers are shut down gracefully on daemon exit.
+      The daemon runs separate server instances for the unix socket and TCP listener, sharing the same API.
+      The unix socket has no auth (filesystem permissions suffice). The TCP listener applies bearer token
+      middleware. Both are shut down gracefully on daemon exit.
     </p>
     <p>
-      The client uses <code>AuthTransport</code> (an <code>http.RoundTripper</code> wrapper) to transparently
-      add the Authorization header to every request. TLS fingerprint pinning uses
-      <code>tls.Config.VerifyPeerCertificate</code> with <code>InsecureSkipVerify: true</code> (skip CA chain
-      validation, verify fingerprint only).
+      The client transparently adds the Authorization header to every request. TLS fingerprint pinning
+      verifies the server certificate's fingerprint directly, bypassing CA chain validation — similar to
+      SSH known_hosts.
     </p>
   </DocsLayout>
 )

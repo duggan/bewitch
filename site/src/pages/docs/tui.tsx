@@ -6,8 +6,7 @@ import { CodeBlock } from '../../components/terminal-block'
 export const TuiDocs: FC = () => (
   <DocsLayout title="TUI Guide" active={`${docsBase}/tui`}>
     <p>
-      The bewitch TUI is built with <a href="https://github.com/charmbracelet/bubbletea">bubbletea</a> and
-      provides 8 views for real-time system monitoring with historical charts.
+      The bewitch TUI provides 8 views for real-time system monitoring with historical charts.
     </p>
 
     <CodeBlock title="launch">
@@ -47,6 +46,22 @@ bewitch -addr myserver:9119 -token my-secret`}
         <tr><td><code>&larr;</code> / <code>&rarr;</code> or <code>h</code> / <code>l</code></td><td>Cycle views forward / backward</td></tr>
         <tr><td><code>&lt;</code> / <code>&gt;</code></td><td>Cycle history time range (1h, 6h, 24h, 7d, 30d)</td></tr>
         <tr><td><code>q</code></td><td>Quit</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Network View</h2>
+    <p>
+      Per-interface throughput with sparklines and historical chart. Select which interfaces appear on the chart.
+    </p>
+    <table>
+      <thead>
+        <tr><th>Key</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>j</code> / <code>k</code></td><td>Navigate interface list</td></tr>
+        <tr><td><code>Space</code></td><td>Toggle interface in chart</td></tr>
+        <tr><td><code>a</code></td><td>Select / deselect all</td></tr>
+        <tr><td><code>b</code></td><td>Toggle bits/bytes display</td></tr>
       </tbody>
     </table>
 
@@ -120,8 +135,8 @@ bewitch -addr myserver:9119 -token my-secret`}
       Use <code>&lt;</code> / <code>&gt;</code> to cycle through time ranges: 1h, 6h, 24h, 7d, 30d.
     </p>
     <p>
-      Charts use DuckDB's <code>time_bucket</code> aggregation. Bucket size auto-scales based on the selected range
-      (1 minute for 1h up to 6 hours for 30d). History data is fetched asynchronously and cached per-view for instant display on tab switch.
+      Bucket size auto-scales based on the selected range (1 minute for 1h up to 6 hours for 30d).
+      History data is fetched asynchronously and cached per-view for instant display on tab switch.
     </p>
 
     <h2>Staleness Detection</h2>
@@ -148,9 +163,8 @@ bewitch -addr myserver:9119 -token my-secret`}
       </tbody>
     </table>
 
-    <h2>Styling</h2>
+    <h2>Layout</h2>
     <p>
-      The TUI uses a pink and purple color palette with bordered panels (<code>lipgloss.RoundedBorder</code>).
       The dashboard adapts to a multi-column grid layout on terminals wider than 120 columns.
     </p>
   </DocsLayout>

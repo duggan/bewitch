@@ -12,9 +12,9 @@ export const ArchivalDocs: FC = () => (
 
     <h2>DuckDB Storage</h2>
     <p>
-      The daemon writes metrics using DuckDB's Appender API for high-performance bulk inserts.
-      The schema is applied automatically on startup (CREATE IF NOT EXISTS). Database writes are decoupled
-      from collection via a buffered channel — the API cache is always updated immediately.
+      The daemon writes metrics using high-performance bulk inserts. The schema is applied automatically
+      on startup. Database writes are decoupled from collection — the API cache is always updated
+      immediately, so the TUI never waits on disk I/O.
     </p>
 
     <h3>WAL checkpointing</h3>
@@ -115,15 +115,13 @@ bewitch snapshot -with-system-tables /tmp/backup.duckdb`}
 
     <h2>Concurrency</h2>
     <p>
-      The daemon uses a DuckDB connection pool (<code>MaxOpenConns(4)</code>) to allow API handlers to execute
-      concurrently with batch writes. The TUI opens a separate read-only connection. During pruning/compaction,
-      the store buffers incoming writes in memory and flushes them on completion.
+      API requests are served concurrently with database writes, so the TUI stays responsive during heavy
+      collection. During pruning or compaction, incoming writes are buffered in memory and flushed on completion.
     </p>
 
     <h2>Schema</h2>
     <p>
-      Tables are defined as a const string in the codebase and applied with CREATE IF NOT EXISTS on startup.
-      Key tables:
+      Schema is applied automatically on startup. Key tables:
     </p>
     <ul>
       <li><code>cpu_metrics</code> — per-core CPU usage</li>

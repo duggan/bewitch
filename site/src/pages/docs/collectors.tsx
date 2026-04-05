@@ -191,10 +191,8 @@ pinned = ["nginx*", "postgres", "redis-server"]`}
 
     <h2>Parallel Collection</h2>
     <p>
-      Collectors due on each tick run concurrently via goroutines, reducing total cycle time. Results are gathered
-      with <code>sync.WaitGroup</code>. The API cache is updated immediately after collection, then samples are
-      enqueued to a buffered channel for asynchronous database writing. If the write channel is full, the batch is
-      dropped with a warning.
+      Collectors due on each tick run concurrently, reducing total cycle time. The API cache is updated
+      immediately after collection, then samples are written to the database asynchronously.
     </p>
   </DocsLayout>
 )
