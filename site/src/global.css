@@ -203,6 +203,10 @@ body::after {
   text-underline-offset: 2px;
 }
 
+.docs-content a.no-underline {
+  text-decoration: none;
+}
+
 .docs-content a:hover {
   color: var(--color-lavender);
 }
