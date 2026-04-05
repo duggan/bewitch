@@ -203,8 +203,17 @@ body::after {
   text-underline-offset: 2px;
 }
 
+.docs-content [id^="type-"] {
+  scroll-margin-top: 4.5rem;
+}
+
 .docs-content a.no-underline {
   text-decoration: none;
+}
+
+.docs-content a.type-link:hover code {
+  color: var(--color-pink);
+  transition: color 0.15s;
 }
 
 .docs-content a:hover {

@@ -1,4 +1,4 @@
-.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install demo-frames
+.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install demo-frames docgen
 
 VERSION := $(shell cat VERSION)
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
@@ -66,6 +66,9 @@ demo-frames: build
 		site/public/demo-frames.json; \
 	kill $$DAEMON_PID 2>/dev/null; \
 	wait $$DAEMON_PID 2>/dev/null || true
+
+docgen:
+	go run cmd/docgen/main.go . > site/src/generated/api-schema.json
 
 deploy:
 	cd site && bun run build

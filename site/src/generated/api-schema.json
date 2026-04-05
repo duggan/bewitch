@@ -1,0 +1,1605 @@
+{
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "description": "Daemon status, uptime, and collector intervals",
+      "category": "Status \u0026 Config",
+      "response": "StatusResponse"
+    },
+    {
+      "method": "GET",
+      "path": "/api/config",
+      "description": "Full daemon, alerts, and TUI configuration",
+      "category": "Status \u0026 Config",
+      "response": "ConfigResponse"
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics/cpu",
+      "description": "Per-core CPU usage percentages",
+      "category": "Live Metrics",
+      "response": "CPUResponse",
+      "notes": [
+        "ETag caching"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics/memory",
+      "description": "Memory and swap usage",
+      "category": "Live Metrics",
+      "response": "MemoryMetric",
+      "notes": [
+        "ETag caching"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics/disk",
+      "description": "Per-mount disk space, I/O rates, and SMART health",
+      "category": "Live Metrics",
+      "response": "DiskResponse",
+      "notes": [
+        "ETag caching"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics/network",
+      "description": "Per-interface throughput and error counters",
+      "category": "Live Metrics",
+      "response": "NetworkResponse",
+      "notes": [
+        "ETag caching"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics/temperature",
+      "description": "Hardware sensor temperatures",
+      "category": "Live Metrics",
+      "response": "TemperatureResponse",
+      "notes": [
+        "ETag caching"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics/power",
+      "description": "Power consumption per RAPL zone",
+      "category": "Live Metrics",
+      "response": "PowerResponse",
+      "notes": [
+        "ETag caching"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics/ecc",
+      "description": "ECC memory error counts",
+      "category": "Live Metrics",
+      "response": "ECCResponse",
+      "notes": [
+        "ETag caching"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics/gpu",
+      "description": "GPU utilization, frequency, power, and memory",
+      "category": "Live Metrics",
+      "response": "GPUResponse",
+      "notes": [
+        "ETag caching"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics/process",
+      "description": "All processes (live in-memory snapshot)",
+      "category": "Live Metrics",
+      "response": "ProcessResponse",
+      "notes": [
+        "ETag caching"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics/dashboard",
+      "description": "Combined overview of all metric types",
+      "category": "Live Metrics",
+      "response": "DashboardData",
+      "notes": [
+        "ETag caching"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/history/cpu",
+      "description": "CPU usage over time",
+      "category": "History",
+      "response": "HistoryResponse",
+      "query_params": [
+        {
+          "name": "start",
+          "type": "number",
+          "description": "Start time (Unix seconds)"
+        },
+        {
+          "name": "end",
+          "type": "number",
+          "description": "End time (Unix seconds)"
+        }
+      ],
+      "notes": [
+        "Bucket size auto-scales by range"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/history/memory",
+      "description": "Memory usage over time",
+      "category": "History",
+      "response": "HistoryResponse",
+      "query_params": [
+        {
+          "name": "start",
+          "type": "number",
+          "description": "Start time (Unix seconds)"
+        },
+        {
+          "name": "end",
+          "type": "number",
+          "description": "End time (Unix seconds)"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/history/disk",
+      "description": "Disk space and I/O over time",
+      "category": "History",
+      "response": "HistoryResponse",
+      "query_params": [
+        {
+          "name": "start",
+          "type": "number",
+          "description": "Start time (Unix seconds)"
+        },
+        {
+          "name": "end",
+          "type": "number",
+          "description": "End time (Unix seconds)"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/history/network",
+      "description": "Network throughput over time",
+      "category": "History",
+      "response": "HistoryResponse",
+      "query_params": [
+        {
+          "name": "start",
+          "type": "number",
+          "description": "Start time (Unix seconds)"
+        },
+        {
+          "name": "end",
+          "type": "number",
+          "description": "End time (Unix seconds)"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/history/temperature",
+      "description": "Temperature over time",
+      "category": "History",
+      "response": "HistoryResponse",
+      "query_params": [
+        {
+          "name": "start",
+          "type": "number",
+          "description": "Start time (Unix seconds)"
+        },
+        {
+          "name": "end",
+          "type": "number",
+          "description": "End time (Unix seconds)"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/history/power",
+      "description": "Power consumption over time",
+      "category": "History",
+      "response": "HistoryResponse",
+      "query_params": [
+        {
+          "name": "start",
+          "type": "number",
+          "description": "Start time (Unix seconds)"
+        },
+        {
+          "name": "end",
+          "type": "number",
+          "description": "End time (Unix seconds)"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/history/gpu",
+      "description": "GPU metrics over time",
+      "category": "History",
+      "response": "HistoryResponse",
+      "query_params": [
+        {
+          "name": "start",
+          "type": "number",
+          "description": "Start time (Unix seconds)"
+        },
+        {
+          "name": "end",
+          "type": "number",
+          "description": "End time (Unix seconds)"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/history/process",
+      "description": "Top processes by CPU over time",
+      "category": "History",
+      "response": "HistoryResponse",
+      "query_params": [
+        {
+          "name": "start",
+          "type": "number",
+          "description": "Start time (Unix seconds)"
+        },
+        {
+          "name": "end",
+          "type": "number",
+          "description": "End time (Unix seconds)"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/alerts",
+      "description": "List fired alerts",
+      "category": "Alerts",
+      "response": "AlertsResponse",
+      "query_params": [
+        {
+          "name": "ack",
+          "type": "boolean",
+          "description": "Filter by acknowledged state (e.g. ?ack=false)"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/alerts/{id}/ack",
+      "description": "Acknowledge a fired alert",
+      "category": "Alerts",
+      "response": "GenericResponse"
+    },
+    {
+      "method": "GET",
+      "path": "/api/alert-rules",
+      "description": "List all alert rules",
+      "category": "Alerts",
+      "response": "AlertRulesResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/alert-rules",
+      "description": "Create a new alert rule",
+      "category": "Alerts",
+      "response": "GenericResponse",
+      "request": "AlertRuleMetric"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/alert-rules/{id}",
+      "description": "Delete an alert rule",
+      "category": "Alerts",
+      "response": "GenericResponse"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/alert-rules/{id}/toggle",
+      "description": "Toggle a rule enabled/disabled",
+      "category": "Alerts",
+      "response": "GenericResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/test-notifications",
+      "description": "Send a test alert to all notification channels",
+      "category": "Alerts",
+      "response": "NotifyTestResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/query",
+      "description": "Execute a read-only SQL query",
+      "category": "Query \u0026 Export",
+      "response": "QueryResponse",
+      "request": "QueryRequest",
+      "notes": [
+        "Read-only enforcement via statement parser"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/export",
+      "description": "Export query results to a file (CSV, Parquet, or JSON)",
+      "category": "Query \u0026 Export",
+      "response": "ExportResponse",
+      "request": "ExportRequest"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compact",
+      "description": "Trigger database compaction",
+      "category": "Data Management",
+      "response": "GenericResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/snapshot",
+      "description": "Create a standalone database snapshot",
+      "category": "Data Management",
+      "response": "SnapshotResponse",
+      "request": "SnapshotRequest"
+    },
+    {
+      "method": "POST",
+      "path": "/api/archive",
+      "description": "Trigger Parquet archival of old data",
+      "category": "Data Management",
+      "response": "GenericResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/unarchive",
+      "description": "Reload Parquet data into the database",
+      "category": "Data Management",
+      "response": "GenericResponse"
+    },
+    {
+      "method": "GET",
+      "path": "/api/archive/status",
+      "description": "Archive state and directory statistics",
+      "category": "Data Management",
+      "response": "ArchiveStatusResponse"
+    },
+    {
+      "method": "GET",
+      "path": "/api/preferences",
+      "description": "Get all saved preferences",
+      "category": "Preferences",
+      "response": "PreferencesResponse"
+    },
+    {
+      "method": "POST",
+      "path": "/api/preferences",
+      "description": "Set a preference key/value pair",
+      "category": "Preferences",
+      "response": "GenericResponse",
+      "request": "PreferenceRequest"
+    }
+  ],
+  "types": {
+    "AlertMetric": {
+      "name": "AlertMetric",
+      "fields": [
+        {
+          "name": "ID",
+          "json_name": "id",
+          "type": "number"
+        },
+        {
+          "name": "Timestamp",
+          "json_name": "timestamp",
+          "type": "string"
+        },
+        {
+          "name": "RuleName",
+          "json_name": "rule_name",
+          "type": "string"
+        },
+        {
+          "name": "Severity",
+          "json_name": "severity",
+          "type": "string"
+        },
+        {
+          "name": "Message",
+          "json_name": "message",
+          "type": "string"
+        },
+        {
+          "name": "Acknowledged",
+          "json_name": "acknowledged",
+          "type": "boolean"
+        }
+      ]
+    },
+    "AlertRuleMetric": {
+      "name": "AlertRuleMetric",
+      "fields": [
+        {
+          "name": "ID",
+          "json_name": "id",
+          "type": "number"
+        },
+        {
+          "name": "Name",
+          "json_name": "name",
+          "type": "string"
+        },
+        {
+          "name": "Type",
+          "json_name": "type",
+          "type": "string"
+        },
+        {
+          "name": "Severity",
+          "json_name": "severity",
+          "type": "string"
+        },
+        {
+          "name": "Enabled",
+          "json_name": "enabled",
+          "type": "boolean"
+        },
+        {
+          "name": "Metric",
+          "json_name": "metric",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "Operator",
+          "json_name": "operator",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "Value",
+          "json_name": "value",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "Duration",
+          "json_name": "duration",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "Mount",
+          "json_name": "mount",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "InterfaceName",
+          "json_name": "interface_name",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "Sensor",
+          "json_name": "sensor",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "PredictHours",
+          "json_name": "predict_hours",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "ThresholdPct",
+          "json_name": "threshold_pct",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "DeltaThreshold",
+          "json_name": "delta_threshold",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "MinCount",
+          "json_name": "min_count",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "ProcessName",
+          "json_name": "process_name",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "ProcessPattern",
+          "json_name": "process_pattern",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "MinInstances",
+          "json_name": "min_instances",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "RestartThreshold",
+          "json_name": "restart_threshold",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "RestartWindow",
+          "json_name": "restart_window",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "CheckDuration",
+          "json_name": "check_duration",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    "AlertRulesResponse": {
+      "name": "AlertRulesResponse",
+      "fields": [
+        {
+          "name": "Rules",
+          "json_name": "rules",
+          "type": "AlertRuleMetric[]"
+        }
+      ]
+    },
+    "AlertsConfigResponse": {
+      "name": "AlertsConfigResponse",
+      "fields": [
+        {
+          "name": "EvaluationInterval",
+          "json_name": "evaluation_interval",
+          "type": "string"
+        },
+        {
+          "name": "Email",
+          "json_name": "email",
+          "type": "EmailDestResponse[]",
+          "optional": true
+        },
+        {
+          "name": "Commands",
+          "json_name": "commands",
+          "type": "CommandDestResponse[]",
+          "optional": true
+        }
+      ]
+    },
+    "AlertsResponse": {
+      "name": "AlertsResponse",
+      "fields": [
+        {
+          "name": "Alerts",
+          "json_name": "alerts",
+          "type": "AlertMetric[]"
+        }
+      ]
+    },
+    "ArchiveStatusItem": {
+      "name": "ArchiveStatusItem",
+      "fields": [
+        {
+          "name": "TableName",
+          "json_name": "table_name",
+          "type": "string"
+        },
+        {
+          "name": "LastArchivedTS",
+          "json_name": "last_archived_ts",
+          "type": "string"
+        }
+      ]
+    },
+    "ArchiveStatusResponse": {
+      "name": "ArchiveStatusResponse",
+      "fields": [
+        {
+          "name": "Tables",
+          "json_name": "tables",
+          "type": "ArchiveStatusItem[]"
+        },
+        {
+          "name": "TotalFiles",
+          "json_name": "total_files",
+          "type": "number"
+        },
+        {
+          "name": "TotalBytes",
+          "json_name": "total_bytes",
+          "type": "number"
+        }
+      ]
+    },
+    "CPUCoreMetric": {
+      "name": "CPUCoreMetric",
+      "fields": [
+        {
+          "name": "Core",
+          "json_name": "core",
+          "type": "number"
+        },
+        {
+          "name": "UserPct",
+          "json_name": "user_pct",
+          "type": "number"
+        },
+        {
+          "name": "SystemPct",
+          "json_name": "system_pct",
+          "type": "number"
+        },
+        {
+          "name": "IdlePct",
+          "json_name": "idle_pct",
+          "type": "number"
+        },
+        {
+          "name": "IOWaitPct",
+          "json_name": "iowait_pct",
+          "type": "number"
+        }
+      ]
+    },
+    "CPUResponse": {
+      "name": "CPUResponse",
+      "fields": [
+        {
+          "name": "Cores",
+          "json_name": "cores",
+          "type": "CPUCoreMetric[]"
+        }
+      ]
+    },
+    "CommandDestResponse": {
+      "name": "CommandDestResponse",
+      "fields": [
+        {
+          "name": "Cmd",
+          "json_name": "cmd",
+          "type": "string"
+        }
+      ]
+    },
+    "ConfigResponse": {
+      "name": "ConfigResponse",
+      "fields": [
+        {
+          "name": "Daemon",
+          "json_name": "daemon",
+          "type": "DaemonConfigResponse"
+        },
+        {
+          "name": "Alerts",
+          "json_name": "alerts",
+          "type": "AlertsConfigResponse"
+        },
+        {
+          "name": "TUI",
+          "json_name": "tui",
+          "type": "TUIConfigResponse"
+        }
+      ]
+    },
+    "DaemonConfigResponse": {
+      "name": "DaemonConfigResponse",
+      "fields": [
+        {
+          "name": "Socket",
+          "json_name": "socket",
+          "type": "string"
+        },
+        {
+          "name": "DBPath",
+          "json_name": "db_path",
+          "type": "string"
+        },
+        {
+          "name": "DefaultInterval",
+          "json_name": "default_interval",
+          "type": "string"
+        }
+      ]
+    },
+    "DashboardData": {
+      "name": "DashboardData",
+      "fields": [
+        {
+          "name": "CPU",
+          "json_name": "cpu",
+          "type": "CPUCoreMetric[]"
+        },
+        {
+          "name": "Memory",
+          "json_name": "memory",
+          "type": "MemoryMetric",
+          "optional": true
+        },
+        {
+          "name": "Disks",
+          "json_name": "disks",
+          "type": "DiskMetric[]"
+        },
+        {
+          "name": "Network",
+          "json_name": "network",
+          "type": "NetworkMetric[]"
+        },
+        {
+          "name": "Temperature",
+          "json_name": "temperature",
+          "type": "TemperatureMetric[]"
+        },
+        {
+          "name": "Power",
+          "json_name": "power",
+          "type": "PowerMetric[]"
+        },
+        {
+          "name": "GPU",
+          "json_name": "gpu",
+          "type": "GPUMetric[]",
+          "optional": true
+        },
+        {
+          "name": "Processes",
+          "json_name": "processes",
+          "type": "ProcessResponse",
+          "optional": true
+        }
+      ]
+    },
+    "DiskMetric": {
+      "name": "DiskMetric",
+      "fields": [
+        {
+          "name": "Mount",
+          "json_name": "mount",
+          "type": "string"
+        },
+        {
+          "name": "Device",
+          "json_name": "device",
+          "type": "string"
+        },
+        {
+          "name": "Transport",
+          "json_name": "transport",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "TotalBytes",
+          "json_name": "total_bytes",
+          "type": "number"
+        },
+        {
+          "name": "UsedBytes",
+          "json_name": "used_bytes",
+          "type": "number"
+        },
+        {
+          "name": "FreeBytes",
+          "json_name": "free_bytes",
+          "type": "number"
+        },
+        {
+          "name": "ReadBytesSec",
+          "json_name": "read_bytes_sec",
+          "type": "number"
+        },
+        {
+          "name": "WriteBytesSec",
+          "json_name": "write_bytes_sec",
+          "type": "number"
+        },
+        {
+          "name": "ReadIOPS",
+          "json_name": "read_iops",
+          "type": "number"
+        },
+        {
+          "name": "WriteIOPS",
+          "json_name": "write_iops",
+          "type": "number"
+        },
+        {
+          "name": "SMARTAvailable",
+          "json_name": "smart_available",
+          "type": "boolean"
+        },
+        {
+          "name": "SMARTHealthy",
+          "json_name": "smart_healthy",
+          "type": "boolean",
+          "optional": true
+        },
+        {
+          "name": "SMARTTemperature",
+          "json_name": "smart_temperature",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "SMARTPowerOnHours",
+          "json_name": "smart_power_on_hours",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "SMARTPowerCycles",
+          "json_name": "smart_power_cycles",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "SMARTReadSectors",
+          "json_name": "smart_read_sectors",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "SMARTWrittenSectors",
+          "json_name": "smart_written_sectors",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "SMARTReallocated",
+          "json_name": "smart_reallocated",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "SMARTPending",
+          "json_name": "smart_pending",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "SMARTUncorrectable",
+          "json_name": "smart_uncorrectable",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "SMARTReadErrorRate",
+          "json_name": "smart_read_error_rate",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "SMARTAvailableSpare",
+          "json_name": "smart_available_spare",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "SMARTPercentUsed",
+          "json_name": "smart_percent_used",
+          "type": "number",
+          "optional": true
+        }
+      ]
+    },
+    "DiskResponse": {
+      "name": "DiskResponse",
+      "fields": [
+        {
+          "name": "Disks",
+          "json_name": "disks",
+          "type": "DiskMetric[]"
+        }
+      ]
+    },
+    "ECCMetric": {
+      "name": "ECCMetric",
+      "fields": [
+        {
+          "name": "Corrected",
+          "json_name": "corrected",
+          "type": "number"
+        },
+        {
+          "name": "Uncorrected",
+          "json_name": "uncorrected",
+          "type": "number"
+        }
+      ]
+    },
+    "ECCResponse": {
+      "name": "ECCResponse",
+      "fields": [
+        {
+          "name": "ECC",
+          "json_name": "ecc",
+          "type": "ECCMetric"
+        }
+      ]
+    },
+    "EmailDestResponse": {
+      "name": "EmailDestResponse",
+      "fields": [
+        {
+          "name": "UseMailCmd",
+          "json_name": "use_mail_cmd",
+          "type": "boolean",
+          "optional": true
+        },
+        {
+          "name": "SMTPHost",
+          "json_name": "smtp_host",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "SMTPPort",
+          "json_name": "smtp_port",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "From",
+          "json_name": "from",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "To",
+          "json_name": "to",
+          "type": "string[]"
+        }
+      ]
+    },
+    "ExportRequest": {
+      "name": "ExportRequest",
+      "fields": [
+        {
+          "name": "SQL",
+          "json_name": "sql",
+          "type": "string"
+        },
+        {
+          "name": "Path",
+          "json_name": "path",
+          "type": "string"
+        },
+        {
+          "name": "Format",
+          "json_name": "format",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    "ExportResponse": {
+      "name": "ExportResponse",
+      "fields": [
+        {
+          "name": "RowCount",
+          "json_name": "row_count",
+          "type": "number"
+        },
+        {
+          "name": "Path",
+          "json_name": "path",
+          "type": "string"
+        },
+        {
+          "name": "Error",
+          "json_name": "error",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    "GPUMetric": {
+      "name": "GPUMetric",
+      "fields": [
+        {
+          "name": "Name",
+          "json_name": "name",
+          "type": "string"
+        },
+        {
+          "name": "Index",
+          "json_name": "index",
+          "type": "number"
+        },
+        {
+          "name": "Vendor",
+          "json_name": "vendor",
+          "type": "string"
+        },
+        {
+          "name": "UtilizationPct",
+          "json_name": "utilization_pct",
+          "type": "number"
+        },
+        {
+          "name": "MemoryUsedBytes",
+          "json_name": "memory_used_bytes",
+          "type": "number"
+        },
+        {
+          "name": "MemoryTotalBytes",
+          "json_name": "memory_total_bytes",
+          "type": "number"
+        },
+        {
+          "name": "TempCelsius",
+          "json_name": "temp_celsius",
+          "type": "number"
+        },
+        {
+          "name": "PowerWatts",
+          "json_name": "power_watts",
+          "type": "number"
+        },
+        {
+          "name": "FrequencyMHz",
+          "json_name": "frequency_mhz",
+          "type": "number"
+        },
+        {
+          "name": "FrequencyMaxMHz",
+          "json_name": "frequency_max_mhz",
+          "type": "number"
+        },
+        {
+          "name": "ThrottlePct",
+          "json_name": "throttle_pct",
+          "type": "number"
+        }
+      ]
+    },
+    "GPUResponse": {
+      "name": "GPUResponse",
+      "fields": [
+        {
+          "name": "GPUs",
+          "json_name": "gpus",
+          "type": "GPUMetric[]"
+        },
+        {
+          "name": "Hints",
+          "json_name": "hints",
+          "type": "string[]",
+          "optional": true
+        }
+      ]
+    },
+    "GenericResponse": {
+      "name": "GenericResponse",
+      "fields": [
+        {
+          "name": "Status",
+          "json_name": "status",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "Error",
+          "json_name": "error",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    "HistoryResponse": {
+      "name": "HistoryResponse",
+      "fields": [
+        {
+          "name": "Series",
+          "json_name": "series",
+          "type": "TimeSeries[]"
+        }
+      ]
+    },
+    "MemoryMetric": {
+      "name": "MemoryMetric",
+      "fields": [
+        {
+          "name": "TotalBytes",
+          "json_name": "total_bytes",
+          "type": "number"
+        },
+        {
+          "name": "UsedBytes",
+          "json_name": "used_bytes",
+          "type": "number"
+        },
+        {
+          "name": "AvailableBytes",
+          "json_name": "available_bytes",
+          "type": "number"
+        },
+        {
+          "name": "BuffersBytes",
+          "json_name": "buffers_bytes",
+          "type": "number"
+        },
+        {
+          "name": "CachedBytes",
+          "json_name": "cached_bytes",
+          "type": "number"
+        },
+        {
+          "name": "SwapTotalBytes",
+          "json_name": "swap_total_bytes",
+          "type": "number"
+        },
+        {
+          "name": "SwapUsedBytes",
+          "json_name": "swap_used_bytes",
+          "type": "number"
+        }
+      ]
+    },
+    "NetworkMetric": {
+      "name": "NetworkMetric",
+      "fields": [
+        {
+          "name": "Interface",
+          "json_name": "interface",
+          "type": "string"
+        },
+        {
+          "name": "RxBytesSec",
+          "json_name": "rx_bytes_sec",
+          "type": "number"
+        },
+        {
+          "name": "TxBytesSec",
+          "json_name": "tx_bytes_sec",
+          "type": "number"
+        },
+        {
+          "name": "RxPacketsSec",
+          "json_name": "rx_packets_sec",
+          "type": "number"
+        },
+        {
+          "name": "TxPacketsSec",
+          "json_name": "tx_packets_sec",
+          "type": "number"
+        },
+        {
+          "name": "RxErrors",
+          "json_name": "rx_errors",
+          "type": "number"
+        },
+        {
+          "name": "TxErrors",
+          "json_name": "tx_errors",
+          "type": "number"
+        }
+      ]
+    },
+    "NetworkResponse": {
+      "name": "NetworkResponse",
+      "fields": [
+        {
+          "name": "Interfaces",
+          "json_name": "interfaces",
+          "type": "NetworkMetric[]"
+        }
+      ]
+    },
+    "NotifyResult": {
+      "name": "NotifyResult",
+      "fields": [
+        {
+          "name": "Method",
+          "json_name": "method",
+          "type": "string"
+        },
+        {
+          "name": "Dest",
+          "json_name": "dest",
+          "type": "string"
+        },
+        {
+          "name": "StatusCode",
+          "json_name": "status_code",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "Latency",
+          "json_name": "latency_ns",
+          "type": "number"
+        },
+        {
+          "name": "Error",
+          "json_name": "error",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "Body",
+          "json_name": "body",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    "NotifyTestResponse": {
+      "name": "NotifyTestResponse",
+      "fields": [
+        {
+          "name": "Results",
+          "json_name": "results",
+          "type": "NotifyResult[]"
+        }
+      ]
+    },
+    "PowerMetric": {
+      "name": "PowerMetric",
+      "fields": [
+        {
+          "name": "Zone",
+          "json_name": "zone",
+          "type": "string"
+        },
+        {
+          "name": "Watts",
+          "json_name": "watts",
+          "type": "number"
+        }
+      ]
+    },
+    "PowerResponse": {
+      "name": "PowerResponse",
+      "fields": [
+        {
+          "name": "Zones",
+          "json_name": "zones",
+          "type": "PowerMetric[]"
+        }
+      ]
+    },
+    "PreferenceRequest": {
+      "name": "PreferenceRequest",
+      "fields": [
+        {
+          "name": "Key",
+          "json_name": "key",
+          "type": "string"
+        },
+        {
+          "name": "Value",
+          "json_name": "value",
+          "type": "string"
+        }
+      ]
+    },
+    "PreferencesResponse": {
+      "name": "PreferencesResponse",
+      "fields": [
+        {
+          "name": "Items",
+          "json_name": "items",
+          "type": "map\u003cstring, string\u003e"
+        }
+      ]
+    },
+    "ProcessMetric": {
+      "name": "ProcessMetric",
+      "fields": [
+        {
+          "name": "PID",
+          "json_name": "pid",
+          "type": "number"
+        },
+        {
+          "name": "PPID",
+          "json_name": "ppid",
+          "type": "number"
+        },
+        {
+          "name": "Name",
+          "json_name": "name",
+          "type": "string"
+        },
+        {
+          "name": "Cmdline",
+          "json_name": "cmdline",
+          "type": "string"
+        },
+        {
+          "name": "State",
+          "json_name": "state",
+          "type": "string"
+        },
+        {
+          "name": "UID",
+          "json_name": "uid",
+          "type": "number"
+        },
+        {
+          "name": "CPUUserPct",
+          "json_name": "cpu_user_pct",
+          "type": "number"
+        },
+        {
+          "name": "CPUSystemPct",
+          "json_name": "cpu_system_pct",
+          "type": "number"
+        },
+        {
+          "name": "RSSBytes",
+          "json_name": "rss_bytes",
+          "type": "number"
+        },
+        {
+          "name": "VSSBytes",
+          "json_name": "vss_bytes",
+          "type": "number"
+        },
+        {
+          "name": "SharedBytes",
+          "json_name": "shared_bytes",
+          "type": "number"
+        },
+        {
+          "name": "SwapBytes",
+          "json_name": "swap_bytes",
+          "type": "number"
+        },
+        {
+          "name": "NumFDs",
+          "json_name": "num_fds",
+          "type": "number"
+        },
+        {
+          "name": "NumThreads",
+          "json_name": "num_threads",
+          "type": "number"
+        },
+        {
+          "name": "StartTimeNs",
+          "json_name": "start_time_ns",
+          "type": "number"
+        },
+        {
+          "name": "Enriched",
+          "json_name": "enriched",
+          "type": "boolean"
+        }
+      ]
+    },
+    "ProcessResponse": {
+      "name": "ProcessResponse",
+      "fields": [
+        {
+          "name": "Processes",
+          "json_name": "processes",
+          "type": "ProcessMetric[]"
+        },
+        {
+          "name": "TotalProcs",
+          "json_name": "total_procs",
+          "type": "number"
+        },
+        {
+          "name": "RunningProcs",
+          "json_name": "running_procs",
+          "type": "number"
+        },
+        {
+          "name": "ActiveProcs",
+          "json_name": "active_procs",
+          "type": "number"
+        },
+        {
+          "name": "TotalCPUPct",
+          "json_name": "total_cpu_pct",
+          "type": "number"
+        },
+        {
+          "name": "TotalRSSBytes",
+          "json_name": "total_rss_bytes",
+          "type": "number"
+        },
+        {
+          "name": "EnrichedCount",
+          "json_name": "enriched_count",
+          "type": "number"
+        }
+      ]
+    },
+    "QueryRequest": {
+      "name": "QueryRequest",
+      "fields": [
+        {
+          "name": "SQL",
+          "json_name": "sql",
+          "type": "string"
+        }
+      ]
+    },
+    "QueryResponse": {
+      "name": "QueryResponse",
+      "fields": [
+        {
+          "name": "Columns",
+          "json_name": "columns",
+          "type": "string[]",
+          "optional": true
+        },
+        {
+          "name": "Rows",
+          "json_name": "rows",
+          "type": "any[][]",
+          "optional": true
+        },
+        {
+          "name": "Error",
+          "json_name": "error",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    "SnapshotRequest": {
+      "name": "SnapshotRequest",
+      "fields": [
+        {
+          "name": "Path",
+          "json_name": "path",
+          "type": "string"
+        },
+        {
+          "name": "WithSystemTables",
+          "json_name": "with_system_tables",
+          "type": "boolean",
+          "optional": true
+        }
+      ]
+    },
+    "SnapshotResponse": {
+      "name": "SnapshotResponse",
+      "fields": [
+        {
+          "name": "Path",
+          "json_name": "path",
+          "type": "string"
+        },
+        {
+          "name": "SizeBytes",
+          "json_name": "size_bytes",
+          "type": "number"
+        },
+        {
+          "name": "Error",
+          "json_name": "error",
+          "type": "string",
+          "optional": true
+        }
+      ]
+    },
+    "StatusResponse": {
+      "name": "StatusResponse",
+      "fields": [
+        {
+          "name": "Status",
+          "json_name": "status",
+          "type": "string"
+        },
+        {
+          "name": "UptimeSec",
+          "json_name": "uptime_sec",
+          "type": "number"
+        },
+        {
+          "name": "DefaultInterval",
+          "json_name": "default_interval",
+          "type": "string"
+        },
+        {
+          "name": "CollectorIntervals",
+          "json_name": "collector_intervals",
+          "type": "map\u003cstring, string\u003e",
+          "optional": true
+        }
+      ]
+    },
+    "TUIConfigResponse": {
+      "name": "TUIConfigResponse",
+      "fields": [
+        {
+          "name": "RefreshInterval",
+          "json_name": "refresh_interval",
+          "type": "string"
+        }
+      ]
+    },
+    "TemperatureMetric": {
+      "name": "TemperatureMetric",
+      "fields": [
+        {
+          "name": "Sensor",
+          "json_name": "sensor",
+          "type": "string"
+        },
+        {
+          "name": "TempCelsius",
+          "json_name": "temp_celsius",
+          "type": "number"
+        }
+      ]
+    },
+    "TemperatureResponse": {
+      "name": "TemperatureResponse",
+      "fields": [
+        {
+          "name": "Sensors",
+          "json_name": "sensors",
+          "type": "TemperatureMetric[]"
+        }
+      ]
+    },
+    "TimeSeries": {
+      "name": "TimeSeries",
+      "fields": [
+        {
+          "name": "Label",
+          "json_name": "label",
+          "type": "string"
+        },
+        {
+          "name": "Points",
+          "json_name": "points",
+          "type": "TimeSeriesPoint[]"
+        }
+      ]
+    },
+    "TimeSeriesPoint": {
+      "name": "TimeSeriesPoint",
+      "fields": [
+        {
+          "name": "TimestampNS",
+          "json_name": "timestamp_ns",
+          "type": "number"
+        },
+        {
+          "name": "Value",
+          "json_name": "value",
+          "type": "number"
+        }
+      ]
+    }
+  }
+}

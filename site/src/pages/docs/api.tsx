@@ -2,135 +2,192 @@ import type { FC } from 'hono/jsx'
 import { docsBase } from '../../docs-base'
 import { DocsLayout } from '../../layouts/docs'
 import { CodeBlock } from '../../components/terminal-block'
+import apiSchema from '../../generated/api-schema.json'
 
-export const ApiDocs: FC = () => (
-  <DocsLayout title="API Reference" active={`${docsBase}/api`}>
-    <p>
-      The daemon exposes an HTTP API over its unix socket. When TCP is enabled, the same API is available
-      over TLS with optional bearer token authentication. All responses are JSON.
-    </p>
+type FieldDef = {
+  json_name: string
+  type: string
+  optional?: boolean
+}
 
-    <h2>Endpoints</h2>
+type TypeDef = {
+  name: string
+  fields: FieldDef[]
+}
 
-    <h3>Status & Config</h3>
-    <table>
-      <thead>
-        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><code>GET</code></td><td><code>/api/status</code></td><td>Daemon status and uptime</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/config</code></td><td>Full configuration</td></tr>
-      </tbody>
-    </table>
+type ParamDef = {
+  name: string
+  type: string
+  description: string
+}
 
-    <h3>Live Metrics</h3>
-    <table>
-      <thead>
-        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><code>GET</code></td><td><code>/api/metrics/cpu</code></td><td>CPU per-core metrics</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/metrics/memory</code></td><td>Memory metrics</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/metrics/disk</code></td><td>Disk space, I/O, SMART health</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/metrics/network</code></td><td>Network per-interface metrics</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/metrics/temperature</code></td><td>Temperature sensor readings</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/metrics/power</code></td><td>Power consumption per zone</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/metrics/gpu</code></td><td>GPU utilization, frequency, power, memory</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/metrics/process</code></td><td>All processes (live snapshot)</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/metrics/dashboard</code></td><td>Combined dashboard data</td></tr>
-      </tbody>
-    </table>
+type EndpointDef = {
+  method: string
+  path: string
+  description: string
+  category: string
+  response?: string
+  request?: string
+  query_params?: ParamDef[]
+  notes?: string[]
+}
 
-    <h3>History</h3>
-    <p>
-      All history endpoints accept <code>?start=&amp;end=</code> query parameters (Unix seconds).
-      Bucket size auto-scales: 1 min (1h range) to 6 hr (30d range).
-    </p>
-    <table>
-      <thead>
-        <tr><th>Method</th><th>Path</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><code>GET</code></td><td><code>/api/history/cpu</code></td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/history/memory</code></td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/history/disk</code></td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/history/temperature</code></td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/history/power</code></td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/history/gpu</code></td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/history/process</code></td></tr>
-      </tbody>
-    </table>
+const schema = apiSchema as {
+  endpoints: EndpointDef[]
+  types: Record<string, TypeDef>
+}
 
-    <h3>Alerts</h3>
-    <table>
-      <thead>
-        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><code>GET</code></td><td><code>/api/alerts</code></td><td>List alerts (<code>?ack=false</code> for unacknowledged)</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/alerts/&#123;id&#125;/ack</code></td><td>Acknowledge an alert</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/alert-rules</code></td><td>List all rules</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/alert-rules</code></td><td>Create a rule</td></tr>
-        <tr><td><code>DELETE</code></td><td><code>/api/alert-rules/&#123;id&#125;</code></td><td>Delete a rule</td></tr>
-        <tr><td><code>PUT</code></td><td><code>/api/alert-rules/&#123;id&#125;/toggle</code></td><td>Toggle rule enabled/disabled</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/test-notifications</code></td><td>Test all notification channels</td></tr>
-      </tbody>
-    </table>
+const primitives = new Set(['string', 'number', 'boolean', 'any'])
 
-    <h3>Query & Export</h3>
-    <table>
-      <thead>
-        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><code>POST</code></td><td><code>/api/query</code></td><td>Execute read-only SQL</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/export</code></td><td>Export query results to file</td></tr>
-      </tbody>
-    </table>
+function isPrimitive(t: string): boolean {
+  return primitives.has(t.replace('[]', ''))
+}
 
-    <h3>Data Management</h3>
-    <table>
-      <thead>
-        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><code>POST</code></td><td><code>/api/compact</code></td><td>Trigger database compaction</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/snapshot</code></td><td>Create standalone DuckDB snapshot</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/archive</code></td><td>Trigger Parquet archival</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/unarchive</code></td><td>Reload Parquet data into DuckDB</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/archive/status</code></td><td>Archive state and directory stats</td></tr>
-      </tbody>
-    </table>
+function typeAnchor(t: string): string {
+  return `type-${t.replace('[]', '')}`
+}
 
-    <h3>Preferences</h3>
-    <table>
-      <thead>
-        <tr><th>Method</th><th>Path</th><th>Description</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><code>GET</code></td><td><code>/api/preferences</code></td><td>Get all saved preferences</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/preferences</code></td><td>Set a preference (key/value)</td></tr>
-      </tbody>
-    </table>
+const MethodBadge: FC<{ method: string }> = ({ method }) => {
+  const colors: Record<string, string> = {
+    GET: 'text-emerald-400',
+    POST: 'text-amber-400',
+    PUT: 'text-blue-400',
+    DELETE: 'text-red-400',
+  }
+  return <code class={colors[method] ?? 'text-muted'}>{method}</code>
+}
 
-    <h2>Examples</h2>
+const TypeLink: FC<{ type: string }> = ({ type }) => {
+  const isArray = type.endsWith('[]')
+  const base = type.replace('[]', '')
+  if (isPrimitive(base)) {
+    return <code>{type}</code>
+  }
+  // Check if it's a map type
+  if (type.startsWith('map<')) {
+    return <code>{type}</code>
+  }
+  return (
+    <span>
+      <a href={`#${typeAnchor(base)}`} class="type-link no-underline"><code>{base}</code></a>
+      {isArray && <code>[]</code>}
+    </span>
+  )
+}
 
-    <CodeBlock title="get daemon status">
+const FieldTable: FC<{ typeDef: TypeDef }> = ({ typeDef }) => (
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Type</th><th></th></tr>
+    </thead>
+    <tbody>
+      {typeDef.fields.map(f => (
+        <tr>
+          <td><code>{f.json_name}</code></td>
+          <td><TypeLink type={f.type} /></td>
+          <td>{f.optional ? <span class="text-muted text-xs">optional</span> : ''}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+)
+
+// Group endpoints by category, preserving order
+function groupEndpoints(endpoints: EndpointDef[]): [string, EndpointDef[]][] {
+  const groups: [string, EndpointDef[]][] = []
+  const seen = new Set<string>()
+  for (const ep of endpoints) {
+    if (!seen.has(ep.category)) {
+      seen.add(ep.category)
+      groups.push([ep.category, []])
+    }
+    groups.find(g => g[0] === ep.category)![1].push(ep)
+  }
+  return groups
+}
+
+export const ApiDocs: FC = () => {
+  const groups = groupEndpoints(schema.endpoints)
+
+  // Collect types referenced by endpoints, ordered for rendering:
+  // top-level response/request types first, then their nested dependencies.
+  const typeOrder: string[] = []
+  const visited = new Set<string>()
+
+  function collectTypes(name: string) {
+    const base = name.replace('[]', '')
+    if (visited.has(base) || isPrimitive(base) || base.startsWith('map<')) return
+    visited.add(base)
+    // Add this type
+    typeOrder.push(base)
+    // Recurse into its fields
+    const td = schema.types[base]
+    if (td) {
+      for (const f of td.fields) {
+        collectTypes(f.type)
+      }
+    }
+  }
+
+  for (const ep of schema.endpoints) {
+    if (ep.response) collectTypes(ep.response)
+    if (ep.request) collectTypes(ep.request)
+  }
+
+  return (
+    <DocsLayout title="API Reference" active={`${docsBase}/api`}>
+      <p>
+        The daemon exposes an HTTP API over its unix socket. When TCP is enabled, the same API is available
+        over TLS with optional bearer token authentication. All responses are JSON.
+      </p>
+
+      <h2>Endpoints</h2>
+
+      {groups.map(([category, endpoints]) => (
+        <div>
+          <h3>{category}</h3>
+          {category === 'History' && (
+            <p>
+              All history endpoints accept <code>?start=</code> and <code>?end=</code> query parameters (Unix seconds).
+              Bucket size auto-scales: 1 min (1h range) to 6 hr (30d range).
+            </p>
+          )}
+          <table>
+            <thead>
+              <tr><th>Method</th><th>Path</th><th>Description</th><th>Response</th></tr>
+            </thead>
+            <tbody>
+              {endpoints.map(ep => (
+                <tr>
+                  <td><MethodBadge method={ep.method} /></td>
+                  <td><code>{ep.path}</code></td>
+                  <td>{ep.description}</td>
+                  <td>{ep.response ? <TypeLink type={ep.response} /> : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+
+      <h2>Examples</h2>
+
+      <CodeBlock title="get daemon status">
 {`curl --unix-socket /run/bewitch/bewitch.sock \\
   http://localhost/api/status`}
-    </CodeBlock>
+      </CodeBlock>
 
-    <CodeBlock title="get CPU metrics">
+      <CodeBlock title="get CPU metrics">
 {`curl --unix-socket /run/bewitch/bewitch.sock \\
   http://localhost/api/metrics/cpu`}
-    </CodeBlock>
+      </CodeBlock>
 
-    <CodeBlock title="get history with time range">
+      <CodeBlock title="get history with time range">
 {`curl --unix-socket /run/bewitch/bewitch.sock \\
   "http://localhost/api/history/cpu?start=$(date -d '1 hour ago' +%s)&end=$(date +%s)"`}
-    </CodeBlock>
+      </CodeBlock>
 
-    <CodeBlock title="create alert rule">
+      <CodeBlock title="create alert rule">
 {`curl --unix-socket /run/bewitch/bewitch.sock \\
   -H 'Content-Type: application/json' \\
   -d '{
@@ -143,32 +200,42 @@ export const ApiDocs: FC = () => (
     "duration": "5m"
   }' \\
   http://localhost/api/alert-rules`}
-    </CodeBlock>
+      </CodeBlock>
 
-    <CodeBlock title="execute SQL query">
+      <CodeBlock title="execute SQL query">
 {`curl --unix-socket /run/bewitch/bewitch.sock \\
   -H 'Content-Type: application/json' \\
   -d '{"sql": "SELECT COUNT(*) as n FROM cpu_metrics"}' \\
   http://localhost/api/query`}
-    </CodeBlock>
+      </CodeBlock>
 
-    <CodeBlock title="remote access (TCP + TLS + auth)">
+      <CodeBlock title="remote access (TCP + TLS + auth)">
 {`curl -k -H "Authorization: Bearer my-secret-token" \\
   https://myserver:9119/api/status`}
-    </CodeBlock>
+      </CodeBlock>
 
-    <h2>ETag Caching</h2>
-    <p>
-      Metric and process endpoints include <code>ETag</code> headers (generation counters). Clients can send
-      <code>If-None-Match</code> to receive <code>304 Not Modified</code> when data hasn't changed, avoiding
-      unnecessary serialization and transfer.
-    </p>
+      <h2>Response Types</h2>
+      <p>
+        Timestamps are <code>int64</code> Unix nanoseconds. Arrays are always wrapped in objects.
+        Errors return <code>&#123;"error": "message"&#125;</code>.
+      </p>
 
-    <h2>Response Format</h2>
-    <p>
-      All responses are JSON. Arrays are wrapped in objects (e.g., <code>&#123;"cores": [...]&#125;</code> not
-      bare <code>[...]</code>). Timestamps are <code>int64</code> Unix nanoseconds. Errors return
-      <code>&#123;"error": "message"&#125;</code>.
-    </p>
-  </DocsLayout>
-)
+      {typeOrder.map(name => {
+        const td = schema.types[name]
+        if (!td) return null
+        return (
+          <div id={typeAnchor(name)}>
+            <h3>{name}</h3>
+            <FieldTable typeDef={td} />
+          </div>
+        )
+      })}
+
+      <h2>ETag Caching</h2>
+      <p>
+        Live metric endpoints include <code>ETag</code> headers. Send
+        <code>If-None-Match</code> to receive <code>304 Not Modified</code> when data hasn't changed.
+      </p>
+    </DocsLayout>
+  )
+}
