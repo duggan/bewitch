@@ -43,7 +43,7 @@ bewitch repl (SQL console)
       {sections.map(s => (
         <a
           href={`${docsBase}${s.slug}`}
-          class="block p-4 rounded-lg border border-deep-purple/30 bg-surface/30 hover:border-deep-purple/60 hover:bg-surface/50 transition-all group"
+          class="block no-underline p-4 rounded-lg border border-deep-purple/30 bg-surface/30 hover:border-deep-purple/60 hover:bg-surface/50 transition-all group"
         >
           <h3 class="font-mono font-semibold text-sm text-pink group-hover:glow-pink mb-1">{s.title}</h3>
           <p class="text-muted text-sm">{s.desc}</p>
