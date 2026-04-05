@@ -209,19 +209,19 @@ curl --unix-socket /run/bewitch/bewitch.sock http://localhost/api/status`}
     </CodeBlock>
 
     <h2>Uninstall</h2>
-    <h3>Debian/Ubuntu (APT)</h3>
-    <CodeBlock>
-{`sudo apt remove bewitch
-sudo rm /etc/apt/sources.list.d/bewitch.list
-sudo rm /usr/share/keyrings/bewitch.gpg`}
+    <p>Run the uninstall script to remove bewitch, the systemd service, config, data, and system user:</p>
+    <CodeBlock title="uninstall">
+{`curl -fsSL https://bewitch.dev/uninstall.sh | sudo sh`}
     </CodeBlock>
-
-    <h3>Binary install</h3>
+    <p>
+      On Debian/Ubuntu, this removes the APT package and repository.
+      On other systems, it removes the files installed by the tarball.
+    </p>
+    <p>
+      To keep the database and archives in <code>/var/lib/bewitch/</code>:
+    </p>
     <CodeBlock>
-{`sudo systemctl disable --now bewitchd
-sudo rm /usr/local/bin/bewitchd /usr/local/bin/bewitch
-sudo rm /etc/systemd/system/bewitchd.service
-sudo systemctl daemon-reload`}
+{`curl -fsSL https://bewitch.dev/uninstall.sh | sudo KEEP_DATA=1 sh`}
     </CodeBlock>
   </DocsLayout>
 )
