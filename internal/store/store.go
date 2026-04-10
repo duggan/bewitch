@@ -936,166 +936,134 @@ func (s *Store) writeProcessTx(tx *sql.Tx, sample collector.Sample, data collect
 // Appender-based write methods for high-performance bulk inserts
 // ============================================================================
 
-func (s *Store) writeCPUAppender(driverConn driver.Conn, sample collector.Sample, data collector.CPUData) error {
-	appender, err := duckdb.NewAppenderFromConn(driverConn, "", "cpu_metrics")
+// withAppender creates an appender for the given table, calls fn to populate
+// it, flushes, and closes it.
+func withAppender(conn driver.Conn, table string, fn func(*duckdb.Appender) error) error {
+	appender, err := duckdb.NewAppenderFromConn(conn, "", table)
 	if err != nil {
-		return fmt.Errorf("create appender: %w", err)
+		return fmt.Errorf("create %s appender: %w", table, err)
 	}
 	defer appender.Close()
-
-	for _, core := range data.Cores {
-		if err := appender.AppendRow(sample.Timestamp, int8(core.Core), core.UserPct, core.SystemPct, core.IdlePct, core.IOWaitPct); err != nil {
-			return fmt.Errorf("append cpu core %d: %w", core.Core, err)
-		}
+	if err := fn(appender); err != nil {
+		return err
 	}
 	return appender.Flush()
+}
+
+func (s *Store) writeCPUAppender(driverConn driver.Conn, sample collector.Sample, data collector.CPUData) error {
+	return withAppender(driverConn, "cpu_metrics", func(a *duckdb.Appender) error {
+		for _, core := range data.Cores {
+			if err := a.AppendRow(sample.Timestamp, int8(core.Core), core.UserPct, core.SystemPct, core.IdlePct, core.IOWaitPct); err != nil {
+				return fmt.Errorf("append cpu core %d: %w", core.Core, err)
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) writeMemoryAppender(driverConn driver.Conn, sample collector.Sample, data collector.MemoryData) error {
-	appender, err := duckdb.NewAppenderFromConn(driverConn, "", "memory_metrics")
-	if err != nil {
-		return fmt.Errorf("create appender: %w", err)
-	}
-	defer appender.Close()
-
-	if err := appender.AppendRow(
-		sample.Timestamp,
-		int64(data.TotalBytes), int64(data.UsedBytes), int64(data.AvailableBytes),
-		int64(data.BuffersBytes), int64(data.CachedBytes),
-		int64(data.SwapTotalBytes), int64(data.SwapUsedBytes),
-	); err != nil {
-		return fmt.Errorf("append memory: %w", err)
-	}
-	return appender.Flush()
+	return withAppender(driverConn, "memory_metrics", func(a *duckdb.Appender) error {
+		return a.AppendRow(
+			sample.Timestamp,
+			int64(data.TotalBytes), int64(data.UsedBytes), int64(data.AvailableBytes),
+			int64(data.BuffersBytes), int64(data.CachedBytes),
+			int64(data.SwapTotalBytes), int64(data.SwapUsedBytes),
+		)
+	})
 }
 
 func (s *Store) writeDiskAppender(driverConn driver.Conn, sample collector.Sample, data collector.DiskData) error {
-	appender, err := duckdb.NewAppenderFromConn(driverConn, "", "disk_metrics")
-	if err != nil {
-		return fmt.Errorf("create appender: %w", err)
-	}
-	defer appender.Close()
-
-	for _, m := range data.Mounts {
-		mountID := s.getCachedDimensionID("mount", m.Mount)
-		// For nullable columns, appender needs nil or a value (not a pointer)
-		var deviceID any = nil
-		if m.Device != "" {
-			deviceID = s.getCachedDimensionID("device", m.Device)
+	return withAppender(driverConn, "disk_metrics", func(a *duckdb.Appender) error {
+		for _, m := range data.Mounts {
+			mountID := s.getCachedDimensionID("mount", m.Mount)
+			var deviceID any = nil
+			if m.Device != "" {
+				deviceID = s.getCachedDimensionID("device", m.Device)
+			}
+			if err := a.AppendRow(
+				sample.Timestamp, mountID, deviceID,
+				int64(m.TotalBytes), int64(m.UsedBytes), int64(m.FreeBytes),
+				m.ReadBytesSec, m.WriteBytesSec, m.ReadIOPS, m.WriteIOPS,
+			); err != nil {
+				return fmt.Errorf("append disk %s: %w", m.Mount, err)
+			}
 		}
-		if err := appender.AppendRow(
-			sample.Timestamp, mountID, deviceID,
-			int64(m.TotalBytes), int64(m.UsedBytes), int64(m.FreeBytes),
-			m.ReadBytesSec, m.WriteBytesSec, m.ReadIOPS, m.WriteIOPS,
-		); err != nil {
-			return fmt.Errorf("append disk %s: %w", m.Mount, err)
-		}
-	}
-	return appender.Flush()
+		return nil
+	})
 }
 
 func (s *Store) writeNetworkAppender(driverConn driver.Conn, sample collector.Sample, data collector.NetworkData) error {
-	appender, err := duckdb.NewAppenderFromConn(driverConn, "", "network_metrics")
-	if err != nil {
-		return fmt.Errorf("create appender: %w", err)
-	}
-	defer appender.Close()
-
-	for _, iface := range data.Interfaces {
-		ifaceID := s.getCachedDimensionID("interface", iface.Interface)
-		if err := appender.AppendRow(
-			sample.Timestamp, ifaceID,
-			iface.RxBytesSec, iface.TxBytesSec, iface.RxPacketsSec, iface.TxPacketsSec,
-			int64(iface.RxErrors), int64(iface.TxErrors),
-		); err != nil {
-			return fmt.Errorf("append network %s: %w", iface.Interface, err)
+	return withAppender(driverConn, "network_metrics", func(a *duckdb.Appender) error {
+		for _, iface := range data.Interfaces {
+			ifaceID := s.getCachedDimensionID("interface", iface.Interface)
+			if err := a.AppendRow(
+				sample.Timestamp, ifaceID,
+				iface.RxBytesSec, iface.TxBytesSec, iface.RxPacketsSec, iface.TxPacketsSec,
+				int64(iface.RxErrors), int64(iface.TxErrors),
+			); err != nil {
+				return fmt.Errorf("append network %s: %w", iface.Interface, err)
+			}
 		}
-	}
-	return appender.Flush()
+		return nil
+	})
 }
 
 func (s *Store) writeECCAppender(driverConn driver.Conn, sample collector.Sample, data collector.ECCData) error {
-	appender, err := duckdb.NewAppenderFromConn(driverConn, "", "ecc_metrics")
-	if err != nil {
-		return fmt.Errorf("create appender: %w", err)
-	}
-	defer appender.Close()
-
-	if err := appender.AppendRow(sample.Timestamp, int64(data.Corrected), int64(data.Uncorrected)); err != nil {
-		return fmt.Errorf("append ecc: %w", err)
-	}
-	return appender.Flush()
+	return withAppender(driverConn, "ecc_metrics", func(a *duckdb.Appender) error {
+		return a.AppendRow(sample.Timestamp, int64(data.Corrected), int64(data.Uncorrected))
+	})
 }
 
 func (s *Store) writeTemperatureAppender(driverConn driver.Conn, sample collector.Sample, data collector.TemperatureData) error {
-	appender, err := duckdb.NewAppenderFromConn(driverConn, "", "temperature_metrics")
-	if err != nil {
-		return fmt.Errorf("create appender: %w", err)
-	}
-	defer appender.Close()
-
-	for _, sensor := range data.Sensors {
-		sensorID := s.getCachedDimensionID("sensor", sensor.Sensor)
-		if err := appender.AppendRow(sample.Timestamp, sensorID, sensor.TempCelsius); err != nil {
-			return fmt.Errorf("append temp %s: %w", sensor.Sensor, err)
+	return withAppender(driverConn, "temperature_metrics", func(a *duckdb.Appender) error {
+		for _, sensor := range data.Sensors {
+			sensorID := s.getCachedDimensionID("sensor", sensor.Sensor)
+			if err := a.AppendRow(sample.Timestamp, sensorID, sensor.TempCelsius); err != nil {
+				return fmt.Errorf("append temp %s: %w", sensor.Sensor, err)
+			}
 		}
-	}
-	return appender.Flush()
+		return nil
+	})
 }
 
 func (s *Store) writePowerAppender(driverConn driver.Conn, sample collector.Sample, data collector.PowerData) error {
-	appender, err := duckdb.NewAppenderFromConn(driverConn, "", "power_metrics")
-	if err != nil {
-		return fmt.Errorf("create appender: %w", err)
-	}
-	defer appender.Close()
-
-	for _, z := range data.Zones {
-		zoneID := s.getCachedDimensionID("zone", z.Zone)
-		if err := appender.AppendRow(sample.Timestamp, zoneID, z.Watts); err != nil {
-			return fmt.Errorf("append power %s: %w", z.Zone, err)
+	return withAppender(driverConn, "power_metrics", func(a *duckdb.Appender) error {
+		for _, z := range data.Zones {
+			zoneID := s.getCachedDimensionID("zone", z.Zone)
+			if err := a.AppendRow(sample.Timestamp, zoneID, z.Watts); err != nil {
+				return fmt.Errorf("append power %s: %w", z.Zone, err)
+			}
 		}
-	}
-	return appender.Flush()
+		return nil
+	})
 }
 
 func (s *Store) writeGPUAppender(driverConn driver.Conn, sample collector.Sample, data collector.GPUData) error {
-	appender, err := duckdb.NewAppenderFromConn(driverConn, "", "gpu_metrics")
-	if err != nil {
-		return fmt.Errorf("create appender: %w", err)
-	}
-	defer appender.Close()
-
-	for _, g := range data.GPUs {
-		gpuID := s.getCachedDimensionID("gpu", g.Name)
-		if err := appender.AppendRow(sample.Timestamp, gpuID, g.UtilizationPct,
-			int64(g.MemoryUsedBytes), int64(g.MemoryTotalBytes), g.TempCelsius,
-			g.PowerWatts, int32(g.FrequencyMHz), int32(g.FrequencyMaxMHz), g.ThrottlePct); err != nil {
-			return fmt.Errorf("append gpu %s: %w", g.Name, err)
+	return withAppender(driverConn, "gpu_metrics", func(a *duckdb.Appender) error {
+		for _, g := range data.GPUs {
+			gpuID := s.getCachedDimensionID("gpu", g.Name)
+			if err := a.AppendRow(sample.Timestamp, gpuID, g.UtilizationPct,
+				int64(g.MemoryUsedBytes), int64(g.MemoryTotalBytes), g.TempCelsius,
+				g.PowerWatts, int32(g.FrequencyMHz), int32(g.FrequencyMaxMHz), g.ThrottlePct); err != nil {
+				return fmt.Errorf("append gpu %s: %w", g.Name, err)
+			}
 		}
-	}
-	return appender.Flush()
+		return nil
+	})
 }
 
 func (s *Store) writeProcessAppender(driverConn driver.Conn, sample collector.Sample, data collector.ProcessData) error {
-	// process_info inserts are handled in prepareProcessInfo() before we acquire driverConn
-	// Here we only use the appender for process_metrics
-	metricsAppender, err := duckdb.NewAppenderFromConn(driverConn, "", "process_metrics")
-	if err != nil {
-		return fmt.Errorf("create process_metrics appender: %w", err)
-	}
-	defer metricsAppender.Close()
-
-	for _, p := range data.Processes {
-		if err := metricsAppender.AppendRow(
-			sample.Timestamp, int32(p.PID), p.StartTime, p.State,
-			p.CPUUserPct, p.CPUSystemPct, int64(p.RSSBytes), int32(p.NumFDs), int32(p.NumThreads),
-		); err != nil {
-			return fmt.Errorf("append process_metrics %d: %w", p.PID, err)
+	return withAppender(driverConn, "process_metrics", func(a *duckdb.Appender) error {
+		for _, p := range data.Processes {
+			if err := a.AppendRow(
+				sample.Timestamp, int32(p.PID), p.StartTime, p.State,
+				p.CPUUserPct, p.CPUSystemPct, int64(p.RSSBytes), int32(p.NumFDs), int32(p.NumThreads),
+			); err != nil {
+				return fmt.Errorf("append process_metrics %d: %w", p.PID, err)
+			}
 		}
-	}
-
-	return metricsAppender.Flush()
+		return nil
+	})
 }
 
 // ensureDimensionID ensures a dimension value exists in the cache and DB.
