@@ -323,47 +323,69 @@ func (s *Server) handleHistoryMemory(w http.ResponseWriter, r *http.Request) {
 	s.writeHistoryData(r, w, []TimeSeries{memSeries, swapSeries})
 }
 
-func (s *Server) handleHistoryDisk(w http.ResponseWriter, r *http.Request) {
+// dimHistorySpec describes how to query dimension-keyed history data.
+// Used by temperature, power, GPU, and disk handlers.
+type dimHistorySpec struct {
+	metric    string // log label, e.g. "temperature"
+	table     string // e.g. "temperature_metrics"
+	dimCat    string // dimension category, e.g. "sensor"
+	dimFK     string // FK column, e.g. "sensor_id"
+	aggExpr   string // aggregate expression, e.g. "AVG(m.temp_celsius)"
+	unionCols string // columns for UNION ALL, e.g. "ts, sensor_id, temp_celsius"
+	// perTable uses getQuerySourceForTable instead of getQuerySource.
+	perTable bool
+	// labelFn transforms the dimension value into a series label.
+	// If nil, the dimension value is used as-is.
+	labelFn func(dimValue string) string
+}
+
+// handleDimHistory executes a dimension-keyed history query and returns the
+// result as sorted time series. Each row scans (bucket, dim_value, agg_value).
+func (s *Server) handleDimHistory(w http.ResponseWriter, r *http.Request, spec dimHistorySpec) {
 	if s.tryHistoryCache(r, w) {
 		return
 	}
 	start, end := parseTimeRange(r)
 	bucket := bucketInterval(start, end)
-	source := s.getQuerySource(start, end)
+
+	var source querySource
+	if spec.perTable {
+		source = s.getQuerySourceForTable(start, end, spec.table)
+	} else {
+		source = s.getQuerySource(start, end)
+	}
+
+	selectFrag := fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
+		d.value AS dim_label,
+		%s AS agg_value`, bucket, spec.aggExpr)
+	joinFrag := fmt.Sprintf(`JOIN dimension_values d ON d.category = '%s' AND d.id = m.%s`, spec.dimCat, spec.dimFK)
+	whereFrag := "WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)"
+	groupFrag := "GROUP BY bucket, d.value ORDER BY bucket"
 
 	var query string
 	var args []interface{}
 
 	switch source {
 	case querySourceDuckDB:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS mount,
-			AVG(CAST(m.used_bytes AS DOUBLE) / NULLIF(m.total_bytes, 0) * 100) AS used_pct
-			FROM disk_metrics m
-			JOIN dimension_values d ON d.category = 'mount' AND d.id = m.mount_id
-			WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket)
+		query = fmt.Sprintf(`%s FROM %s m %s %s %s`,
+			selectFrag, spec.table, joinFrag, whereFrag, groupFrag)
 		args = []interface{}{start.Unix(), end.Unix()}
 	case querySourceParquet:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS mount,
-			AVG(CAST(m.used_bytes AS DOUBLE) / NULLIF(m.total_bytes, 0) * 100) AS used_pct
-			FROM read_parquet('%s') m
-			JOIN read_parquet('%s') d ON d.category = 'mount' AND d.id = m.mount_id
-			WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket, s.parquetPath("disk_metrics"), s.dimensionParquetPath())
+		pqJoin := fmt.Sprintf(`JOIN read_parquet('%s') d ON d.category = '%s' AND d.id = m.%s`,
+			s.dimensionParquetPath(), spec.dimCat, spec.dimFK)
+		query = fmt.Sprintf(`%s FROM read_parquet('%s') m %s %s %s`,
+			selectFrag, s.parquetPath(spec.table), pqJoin, whereFrag, groupFrag)
 		args = []interface{}{start.Unix(), end.Unix()}
 	case querySourceBoth:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS mount,
-			AVG(CAST(m.used_bytes AS DOUBLE) / NULLIF(m.total_bytes, 0) * 100) AS used_pct
-			FROM (
-				SELECT ts, mount_id, used_bytes, total_bytes FROM disk_metrics WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-				UNION ALL
-				SELECT ts, mount_id, used_bytes, total_bytes FROM read_parquet('%s') WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			) m
-			JOIN dimension_values d ON d.category = 'mount' AND d.id = m.mount_id
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket, s.parquetPath("disk_metrics"))
+		query = fmt.Sprintf(`%s FROM (
+			SELECT %s FROM %s WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			UNION ALL
+			SELECT %s FROM read_parquet('%s') WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+		) m %s %s`,
+			selectFrag,
+			spec.unionCols, spec.table,
+			spec.unionCols, s.parquetPath(spec.table),
+			joinFrag, groupFrag)
 		args = []interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
 	}
 
@@ -380,23 +402,26 @@ func (s *Server) handleHistoryDisk(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		rowCount++
 		var ts time.Time
-		var mount string
-		var usedPct *float64
-		if err := rows.Scan(&ts, &mount, &usedPct); err != nil {
-			log.Debugf("history/disk: scan error: %v", err)
+		var dimValue string
+		var aggValue *float64
+		if err := rows.Scan(&ts, &dimValue, &aggValue); err != nil {
+			log.Debugf("history/%s: scan error: %v", spec.metric, err)
 			continue
 		}
-		label := "disk_" + mount
+		label := dimValue
+		if spec.labelFn != nil {
+			label = spec.labelFn(dimValue)
+		}
 		ser, ok := seriesMap[label]
 		if !ok {
 			ser = &TimeSeries{Label: label}
 			seriesMap[label] = ser
 		}
-		pct := 0.0
-		if usedPct != nil {
-			pct = *usedPct
+		v := 0.0
+		if aggValue != nil {
+			v = *aggValue
 		}
-		ser.Points = append(ser.Points, TimeSeriesPoint{ts.UnixNano(), pct})
+		ser.Points = append(ser.Points, TimeSeriesPoint{ts.UnixNano(), v})
 	}
 
 	series := make([]TimeSeries, 0, len(seriesMap))
@@ -405,89 +430,31 @@ func (s *Server) handleHistoryDisk(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(series, func(i, j int) bool { return series[i].Label < series[j].Label })
 
-	log.Debugf("history/disk: %s source=%s rows=%d series=%d", time.Since(queryStart), sourceLabel(source), rowCount, len(series))
+	log.Debugf("history/%s: %s source=%s rows=%d series=%d", spec.metric, time.Since(queryStart), sourceLabel(source), rowCount, len(series))
 	s.writeHistoryData(r, w, series)
 }
 
+func (s *Server) handleHistoryDisk(w http.ResponseWriter, r *http.Request) {
+	s.handleDimHistory(w, r, dimHistorySpec{
+		metric:    "disk",
+		table:     "disk_metrics",
+		dimCat:    "mount",
+		dimFK:     "mount_id",
+		aggExpr:   "AVG(CAST(m.used_bytes AS DOUBLE) / NULLIF(m.total_bytes, 0) * 100)",
+		unionCols: "ts, mount_id, used_bytes, total_bytes",
+		labelFn:   func(v string) string { return "disk_" + v },
+	})
+}
+
 func (s *Server) handleHistoryTemperature(w http.ResponseWriter, r *http.Request) {
-	if s.tryHistoryCache(r, w) {
-		return
-	}
-	start, end := parseTimeRange(r)
-	bucket := bucketInterval(start, end)
-	source := s.getQuerySource(start, end)
-
-	var query string
-	var args []interface{}
-
-	switch source {
-	case querySourceDuckDB:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS sensor,
-			AVG(m.temp_celsius) AS temp_avg
-			FROM temperature_metrics m
-			JOIN dimension_values d ON d.category = 'sensor' AND d.id = m.sensor_id
-			WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket)
-		args = []interface{}{start.Unix(), end.Unix()}
-	case querySourceParquet:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS sensor,
-			AVG(m.temp_celsius) AS temp_avg
-			FROM read_parquet('%s') m
-			JOIN read_parquet('%s') d ON d.category = 'sensor' AND d.id = m.sensor_id
-			WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket, s.parquetPath("temperature_metrics"), s.dimensionParquetPath())
-		args = []interface{}{start.Unix(), end.Unix()}
-	case querySourceBoth:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS sensor,
-			AVG(m.temp_celsius) AS temp_avg
-			FROM (
-				SELECT ts, sensor_id, temp_celsius FROM temperature_metrics WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-				UNION ALL
-				SELECT ts, sensor_id, temp_celsius FROM read_parquet('%s') WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			) m
-			JOIN dimension_values d ON d.category = 'sensor' AND d.id = m.sensor_id
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket, s.parquetPath("temperature_metrics"))
-		args = []interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
-	}
-
-	queryStart := time.Now()
-	rows, err := s.dbFn().Query(query, args...)
-	if err != nil {
-		writeError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer rows.Close()
-
-	var rowCount int
-	seriesMap := make(map[string]*TimeSeries)
-	for rows.Next() {
-		rowCount++
-		var ts time.Time
-		var sensor string
-		var tempAvg float64
-		if err := rows.Scan(&ts, &sensor, &tempAvg); err != nil {
-			log.Debugf("history/temperature: scan error: %v", err)
-			continue
-		}
-		ser, ok := seriesMap[sensor]
-		if !ok {
-			ser = &TimeSeries{Label: sensor}
-			seriesMap[sensor] = ser
-		}
-		ser.Points = append(ser.Points, TimeSeriesPoint{ts.UnixNano(), tempAvg})
-	}
-
-	series := make([]TimeSeries, 0, len(seriesMap))
-	for _, ser := range seriesMap {
-		series = append(series, *ser)
-	}
-	sort.Slice(series, func(i, j int) bool { return series[i].Label < series[j].Label })
-
-	log.Debugf("history/temperature: %s source=%s rows=%d series=%d", time.Since(queryStart), sourceLabel(source), rowCount, len(series))
-	s.writeHistoryData(r, w, series)
+	s.handleDimHistory(w, r, dimHistorySpec{
+		metric:    "temperature",
+		table:     "temperature_metrics",
+		dimCat:    "sensor",
+		dimFK:     "sensor_id",
+		aggExpr:   "AVG(m.temp_celsius)",
+		unionCols: "ts, sensor_id, temp_celsius",
+	})
 }
 
 func (s *Server) handleHistoryNetwork(w http.ResponseWriter, r *http.Request) {
@@ -501,39 +468,32 @@ func (s *Server) handleHistoryNetwork(w http.ResponseWriter, r *http.Request) {
 	var query string
 	var args []interface{}
 
+	selectFrag := fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
+		d.value AS interface,
+		AVG(m.rx_bytes_sec) AS rx_avg,
+		AVG(m.tx_bytes_sec) AS tx_avg`, bucket)
+	joinFrag := "JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id"
+	whereFrag := "WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)"
+	groupFrag := "GROUP BY bucket, d.value ORDER BY bucket"
+
 	switch source {
 	case querySourceDuckDB:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS interface,
-			AVG(m.rx_bytes_sec) AS rx_avg,
-			AVG(m.tx_bytes_sec) AS tx_avg
-			FROM network_metrics m
-			JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id
-			WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket)
+		query = fmt.Sprintf(`%s FROM network_metrics m %s %s %s`,
+			selectFrag, joinFrag, whereFrag, groupFrag)
 		args = []interface{}{start.Unix(), end.Unix()}
 	case querySourceParquet:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS interface,
-			AVG(m.rx_bytes_sec) AS rx_avg,
-			AVG(m.tx_bytes_sec) AS tx_avg
-			FROM read_parquet('%s') m
-			JOIN read_parquet('%s') d ON d.category = 'interface' AND d.id = m.interface_id
-			WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket, s.parquetPath("network_metrics"), s.dimensionParquetPath())
+		pqJoin := fmt.Sprintf(`JOIN read_parquet('%s') d ON d.category = 'interface' AND d.id = m.interface_id`,
+			s.dimensionParquetPath())
+		query = fmt.Sprintf(`%s FROM read_parquet('%s') m %s %s %s`,
+			selectFrag, s.parquetPath("network_metrics"), pqJoin, whereFrag, groupFrag)
 		args = []interface{}{start.Unix(), end.Unix()}
 	case querySourceBoth:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS interface,
-			AVG(m.rx_bytes_sec) AS rx_avg,
-			AVG(m.tx_bytes_sec) AS tx_avg
-			FROM (
-				SELECT ts, interface_id, rx_bytes_sec, tx_bytes_sec FROM network_metrics WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-				UNION ALL
-				SELECT ts, interface_id, rx_bytes_sec, tx_bytes_sec FROM read_parquet('%s') WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			) m
-			JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket, s.parquetPath("network_metrics"))
+		query = fmt.Sprintf(`%s FROM (
+			SELECT ts, interface_id, rx_bytes_sec, tx_bytes_sec FROM network_metrics WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			UNION ALL
+			SELECT ts, interface_id, rx_bytes_sec, tx_bytes_sec FROM read_parquet('%s') WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+		) m %s %s`,
+			selectFrag, s.parquetPath("network_metrics"), joinFrag, groupFrag)
 		args = []interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
 	}
 
@@ -580,165 +540,26 @@ func (s *Server) handleHistoryNetwork(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHistoryPower(w http.ResponseWriter, r *http.Request) {
-	if s.tryHistoryCache(r, w) {
-		return
-	}
-	start, end := parseTimeRange(r)
-	bucket := bucketInterval(start, end)
-	source := s.getQuerySource(start, end)
-
-	var query string
-	var args []interface{}
-
-	switch source {
-	case querySourceDuckDB:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS zone,
-			AVG(m.watts) AS watts_avg
-			FROM power_metrics m
-			JOIN dimension_values d ON d.category = 'zone' AND d.id = m.zone_id
-			WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket)
-		args = []interface{}{start.Unix(), end.Unix()}
-	case querySourceParquet:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS zone,
-			AVG(m.watts) AS watts_avg
-			FROM read_parquet('%s') m
-			JOIN read_parquet('%s') d ON d.category = 'zone' AND d.id = m.zone_id
-			WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket, s.parquetPath("power_metrics"), s.dimensionParquetPath())
-		args = []interface{}{start.Unix(), end.Unix()}
-	case querySourceBoth:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS zone,
-			AVG(m.watts) AS watts_avg
-			FROM (
-				SELECT ts, zone_id, watts FROM power_metrics WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-				UNION ALL
-				SELECT ts, zone_id, watts FROM read_parquet('%s') WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			) m
-			JOIN dimension_values d ON d.category = 'zone' AND d.id = m.zone_id
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket, s.parquetPath("power_metrics"))
-		args = []interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
-	}
-
-	queryStart := time.Now()
-	rows, err := s.dbFn().Query(query, args...)
-	if err != nil {
-		writeError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer rows.Close()
-
-	var rowCount int
-	seriesMap := make(map[string]*TimeSeries)
-	for rows.Next() {
-		rowCount++
-		var ts time.Time
-		var zone string
-		var wattsAvg float64
-		if err := rows.Scan(&ts, &zone, &wattsAvg); err != nil {
-			log.Debugf("history/power: scan error: %v", err)
-			continue
-		}
-		ser, ok := seriesMap[zone]
-		if !ok {
-			ser = &TimeSeries{Label: zone}
-			seriesMap[zone] = ser
-		}
-		ser.Points = append(ser.Points, TimeSeriesPoint{ts.UnixNano(), wattsAvg})
-	}
-
-	series := make([]TimeSeries, 0, len(seriesMap))
-	for _, ser := range seriesMap {
-		series = append(series, *ser)
-	}
-	sort.Slice(series, func(i, j int) bool { return series[i].Label < series[j].Label })
-
-	log.Debugf("history/power: %s source=%s rows=%d series=%d", time.Since(queryStart), sourceLabel(source), rowCount, len(series))
-	s.writeHistoryData(r, w, series)
+	s.handleDimHistory(w, r, dimHistorySpec{
+		metric:    "power",
+		table:     "power_metrics",
+		dimCat:    "zone",
+		dimFK:     "zone_id",
+		aggExpr:   "AVG(m.watts)",
+		unionCols: "ts, zone_id, watts",
+	})
 }
 
 func (s *Server) handleHistoryGPU(w http.ResponseWriter, r *http.Request) {
-	if s.tryHistoryCache(r, w) {
-		return
-	}
-	start, end := parseTimeRange(r)
-	bucket := bucketInterval(start, end)
-	source := s.getQuerySourceForTable(start, end, "gpu_metrics")
-
-	var query string
-	var args []interface{}
-
-	switch source {
-	case querySourceDuckDB:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS gpu,
-			AVG(m.utilization_pct) AS util_avg
-			FROM gpu_metrics m
-			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
-			WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket)
-		args = []interface{}{start.Unix(), end.Unix()}
-	case querySourceParquet:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS gpu,
-			AVG(m.utilization_pct) AS util_avg
-			FROM read_parquet('%s') m
-			JOIN read_parquet('%s') d ON d.category = 'gpu' AND d.id = m.gpu_id
-			WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket, s.parquetPath("gpu_metrics"), s.dimensionParquetPath())
-		args = []interface{}{start.Unix(), end.Unix()}
-	case querySourceBoth:
-		query = fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', m.ts) AS bucket,
-			d.value AS gpu,
-			AVG(m.utilization_pct) AS util_avg
-			FROM (
-				SELECT ts, gpu_id, utilization_pct FROM gpu_metrics WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-				UNION ALL
-				SELECT ts, gpu_id, utilization_pct FROM read_parquet('%s') WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			) m
-			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
-			GROUP BY bucket, d.value ORDER BY bucket`, bucket, s.parquetPath("gpu_metrics"))
-		args = []interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
-	}
-
-	queryStart := time.Now()
-	rows, err := s.dbFn().Query(query, args...)
-	if err != nil {
-		writeError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer rows.Close()
-
-	var rowCount int
-	seriesMap := make(map[string]*TimeSeries)
-	for rows.Next() {
-		rowCount++
-		var ts time.Time
-		var gpu string
-		var utilAvg float64
-		if err := rows.Scan(&ts, &gpu, &utilAvg); err != nil {
-			log.Debugf("history/gpu: scan error: %v", err)
-			continue
-		}
-		ser, ok := seriesMap[gpu]
-		if !ok {
-			ser = &TimeSeries{Label: gpu}
-			seriesMap[gpu] = ser
-		}
-		ser.Points = append(ser.Points, TimeSeriesPoint{ts.UnixNano(), utilAvg})
-	}
-
-	series := make([]TimeSeries, 0, len(seriesMap))
-	for _, ser := range seriesMap {
-		series = append(series, *ser)
-	}
-	sort.Slice(series, func(i, j int) bool { return series[i].Label < series[j].Label })
-
-	log.Debugf("history/gpu: %s source=%s rows=%d series=%d", time.Since(queryStart), sourceLabel(source), rowCount, len(series))
-	s.writeHistoryData(r, w, series)
+	s.handleDimHistory(w, r, dimHistorySpec{
+		metric:    "gpu",
+		table:     "gpu_metrics",
+		dimCat:    "gpu",
+		dimFK:     "gpu_id",
+		aggExpr:   "AVG(m.utilization_pct)",
+		unionCols: "ts, gpu_id, utilization_pct",
+		perTable:  true,
+	})
 }
 
 func (s *Server) handleHistoryProcess(w http.ResponseWriter, r *http.Request) {
