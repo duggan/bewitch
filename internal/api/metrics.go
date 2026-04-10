@@ -172,18 +172,14 @@ type DashboardData struct {
 
 // Handlers
 
-func (s *Server) handleMetricsCPU(w http.ResponseWriter, r *http.Request) {
-	if cpu, gen := s.getCachedCPU(); cpu != nil {
-		serveCached(w, r, CPUResponse{Cores: cpu}, gen)
-		return
-	}
+// DB query helpers — used by both individual metric handlers and the dashboard fallback.
+
+func (s *Server) queryCPU() []CPUCoreMetric {
 	rows, err := s.dbFn().Query("SELECT core, user_pct, system_pct, idle_pct, iowait_pct FROM cpu_metrics WHERE ts = (SELECT MAX(ts) FROM cpu_metrics) ORDER BY core")
 	if err != nil {
-		writeError(w, r, http.StatusInternalServerError, err.Error())
-		return
+		return nil
 	}
 	defer rows.Close()
-
 	var cores []CPUCoreMetric
 	for rows.Next() {
 		var c CPUCoreMetric
@@ -195,32 +191,20 @@ func (s *Server) handleMetricsCPU(w http.ResponseWriter, r *http.Request) {
 		c.IOWaitPct = nf(iowaitPct)
 		cores = append(cores, c)
 	}
-	if cores == nil {
-		cores = []CPUCoreMetric{}
-	}
-	writeJSON(w, http.StatusOK, CPUResponse{Cores: cores})
+	return cores
 }
 
-func (s *Server) handleMetricsMemory(w http.ResponseWriter, r *http.Request) {
-	if mem, gen := s.getCachedMemory(); mem != nil {
-		serveCached(w, r, mem, gen)
-		return
-	}
+func (s *Server) queryMemory() *MemoryMetric {
 	var m MemoryMetric
 	err := s.dbFn().QueryRow("SELECT total_bytes, used_bytes, available_bytes, buffers_bytes, cached_bytes, swap_total_bytes, swap_used_bytes FROM memory_metrics WHERE ts = (SELECT MAX(ts) FROM memory_metrics)").
 		Scan(&m.TotalBytes, &m.UsedBytes, &m.AvailableBytes, &m.BuffersBytes, &m.CachedBytes, &m.SwapTotalBytes, &m.SwapUsedBytes)
 	if err != nil {
-		writeJSON(w, http.StatusOK, &MemoryMetric{})
-		return
+		return nil
 	}
-	writeJSON(w, http.StatusOK, &m)
+	return &m
 }
 
-func (s *Server) handleMetricsDisk(w http.ResponseWriter, r *http.Request) {
-	if disks, gen := s.getCachedDisk(); disks != nil {
-		serveCached(w, r, DiskResponse{Disks: disks}, gen)
-		return
-	}
+func (s *Server) queryDisk() []DiskMetric {
 	rows, err := s.dbFn().Query(`SELECT dm.value, dd.value, m.total_bytes, m.used_bytes, m.free_bytes,
 		m.read_bytes_sec, m.write_bytes_sec, m.read_iops, m.write_iops
 		FROM disk_metrics m
@@ -228,11 +212,9 @@ func (s *Server) handleMetricsDisk(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN dimension_values dd ON dd.category = 'device' AND dd.id = m.device_id
 		WHERE m.ts = (SELECT MAX(ts) FROM disk_metrics)`)
 	if err != nil {
-		writeError(w, r, http.StatusInternalServerError, err.Error())
-		return
+		return nil
 	}
 	defer rows.Close()
-
 	var disks []DiskMetric
 	for rows.Next() {
 		var d DiskMetric
@@ -243,8 +225,156 @@ func (s *Server) handleMetricsDisk(w http.ResponseWriter, r *http.Request) {
 		}
 		disks = append(disks, d)
 	}
+	return disks
+}
+
+func (s *Server) queryNetwork() []NetworkMetric {
+	rows, err := s.dbFn().Query(`SELECT d.value, m.rx_bytes_sec, m.tx_bytes_sec, m.rx_packets_sec, m.tx_packets_sec, m.rx_errors, m.tx_errors
+		FROM network_metrics m
+		JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id
+		WHERE m.ts = (SELECT MAX(ts) FROM network_metrics)
+		ORDER BY d.value`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var ifaces []NetworkMetric
+	for rows.Next() {
+		var n NetworkMetric
+		rows.Scan(&n.Interface, &n.RxBytesSec, &n.TxBytesSec, &n.RxPacketsSec, &n.TxPacketsSec, &n.RxErrors, &n.TxErrors)
+		ifaces = append(ifaces, n)
+	}
+	return ifaces
+}
+
+func (s *Server) queryTemperature() []TemperatureMetric {
+	rows, err := s.dbFn().Query(`SELECT d.value, m.temp_celsius
+		FROM temperature_metrics m
+		JOIN dimension_values d ON d.category = 'sensor' AND d.id = m.sensor_id
+		WHERE m.ts = (SELECT MAX(ts) FROM temperature_metrics)
+		ORDER BY d.value`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var temps []TemperatureMetric
+	for rows.Next() {
+		var t TemperatureMetric
+		rows.Scan(&t.Sensor, &t.TempCelsius)
+		temps = append(temps, t)
+	}
+	return temps
+}
+
+func (s *Server) queryPower() []PowerMetric {
+	rows, err := s.dbFn().Query(`SELECT d.value, m.watts
+		FROM power_metrics m
+		JOIN dimension_values d ON d.category = 'zone' AND d.id = m.zone_id
+		WHERE m.ts = (SELECT MAX(ts) FROM power_metrics)
+		ORDER BY d.value`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var zones []PowerMetric
+	for rows.Next() {
+		var p PowerMetric
+		rows.Scan(&p.Zone, &p.Watts)
+		zones = append(zones, p)
+	}
+	return zones
+}
+
+func (s *Server) queryProcessDashboard() *ProcessResponse {
+	rows, err := s.dbFn().Query(`SELECT pm.pid, pi.name, pm.state,
+		pm.cpu_user_pct, pm.cpu_system_pct, pm.rss_bytes
+		FROM process_metrics pm
+		JOIN process_info pi ON pm.pid = pi.pid AND pm.start_time = pi.start_time
+		WHERE pm.ts = (SELECT MAX(ts) FROM process_metrics)
+		ORDER BY pm.cpu_user_pct + pm.cpu_system_pct DESC
+		LIMIT 5`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var procs []ProcessMetric
+	var totalCPU float64
+	var totalRSS uint64
+	var running int32
+	var active int32
+	for rows.Next() {
+		var p ProcessMetric
+		var state sql.NullString
+		rows.Scan(&p.PID, &p.Name, &state, &p.CPUUserPct, &p.CPUSystemPct, &p.RSSBytes)
+		if state.Valid {
+			p.State = state.String
+			if p.State == "R" {
+				running++
+			}
+		}
+		if p.CPUUserPct+p.CPUSystemPct > 0 {
+			active++
+		}
+		totalCPU += p.CPUUserPct + p.CPUSystemPct
+		totalRSS += p.RSSBytes
+		procs = append(procs, p)
+	}
+	var total int32
+	s.dbFn().QueryRow("SELECT COUNT(*) FROM process_metrics WHERE ts = (SELECT MAX(ts) FROM process_metrics)").Scan(&total)
+	return &ProcessResponse{
+		Processes:     procs,
+		TotalProcs:    total,
+		RunningProcs:  running,
+		ActiveProcs:   active,
+		TotalCPUPct:   totalCPU,
+		TotalRSSBytes: totalRSS,
+	}
+}
+
+// orEmpty returns s if non-nil, otherwise an empty slice of the same type.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
+// Handlers
+
+func (s *Server) handleMetricsCPU(w http.ResponseWriter, r *http.Request) {
+	if cpu, gen := s.getCachedCPU(); cpu != nil {
+		serveCached(w, r, CPUResponse{Cores: cpu}, gen)
+		return
+	}
+	cores := s.queryCPU()
+	if cores == nil {
+		writeError(w, r, http.StatusInternalServerError, "no cpu data")
+		return
+	}
+	writeJSON(w, http.StatusOK, CPUResponse{Cores: cores})
+}
+
+func (s *Server) handleMetricsMemory(w http.ResponseWriter, r *http.Request) {
+	if mem, gen := s.getCachedMemory(); mem != nil {
+		serveCached(w, r, mem, gen)
+		return
+	}
+	m := s.queryMemory()
+	if m == nil {
+		m = &MemoryMetric{}
+	}
+	writeJSON(w, http.StatusOK, m)
+}
+
+func (s *Server) handleMetricsDisk(w http.ResponseWriter, r *http.Request) {
+	if disks, gen := s.getCachedDisk(); disks != nil {
+		serveCached(w, r, DiskResponse{Disks: disks}, gen)
+		return
+	}
+	disks := s.queryDisk()
 	if disks == nil {
-		disks = []DiskMetric{}
+		writeError(w, r, http.StatusInternalServerError, "no disk data")
+		return
 	}
 	writeJSON(w, http.StatusOK, DiskResponse{Disks: disks})
 }
@@ -254,25 +384,10 @@ func (s *Server) handleMetricsNetwork(w http.ResponseWriter, r *http.Request) {
 		serveCached(w, r, NetworkResponse{Interfaces: net}, gen)
 		return
 	}
-	rows, err := s.dbFn().Query(`SELECT d.value, m.rx_bytes_sec, m.tx_bytes_sec, m.rx_packets_sec, m.tx_packets_sec, m.rx_errors, m.tx_errors
-		FROM network_metrics m
-		JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id
-		WHERE m.ts = (SELECT MAX(ts) FROM network_metrics)
-		ORDER BY d.value`)
-	if err != nil {
-		writeError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer rows.Close()
-
-	var ifaces []NetworkMetric
-	for rows.Next() {
-		var n NetworkMetric
-		rows.Scan(&n.Interface, &n.RxBytesSec, &n.TxBytesSec, &n.RxPacketsSec, &n.TxPacketsSec, &n.RxErrors, &n.TxErrors)
-		ifaces = append(ifaces, n)
-	}
+	ifaces := s.queryNetwork()
 	if ifaces == nil {
-		ifaces = []NetworkMetric{}
+		writeError(w, r, http.StatusInternalServerError, "no network data")
+		return
 	}
 	writeJSON(w, http.StatusOK, NetworkResponse{Interfaces: ifaces})
 }
@@ -282,27 +397,8 @@ func (s *Server) handleMetricsTemperature(w http.ResponseWriter, r *http.Request
 		serveCached(w, r, TemperatureResponse{Sensors: temps}, gen)
 		return
 	}
-	rows, err := s.dbFn().Query(`SELECT d.value, m.temp_celsius
-		FROM temperature_metrics m
-		JOIN dimension_values d ON d.category = 'sensor' AND d.id = m.sensor_id
-		WHERE m.ts = (SELECT MAX(ts) FROM temperature_metrics)
-		ORDER BY d.value`)
-	if err != nil {
-		writeError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer rows.Close()
-
-	var temps []TemperatureMetric
-	for rows.Next() {
-		var t TemperatureMetric
-		rows.Scan(&t.Sensor, &t.TempCelsius)
-		temps = append(temps, t)
-	}
-	if temps == nil {
-		temps = []TemperatureMetric{}
-	}
-	writeJSON(w, http.StatusOK, TemperatureResponse{Sensors: temps})
+	temps := s.queryTemperature()
+	writeJSON(w, http.StatusOK, TemperatureResponse{Sensors: orEmpty(temps)})
 }
 
 func (s *Server) handleMetricsPower(w http.ResponseWriter, r *http.Request) {
@@ -310,27 +406,8 @@ func (s *Server) handleMetricsPower(w http.ResponseWriter, r *http.Request) {
 		serveCached(w, r, PowerResponse{Zones: power}, gen)
 		return
 	}
-	rows, err := s.dbFn().Query(`SELECT d.value, m.watts
-		FROM power_metrics m
-		JOIN dimension_values d ON d.category = 'zone' AND d.id = m.zone_id
-		WHERE m.ts = (SELECT MAX(ts) FROM power_metrics)
-		ORDER BY d.value`)
-	if err != nil {
-		writeError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer rows.Close()
-
-	var zones []PowerMetric
-	for rows.Next() {
-		var p PowerMetric
-		rows.Scan(&p.Zone, &p.Watts)
-		zones = append(zones, p)
-	}
-	if zones == nil {
-		zones = []PowerMetric{}
-	}
-	writeJSON(w, http.StatusOK, PowerResponse{Zones: zones})
+	zones := s.queryPower()
+	writeJSON(w, http.StatusOK, PowerResponse{Zones: orEmpty(zones)})
 }
 
 func (s *Server) handleMetricsDashboard(w http.ResponseWriter, r *http.Request) {
@@ -338,150 +415,15 @@ func (s *Server) handleMetricsDashboard(w http.ResponseWriter, r *http.Request) 
 		serveCached(w, r, dash, gen)
 		return
 	}
-	dash := DashboardData{}
-
-	// CPU
-	cpuRows, err := s.dbFn().Query("SELECT core, user_pct, system_pct, idle_pct, iowait_pct FROM cpu_metrics WHERE ts = (SELECT MAX(ts) FROM cpu_metrics) ORDER BY core")
-	if err == nil {
-		defer cpuRows.Close()
-		for cpuRows.Next() {
-			var c CPUCoreMetric
-			var userPct, sysPct, idlePct, iowaitPct sql.NullFloat64
-			cpuRows.Scan(&c.Core, &userPct, &sysPct, &idlePct, &iowaitPct)
-			c.UserPct = nf(userPct)
-			c.SystemPct = nf(sysPct)
-			c.IdlePct = nf(idlePct)
-			c.IOWaitPct = nf(iowaitPct)
-			dash.CPU = append(dash.CPU, c)
-		}
+	dash := DashboardData{
+		CPU:         orEmpty(s.queryCPU()),
+		Memory:      s.queryMemory(),
+		Disks:       orEmpty(s.queryDisk()),
+		Network:     orEmpty(s.queryNetwork()),
+		Temperature: orEmpty(s.queryTemperature()),
+		Power:       orEmpty(s.queryPower()),
+		Processes:   s.queryProcessDashboard(),
 	}
-	if dash.CPU == nil {
-		dash.CPU = []CPUCoreMetric{}
-	}
-
-	// Memory
-	var m MemoryMetric
-	if err := s.dbFn().QueryRow("SELECT total_bytes, used_bytes, available_bytes, buffers_bytes, cached_bytes, swap_total_bytes, swap_used_bytes FROM memory_metrics WHERE ts = (SELECT MAX(ts) FROM memory_metrics)").
-		Scan(&m.TotalBytes, &m.UsedBytes, &m.AvailableBytes, &m.BuffersBytes, &m.CachedBytes, &m.SwapTotalBytes, &m.SwapUsedBytes); err == nil {
-		dash.Memory = &m
-	}
-
-	// Disk
-	diskRows, err := s.dbFn().Query(`SELECT dm.value, m.total_bytes, m.used_bytes
-		FROM disk_metrics m
-		JOIN dimension_values dm ON dm.category = 'mount' AND dm.id = m.mount_id
-		WHERE m.ts = (SELECT MAX(ts) FROM disk_metrics)`)
-	if err == nil {
-		defer diskRows.Close()
-		for diskRows.Next() {
-			var d DiskMetric
-			diskRows.Scan(&d.Mount, &d.TotalBytes, &d.UsedBytes)
-			dash.Disks = append(dash.Disks, d)
-		}
-	}
-	if dash.Disks == nil {
-		dash.Disks = []DiskMetric{}
-	}
-
-	// Network
-	netRows, err := s.dbFn().Query(`SELECT d.value, m.rx_bytes_sec, m.tx_bytes_sec
-		FROM network_metrics m
-		JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id
-		WHERE m.ts = (SELECT MAX(ts) FROM network_metrics)
-		ORDER BY d.value`)
-	if err == nil {
-		defer netRows.Close()
-		for netRows.Next() {
-			var n NetworkMetric
-			netRows.Scan(&n.Interface, &n.RxBytesSec, &n.TxBytesSec)
-			dash.Network = append(dash.Network, n)
-		}
-	}
-	if dash.Network == nil {
-		dash.Network = []NetworkMetric{}
-	}
-
-	// Temperature
-	tempRows, err := s.dbFn().Query(`SELECT d.value, m.temp_celsius
-		FROM temperature_metrics m
-		JOIN dimension_values d ON d.category = 'sensor' AND d.id = m.sensor_id
-		WHERE m.ts = (SELECT MAX(ts) FROM temperature_metrics)
-		ORDER BY d.value`)
-	if err == nil {
-		defer tempRows.Close()
-		for tempRows.Next() {
-			var t TemperatureMetric
-			tempRows.Scan(&t.Sensor, &t.TempCelsius)
-			dash.Temperature = append(dash.Temperature, t)
-		}
-	}
-	if dash.Temperature == nil {
-		dash.Temperature = []TemperatureMetric{}
-	}
-
-	// Power
-	powerRows, err := s.dbFn().Query(`SELECT d.value, m.watts
-		FROM power_metrics m
-		JOIN dimension_values d ON d.category = 'zone' AND d.id = m.zone_id
-		WHERE m.ts = (SELECT MAX(ts) FROM power_metrics)
-		ORDER BY d.value`)
-	if err == nil {
-		defer powerRows.Close()
-		for powerRows.Next() {
-			var p PowerMetric
-			powerRows.Scan(&p.Zone, &p.Watts)
-			dash.Power = append(dash.Power, p)
-		}
-	}
-	if dash.Power == nil {
-		dash.Power = []PowerMetric{}
-	}
-
-	// Processes - Top 5 by CPU
-	procRows, err := s.dbFn().Query(`SELECT pm.pid, pi.name, pm.state,
-		pm.cpu_user_pct, pm.cpu_system_pct, pm.rss_bytes
-		FROM process_metrics pm
-		JOIN process_info pi ON pm.pid = pi.pid AND pm.start_time = pi.start_time
-		WHERE pm.ts = (SELECT MAX(ts) FROM process_metrics)
-		ORDER BY pm.cpu_user_pct + pm.cpu_system_pct DESC
-		LIMIT 5`)
-	if err == nil {
-		defer procRows.Close()
-		var procs []ProcessMetric
-		var totalCPU float64
-		var totalRSS uint64
-		var running int32
-		var active int32
-		for procRows.Next() {
-			var p ProcessMetric
-			var state sql.NullString
-			procRows.Scan(&p.PID, &p.Name, &state, &p.CPUUserPct, &p.CPUSystemPct, &p.RSSBytes)
-			if state.Valid {
-				p.State = state.String
-				if p.State == "R" {
-					running++
-				}
-			}
-			if p.CPUUserPct+p.CPUSystemPct > 0 {
-				active++
-			}
-			totalCPU += p.CPUUserPct + p.CPUSystemPct
-			totalRSS += p.RSSBytes
-			procs = append(procs, p)
-		}
-		// Get total count from latest snapshot
-		var total int32
-		s.dbFn().QueryRow("SELECT COUNT(*) FROM process_metrics WHERE ts = (SELECT MAX(ts) FROM process_metrics)").Scan(&total)
-		dash.Processes = &ProcessResponse{
-			Processes:     procs,
-			TotalProcs:    total,
-			RunningProcs:  running,
-			ActiveProcs:   active,
-			TotalCPUPct:   totalCPU,
-			TotalRSSBytes: totalRSS,
-		}
-	}
-
 	writeJSON(w, http.StatusOK, &dash)
 }
 
