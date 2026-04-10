@@ -193,82 +193,39 @@ func (s *Server) SetMetricsSnapshot(
 	s.metricsMu.Unlock()
 }
 
-// getCachedCPU returns the cached CPU metrics.
-// Returns nil if no data is cached. The gen value can be used as an ETag.
+// getCachedMetric returns a field from the metrics cache under RLock.
+// Returns (nil, 0) if the cache or field is nil.
+func getCachedMetric[T any](s *Server, sel func(*metricsCache) T) (T, uint64) {
+	s.metricsMu.RLock()
+	defer s.metricsMu.RUnlock()
+	mc := s.metricsSnapshot
+	if mc == nil {
+		var zero T
+		return zero, 0
+	}
+	return sel(mc), mc.gen
+}
+
 func (s *Server) getCachedCPU() ([]CPUCoreMetric, uint64) {
-	s.metricsMu.RLock()
-	defer s.metricsMu.RUnlock()
-	mc := s.metricsSnapshot
-	if mc == nil || mc.cpu == nil {
-		return nil, 0
-	}
-	return mc.cpu, mc.gen
+	return getCachedMetric(s, func(mc *metricsCache) []CPUCoreMetric { return mc.cpu })
 }
-
-// getCachedMemory returns the cached memory metrics.
 func (s *Server) getCachedMemory() (*MemoryMetric, uint64) {
-	s.metricsMu.RLock()
-	defer s.metricsMu.RUnlock()
-	mc := s.metricsSnapshot
-	if mc == nil || mc.mem == nil {
-		return nil, 0
-	}
-	return mc.mem, mc.gen
+	return getCachedMetric(s, func(mc *metricsCache) *MemoryMetric { return mc.mem })
 }
-
-// getCachedDisk returns the cached disk metrics.
 func (s *Server) getCachedDisk() ([]DiskMetric, uint64) {
-	s.metricsMu.RLock()
-	defer s.metricsMu.RUnlock()
-	mc := s.metricsSnapshot
-	if mc == nil || mc.disks == nil {
-		return nil, 0
-	}
-	return mc.disks, mc.gen
+	return getCachedMetric(s, func(mc *metricsCache) []DiskMetric { return mc.disks })
 }
-
-// getCachedNetwork returns the cached network metrics.
 func (s *Server) getCachedNetwork() ([]NetworkMetric, uint64) {
-	s.metricsMu.RLock()
-	defer s.metricsMu.RUnlock()
-	mc := s.metricsSnapshot
-	if mc == nil || mc.net == nil {
-		return nil, 0
-	}
-	return mc.net, mc.gen
+	return getCachedMetric(s, func(mc *metricsCache) []NetworkMetric { return mc.net })
 }
-
-// getCachedTemperature returns the cached temperature metrics.
 func (s *Server) getCachedTemperature() ([]TemperatureMetric, uint64) {
-	s.metricsMu.RLock()
-	defer s.metricsMu.RUnlock()
-	mc := s.metricsSnapshot
-	if mc == nil || mc.temps == nil {
-		return nil, 0
-	}
-	return mc.temps, mc.gen
+	return getCachedMetric(s, func(mc *metricsCache) []TemperatureMetric { return mc.temps })
 }
-
-// getCachedPower returns the cached power metrics.
 func (s *Server) getCachedPower() ([]PowerMetric, uint64) {
-	s.metricsMu.RLock()
-	defer s.metricsMu.RUnlock()
-	mc := s.metricsSnapshot
-	if mc == nil || mc.power == nil {
-		return nil, 0
-	}
-	return mc.power, mc.gen
+	return getCachedMetric(s, func(mc *metricsCache) []PowerMetric { return mc.power })
 }
-
-// getCachedGPU returns the cached GPU metrics.
 func (s *Server) getCachedGPU() ([]GPUMetric, uint64) {
-	s.metricsMu.RLock()
-	defer s.metricsMu.RUnlock()
-	mc := s.metricsSnapshot
-	if mc == nil || mc.gpus == nil {
-		return nil, 0
-	}
-	return mc.gpus, mc.gen
+	return getCachedMetric(s, func(mc *metricsCache) []GPUMetric { return mc.gpus })
 }
 
 // SetGPUSnapshot updates the cached GPU metrics served by the API.
@@ -293,13 +250,7 @@ func (s *Server) SetGPUHints(hints []string) {
 
 // getCachedECC returns the cached ECC metrics.
 func (s *Server) getCachedECC() (*ECCMetric, uint64) {
-	s.metricsMu.RLock()
-	defer s.metricsMu.RUnlock()
-	mc := s.metricsSnapshot
-	if mc == nil || mc.ecc == nil {
-		return nil, 0
-	}
-	return mc.ecc, mc.gen
+	return getCachedMetric(s, func(mc *metricsCache) *ECCMetric { return mc.ecc })
 }
 
 // getCachedDashboard returns the cached dashboard with lazy composition.
