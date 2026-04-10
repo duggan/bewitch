@@ -9,6 +9,9 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// DefaultConfigPath is the default location of the configuration file.
+const DefaultConfigPath = "/etc/bewitch.toml"
+
 type Config struct {
 	Daemon     DaemonConfig     `toml:"daemon"`
 	Alerts     AlertsConfig     `toml:"alerts"`

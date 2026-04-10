@@ -27,7 +27,7 @@ var version = "dev"
 func main() {
 	log.SetReportTimestamp(true)
 
-	configPath := flag.String("config", "/etc/bewitch.toml", "path to config file")
+	configPath := flag.String("config", config.DefaultConfigPath, "path to config file")
 	logLevel := flag.String("log-level", "", "log level: debug, info, warn, error (overrides config)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()

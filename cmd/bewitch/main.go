@@ -26,7 +26,7 @@ import (
 var version = "dev"
 
 func main() {
-	configPath := flag.String("config", "/etc/bewitch.toml", "path to config file")
+	configPath := flag.String("config", config.DefaultConfigPath, "path to config file")
 	debug := flag.Bool("debug", false, "show debug console in TUI")
 	addr := flag.String("addr", "", "TCP address of remote daemon (host:port)")
 	useTLS := flag.Bool("tls", true, "use TLS for TCP connections")
