@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/duggan/bewitch/internal/config"
 )
 
 // AlertRuleBase contains common fields for all alert rule types.
@@ -85,7 +87,7 @@ func NewThresholdRule(base AlertRuleBase, cfg ThresholdConfig) *ThresholdRule {
 func (r *ThresholdRule) Name() string { return r.base.Name }
 
 func (r *ThresholdRule) Evaluate(db *sql.DB) (*Alert, error) {
-	dur, err := time.ParseDuration(r.cfg.Duration)
+	dur, err := config.ParseDuration(r.cfg.Duration)
 	if err != nil {
 		return nil, fmt.Errorf("parsing duration %q: %w", r.cfg.Duration, err)
 	}
@@ -261,7 +263,7 @@ func NewVarianceRule(base AlertRuleBase, cfg VarianceConfig) *VarianceRule {
 func (r *VarianceRule) Name() string { return r.base.Name }
 
 func (r *VarianceRule) Evaluate(db *sql.DB) (*Alert, error) {
-	dur, err := time.ParseDuration(r.cfg.Duration)
+	dur, err := config.ParseDuration(r.cfg.Duration)
 	if err != nil {
 		return nil, fmt.Errorf("parsing duration %q: %w", r.cfg.Duration, err)
 	}
@@ -384,7 +386,7 @@ func NewProcessThrashingRule(base AlertRuleBase, cfg ProcessThrashingConfig) *Pr
 func (r *ProcessThrashingRule) Name() string { return r.base.Name }
 
 func (r *ProcessThrashingRule) Evaluate(db *sql.DB) (*Alert, error) {
-	dur, err := time.ParseDuration(r.cfg.RestartWindow)
+	dur, err := config.ParseDuration(r.cfg.RestartWindow)
 	if err != nil {
 		return nil, fmt.Errorf("parsing restart window %q: %w", r.cfg.RestartWindow, err)
 	}

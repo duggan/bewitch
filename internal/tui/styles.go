@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/duggan/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/format"
 )
 
 // palette holds a complete set of UI colors with ANSI fallbacks.
@@ -360,26 +362,8 @@ func humanBits(b uint64) string {
 	}
 }
 
-func humanBytes(b uint64) string {
-	const (
-		kb = 1024
-		mb = kb * 1024
-		gb = mb * 1024
-		tb = gb * 1024
-	)
-	switch {
-	case b >= tb:
-		return fmt.Sprintf("%.1fT", float64(b)/float64(tb))
-	case b >= gb:
-		return fmt.Sprintf("%.1fG", float64(b)/float64(gb))
-	case b >= mb:
-		return fmt.Sprintf("%.1fM", float64(b)/float64(mb))
-	case b >= kb:
-		return fmt.Sprintf("%.1fK", float64(b)/float64(kb))
-	default:
-		return fmt.Sprintf("%dB", b)
-	}
-}
+// humanBytes is a package-level alias for format.Bytes for convenience.
+var humanBytes = format.Bytes
 
 // collectorsForView returns the collector names relevant to each tab view.
 var collectorsForView = map[view][]string{
@@ -432,7 +416,7 @@ func buildStatusBar(status map[string]any, current view, lastChange time.Time) s
 		var maxInterval time.Duration
 		for _, name := range names {
 			if v, ok := intervals[name]; ok {
-				if d, err := time.ParseDuration(v); err == nil && d > maxInterval {
+				if d, err := config.ParseDuration(v); err == nil && d > maxInterval {
 					maxInterval = d
 				}
 			}

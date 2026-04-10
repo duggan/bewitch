@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/duggan/bewitch/internal/alert"
 	"github.com/duggan/bewitch/internal/api"
 	"github.com/duggan/bewitch/internal/config"
 
@@ -73,7 +74,7 @@ type prefetchHistoryResultMsg struct {
 	duration time.Duration
 }
 type notifyTestResultMsg struct {
-	results []NotifyTestResult
+	results []alert.NotifyResult
 	err     error
 	sentAt  time.Time
 }
@@ -2483,7 +2484,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Method:     r.Method,
 					Dest:       r.Dest,
 					StatusCode: r.StatusCode,
-					Latency:    time.Duration(r.LatencyNs),
+					Latency:    r.Latency,
 					Error:      r.Error,
 					Body:       r.Body,
 					SentAt:     msg.sentAt,

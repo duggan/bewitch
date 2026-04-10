@@ -2,19 +2,18 @@ package tui
 
 import (
 	"bytes"
-	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/duggan/bewitch/internal/alert"
 	"github.com/duggan/bewitch/internal/api"
 )
 
@@ -47,7 +46,7 @@ type daemonClient interface {
 	GetPreferences() (map[string]string, error)
 	SetPreference(key, value string) error
 	Compact() error
-	TestNotifications(alert TestNotificationAlert) ([]NotifyTestResult, error)
+	TestNotifications(a TestNotificationAlert) ([]alert.NotifyResult, error)
 }
 
 // DaemonClient communicates with bewitchd over the unix socket or TCP API.
@@ -64,12 +63,8 @@ func NewDaemonClient(socketPath string) *DaemonClient {
 		baseURL: "http://bewitch",
 		etags:   make(map[string]string),
 		http: &http.Client{
-			Timeout: 5 * time.Second,
-			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", socketPath)
-				},
-			},
+			Timeout:   5 * time.Second,
+			Transport: api.NewUnixTransport(socketPath),
 		},
 	}
 }
@@ -79,25 +74,16 @@ func NewDaemonClient(socketPath string) *DaemonClient {
 // If token is non-empty, an Authorization: Bearer header is injected on every request.
 func NewDaemonClientTCP(addr string, tlsCfg *tls.Config, token string) *DaemonClient {
 	scheme := "http"
-	transport := &http.Transport{
-		MaxIdleConns:       10,
-		IdleConnTimeout:    30 * time.Second,
-		DisableCompression: true,
-	}
 	if tlsCfg != nil {
 		scheme = "https"
-		transport.TLSClientConfig = tlsCfg
 	}
-	var rt http.RoundTripper = transport
-	if token != "" {
-		rt = &api.AuthTransport{Base: transport, Token: token}
-	}
+	transport := api.NewTCPTransport(tlsCfg)
 	return &DaemonClient{
 		baseURL: scheme + "://" + addr,
 		etags:   make(map[string]string),
 		http: &http.Client{
 			Timeout:   5 * time.Second,
-			Transport: rt,
+			Transport: api.WrapTransport(transport, token),
 		},
 	}
 }
@@ -265,12 +251,18 @@ func (c *DaemonClient) Compact() error {
 	return nil
 }
 
-func (c *DaemonClient) Archive() error {
-	client := &http.Client{
+// longClient returns an HTTP client with a 5-minute timeout, sharing the
+// same transport as the main client. Used for long-running operations like
+// archive, unarchive, and snapshot.
+func (c *DaemonClient) longClient() *http.Client {
+	return &http.Client{
 		Timeout:   5 * time.Minute,
 		Transport: c.http.Transport,
 	}
-	resp, err := client.Post(c.baseURL+"/api/archive", "application/json", nil)
+}
+
+func (c *DaemonClient) Archive() error {
+	resp, err := c.longClient().Post(c.baseURL+"/api/archive", "application/json", nil)
 	if err != nil {
 		return err
 	}
@@ -282,11 +274,7 @@ func (c *DaemonClient) Archive() error {
 }
 
 func (c *DaemonClient) Unarchive() error {
-	client := &http.Client{
-		Timeout:   5 * time.Minute,
-		Transport: c.http.Transport,
-	}
-	resp, err := client.Post(c.baseURL+"/api/unarchive", "application/json", nil)
+	resp, err := c.longClient().Post(c.baseURL+"/api/unarchive", "application/json", nil)
 	if err != nil {
 		return err
 	}
@@ -302,12 +290,7 @@ func (c *DaemonClient) Snapshot(path string, withSystemTables bool) (*api.Snapsh
 	if err != nil {
 		return nil, err
 	}
-	// Use a longer timeout for snapshots (large DBs may take a while)
-	client := &http.Client{
-		Timeout:   5 * time.Minute,
-		Transport: c.http.Transport,
-	}
-	resp, err := client.Post(c.baseURL+"/api/snapshot", "application/json", bytes.NewReader(body))
+	resp, err := c.longClient().Post(c.baseURL+"/api/snapshot", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -407,16 +390,6 @@ func (c *DaemonClient) ToggleAlertRule(id int) error {
 	return nil
 }
 
-// NotifyTestResult holds the outcome of a single notification test delivery.
-type NotifyTestResult struct {
-	Method     string `json:"method"`
-	Dest       string `json:"dest"`
-	StatusCode int    `json:"status_code"`
-	LatencyNs  int64  `json:"latency_ns"`
-	Error      string `json:"error,omitempty"`
-	Body       string `json:"body,omitempty"`
-}
-
 // TestNotificationAlert describes the alert payload to send when testing notifications.
 type TestNotificationAlert struct {
 	RuleName string `json:"rule_name"`
@@ -424,8 +397,8 @@ type TestNotificationAlert struct {
 	Message  string `json:"message"`
 }
 
-func (c *DaemonClient) TestNotifications(alert TestNotificationAlert) ([]NotifyTestResult, error) {
-	payload, _ := json.Marshal(alert)
+func (c *DaemonClient) TestNotifications(a TestNotificationAlert) ([]alert.NotifyResult, error) {
+	payload, _ := json.Marshal(a)
 	resp, err := c.http.Post(c.baseURL+"/api/test-notifications", "application/json", bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
@@ -435,7 +408,7 @@ func (c *DaemonClient) TestNotifications(alert TestNotificationAlert) ([]NotifyT
 		return nil, extractPostError("POST", "/api/test-notifications", resp)
 	}
 	var result struct {
-		Results []NotifyTestResult `json:"results"`
+		Results []alert.NotifyResult `json:"results"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("parsing response: %w", err)

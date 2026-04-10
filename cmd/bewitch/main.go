@@ -18,6 +18,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/duggan/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/format"
 	"github.com/duggan/bewitch/internal/repl"
 	"github.com/duggan/bewitch/internal/tui"
 )
@@ -95,7 +96,7 @@ func main() {
 
 	refreshInterval := 2 * time.Second
 	if cfg.TUI.RefreshInterval != "" {
-		if d, err := time.ParseDuration(cfg.TUI.RefreshInterval); err == nil {
+		if d, err := config.ParseDuration(cfg.TUI.RefreshInterval); err == nil {
 			refreshInterval = d
 		}
 	}
@@ -428,7 +429,7 @@ func runCaptureFrames(cfg *config.Config, addr string, tlsCfg *tls.Config, token
 				fmt.Fprintf(os.Stderr, "missing value for --delay\n")
 				os.Exit(1)
 			}
-			v, err := time.ParseDuration(args[i])
+			v, err := config.ParseDuration(args[i])
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "invalid --delay value: %s\n", args[i])
 				os.Exit(1)
@@ -490,16 +491,6 @@ func runCaptureFrames(cfg *config.Config, addr string, tlsCfg *tls.Config, token
 		totalFrames += len(stateFrames)
 	}
 	fi, _ := f.Stat()
-	fmt.Printf("done: %d states, %d total frames, %s\n", len(stateMap.States), totalFrames, formatBytes(fi.Size()))
+	fmt.Printf("done: %d states, %d total frames, %s\n", len(stateMap.States), totalFrames, format.BytesLong(fi.Size()))
 }
 
-func formatBytes(b int64) string {
-	switch {
-	case b >= 1024*1024:
-		return fmt.Sprintf("%.1f MB", float64(b)/(1024*1024))
-	case b >= 1024:
-		return fmt.Sprintf("%.1f KB", float64(b)/1024)
-	default:
-		return fmt.Sprintf("%d B", b)
-	}
-}

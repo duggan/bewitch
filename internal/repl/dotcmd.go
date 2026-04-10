@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/duggan/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/format"
 )
 
 func (r *REPL) handleDotCommand(input string) {
@@ -428,7 +429,7 @@ func (r *REPL) printBanner() {
 					totalSize += info.Size()
 				}
 			}
-			fmt.Fprintf(r.out(), "Archive:  %s (%d files, %s)\n", r.archivePath, len(entries), formatBytes(totalSize))
+			fmt.Fprintf(r.out(), "Archive:  %s (%d files, %s)\n", r.archivePath, len(entries), format.BytesLong(totalSize))
 			fmt.Fprintf(r.out(), "          Use all_* views to query across DuckDB + archived data\n")
 		}
 	}
@@ -436,15 +437,3 @@ func (r *REPL) printBanner() {
 	fmt.Fprintf(r.out(), "Type .help for commands, Ctrl+D to exit.\n\n")
 }
 
-func formatBytes(b int64) string {
-	switch {
-	case b >= 1<<30:
-		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
-	case b >= 1<<20:
-		return fmt.Sprintf("%.1f MB", float64(b)/float64(1<<20))
-	case b >= 1<<10:
-		return fmt.Sprintf("%.1f KB", float64(b)/float64(1<<10))
-	default:
-		return fmt.Sprintf("%d B", b)
-	}
-}

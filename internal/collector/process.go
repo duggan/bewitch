@@ -104,9 +104,9 @@ const cmdlineCacheTTL = 60 * time.Second
 // maxProcs limits how many processes are tracked per sample (top N by resource usage).
 // configPins are glob patterns of process names to always enrich and store.
 func NewProcessCollector(maxProcs int, configPins []string) (*ProcessCollector, error) {
-	fs, err := procfs.NewDefaultFS()
+	fs, err := newProcFS()
 	if err != nil {
-		return nil, fmt.Errorf("creating procfs: %w", err)
+		return nil, err
 	}
 
 	// Get system boot time for calculating process start times

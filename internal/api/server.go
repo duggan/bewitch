@@ -17,6 +17,7 @@ import (
 
 	"github.com/duggan/bewitch/internal/alert"
 	"github.com/duggan/bewitch/internal/config"
+	"github.com/duggan/bewitch/internal/store"
 )
 
 // Server is the daemon HTTP API server over a unix socket (and optionally TCP).
@@ -379,6 +380,19 @@ func metricsGenETag(gen uint64) string {
 	return strconv.FormatUint(gen, 36)
 }
 
+// serveCached handles ETag-based caching for metric responses. If the client's
+// If-None-Match matches, it sends 304. Otherwise it sets the ETag header and
+// writes the JSON response. Always returns true (the response was handled).
+func serveCached(w http.ResponseWriter, r *http.Request, data any, gen uint64) {
+	etag := metricsGenETag(gen)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("ETag", etag)
+	writeJSON(w, http.StatusOK, data)
+}
+
 // SetArchiveConfig sets the archive configuration for query building.
 // It also creates all_* views that union DuckDB tables with Parquet archives.
 func (s *Server) SetArchiveConfig(archivePath string, archiveThreshold time.Duration) {
@@ -409,7 +423,7 @@ func (s *Server) CreateArchiveViews() {
 		viewName := "all_" + table
 		parquetGlob := filepath.Join(s.archivePath, table, "*.parquet")
 
-		if hasParquetFiles(s.archivePath, table) {
+		if store.HasParquetFiles(s.archivePath, table) {
 			query := fmt.Sprintf(
 				`CREATE OR REPLACE VIEW %s AS SELECT * FROM %s UNION ALL SELECT * FROM read_parquet('%s')`,
 				viewName, table, parquetGlob)
@@ -453,13 +467,6 @@ func (s *Server) CreateArchiveViews() {
 	}
 }
 
-// hasParquetFiles checks whether any .parquet files exist in the archive
-// directory for the given table.
-func hasParquetFiles(archivePath, table string) bool {
-	pattern := filepath.Join(archivePath, table, "*.parquet")
-	matches, err := filepath.Glob(pattern)
-	return err == nil && len(matches) > 0
-}
 
 func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	s := &Server{

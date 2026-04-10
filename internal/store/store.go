@@ -592,7 +592,7 @@ func (s *Store) Snapshot(snapshotPath, archivePath string, withSystemTables bool
 	for _, table := range metricTables {
 		var query string
 		parquetGlob := filepath.Join(archivePath, table, "*.parquet")
-		if archivePath != "" && hasParquetFiles(archivePath, table) {
+		if archivePath != "" && HasParquetFiles(archivePath, table) {
 			query = fmt.Sprintf(
 				"INSERT INTO snap_db.%s SELECT * FROM %s UNION ALL SELECT * FROM read_parquet('%s')",
 				table, table, parquetGlob)
@@ -682,23 +682,31 @@ func (s *Store) Snapshot(snapshotPath, archivePath string, withSystemTables bool
 	return nil
 }
 
-// hasParquetFiles checks whether any .parquet files exist for a table in the archive.
-func hasParquetFiles(archivePath, table string) bool {
+// HasParquetFiles checks whether any .parquet files exist for a table in the archive.
+func HasParquetFiles(archivePath, table string) bool {
 	pattern := filepath.Join(archivePath, table, "*.parquet")
 	matches, err := filepath.Glob(pattern)
 	return err == nil && len(matches) > 0
 }
 
-func (s *Store) writeCPU(sample collector.Sample, data collector.CPUData) error {
+// withTx runs fn within a database transaction, handling begin, rollback on
+// error, and commit.
+func (s *Store) withTx(fn func(*sql.Tx) error) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
-	if err := s.writeCPUTx(tx, sample, data); err != nil {
+	if err := fn(tx); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *Store) writeCPU(sample collector.Sample, data collector.CPUData) error {
+	return s.withTx(func(tx *sql.Tx) error {
+		return s.writeCPUTx(tx, sample, data)
+	})
 }
 
 func (s *Store) writeCPUTx(tx *sql.Tx, sample collector.Sample, data collector.CPUData) error {
@@ -717,15 +725,9 @@ func (s *Store) writeCPUTx(tx *sql.Tx, sample collector.Sample, data collector.C
 }
 
 func (s *Store) writeMemory(sample collector.Sample, data collector.MemoryData) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-	if err := s.writeMemoryTx(tx, sample, data); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.withTx(func(tx *sql.Tx) error {
+		return s.writeMemoryTx(tx, sample, data)
+	})
 }
 
 func (s *Store) writeMemoryTx(tx *sql.Tx, sample collector.Sample, data collector.MemoryData) error {
@@ -737,15 +739,9 @@ func (s *Store) writeMemoryTx(tx *sql.Tx, sample collector.Sample, data collecto
 }
 
 func (s *Store) writeDisk(sample collector.Sample, data collector.DiskData) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-	if err := s.writeDiskTx(tx, sample, data); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.withTx(func(tx *sql.Tx) error {
+		return s.writeDiskTx(tx, sample, data)
+	})
 }
 
 func (s *Store) writeDiskTx(tx *sql.Tx, sample collector.Sample, data collector.DiskData) error {
@@ -776,15 +772,9 @@ func (s *Store) writeDiskTx(tx *sql.Tx, sample collector.Sample, data collector.
 }
 
 func (s *Store) writeNetwork(sample collector.Sample, data collector.NetworkData) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-	if err := s.writeNetworkTx(tx, sample, data); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.withTx(func(tx *sql.Tx) error {
+		return s.writeNetworkTx(tx, sample, data)
+	})
 }
 
 func (s *Store) writeNetworkTx(tx *sql.Tx, sample collector.Sample, data collector.NetworkData) error {
@@ -807,15 +797,9 @@ func (s *Store) writeNetworkTx(tx *sql.Tx, sample collector.Sample, data collect
 }
 
 func (s *Store) writeECC(sample collector.Sample, data collector.ECCData) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-	if err := s.writeECCTx(tx, sample, data); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.withTx(func(tx *sql.Tx) error {
+		return s.writeECCTx(tx, sample, data)
+	})
 }
 
 func (s *Store) writeECCTx(tx *sql.Tx, sample collector.Sample, data collector.ECCData) error {
@@ -827,15 +811,9 @@ func (s *Store) writeECCTx(tx *sql.Tx, sample collector.Sample, data collector.E
 }
 
 func (s *Store) writeTemperature(sample collector.Sample, data collector.TemperatureData) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-	if err := s.writeTemperatureTx(tx, sample, data); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.withTx(func(tx *sql.Tx) error {
+		return s.writeTemperatureTx(tx, sample, data)
+	})
 }
 
 func (s *Store) writeTemperatureTx(tx *sql.Tx, sample collector.Sample, data collector.TemperatureData) error {
@@ -858,15 +836,9 @@ func (s *Store) writeTemperatureTx(tx *sql.Tx, sample collector.Sample, data col
 }
 
 func (s *Store) writePower(sample collector.Sample, data collector.PowerData) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-	if err := s.writePowerTx(tx, sample, data); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.withTx(func(tx *sql.Tx) error {
+		return s.writePowerTx(tx, sample, data)
+	})
 }
 
 func (s *Store) writePowerTx(tx *sql.Tx, sample collector.Sample, data collector.PowerData) error {
@@ -889,15 +861,9 @@ func (s *Store) writePowerTx(tx *sql.Tx, sample collector.Sample, data collector
 }
 
 func (s *Store) writeGPU(sample collector.Sample, data collector.GPUData) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-	if err := s.writeGPUTx(tx, sample, data); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.withTx(func(tx *sql.Tx) error {
+		return s.writeGPUTx(tx, sample, data)
+	})
 }
 
 func (s *Store) writeGPUTx(tx *sql.Tx, sample collector.Sample, data collector.GPUData) error {
@@ -922,15 +888,9 @@ func (s *Store) writeGPUTx(tx *sql.Tx, sample collector.Sample, data collector.G
 }
 
 func (s *Store) writeProcess(sample collector.Sample, data collector.ProcessData) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-	if err := s.writeProcessTx(tx, sample, data); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.withTx(func(tx *sql.Tx) error {
+		return s.writeProcessTx(tx, sample, data)
+	})
 }
 
 func (s *Store) writeProcessTx(tx *sql.Tx, sample collector.Sample, data collector.ProcessData) error {

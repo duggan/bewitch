@@ -16,9 +16,9 @@ type CPUCollector struct {
 }
 
 func NewCPUCollector() (*CPUCollector, error) {
-	fs, err := procfs.NewDefaultFS()
+	fs, err := newProcFS()
 	if err != nil {
-		return nil, fmt.Errorf("creating procfs: %w", err)
+		return nil, err
 	}
 	stat, err := fs.Stat()
 	if err != nil {

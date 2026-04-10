@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/duggan/bewitch/internal/api"
+	"github.com/duggan/bewitch/internal/format"
 )
 
 func TestFormatValue(t *testing.T) {
@@ -251,9 +252,9 @@ func TestFormatBytes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := formatBytes(tt.b)
+		got := format.BytesLong(tt.b)
 		if got != tt.want {
-			t.Errorf("formatBytes(%d) = %q, want %q", tt.b, got, tt.want)
+			t.Errorf("format.BytesLong(%d) = %q, want %q", tt.b, got, tt.want)
 		}
 	}
 }

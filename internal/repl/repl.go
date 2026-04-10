@@ -3,16 +3,15 @@ package repl
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/knz/bubbline"
 	"github.com/duggan/bewitch/internal/api"
@@ -44,28 +43,21 @@ func New(cfg Config) (*REPL, error) {
 	var target string // for error messages
 
 	if cfg.Addr != "" {
-		transport := &http.Transport{}
+		transport := api.NewTCPTransport(cfg.TLSConfig)
 		scheme := "http"
 		if cfg.TLSConfig != nil {
-			transport.TLSClientConfig = cfg.TLSConfig
 			scheme = "https"
 		}
-		var rt http.RoundTripper = transport
-		if cfg.Token != "" {
-			rt = &api.AuthTransport{Base: transport, Token: cfg.Token}
-		}
 		client = &http.Client{
-			Transport: rt,
+			Timeout:   5 * time.Second,
+			Transport: api.WrapTransport(transport, cfg.Token),
 		}
 		baseURL = scheme + "://" + cfg.Addr
 		target = cfg.Addr
 	} else {
 		client = &http.Client{
-			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", cfg.Socket)
-				},
-			},
+			Timeout:   5 * time.Second,
+			Transport: api.NewUnixTransport(cfg.Socket),
 		}
 		baseURL = "http://localhost"
 		target = cfg.Socket

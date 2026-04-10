@@ -174,13 +174,7 @@ type DashboardData struct {
 
 func (s *Server) handleMetricsCPU(w http.ResponseWriter, r *http.Request) {
 	if cpu, gen := s.getCachedCPU(); cpu != nil {
-		etag := metricsGenETag(gen)
-		if r.Header.Get("If-None-Match") == etag {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		writeJSON(w, http.StatusOK, CPUResponse{Cores: cpu})
+		serveCached(w, r, CPUResponse{Cores: cpu}, gen)
 		return
 	}
 	rows, err := s.dbFn().Query("SELECT core, user_pct, system_pct, idle_pct, iowait_pct FROM cpu_metrics WHERE ts = (SELECT MAX(ts) FROM cpu_metrics) ORDER BY core")
@@ -209,13 +203,7 @@ func (s *Server) handleMetricsCPU(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMetricsMemory(w http.ResponseWriter, r *http.Request) {
 	if mem, gen := s.getCachedMemory(); mem != nil {
-		etag := metricsGenETag(gen)
-		if r.Header.Get("If-None-Match") == etag {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		writeJSON(w, http.StatusOK, mem)
+		serveCached(w, r, mem, gen)
 		return
 	}
 	var m MemoryMetric
@@ -230,13 +218,7 @@ func (s *Server) handleMetricsMemory(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMetricsDisk(w http.ResponseWriter, r *http.Request) {
 	if disks, gen := s.getCachedDisk(); disks != nil {
-		etag := metricsGenETag(gen)
-		if r.Header.Get("If-None-Match") == etag {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		writeJSON(w, http.StatusOK, DiskResponse{Disks: disks})
+		serveCached(w, r, DiskResponse{Disks: disks}, gen)
 		return
 	}
 	rows, err := s.dbFn().Query(`SELECT dm.value, dd.value, m.total_bytes, m.used_bytes, m.free_bytes,
@@ -269,13 +251,7 @@ func (s *Server) handleMetricsDisk(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMetricsNetwork(w http.ResponseWriter, r *http.Request) {
 	if net, gen := s.getCachedNetwork(); net != nil {
-		etag := metricsGenETag(gen)
-		if r.Header.Get("If-None-Match") == etag {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		writeJSON(w, http.StatusOK, NetworkResponse{Interfaces: net})
+		serveCached(w, r, NetworkResponse{Interfaces: net}, gen)
 		return
 	}
 	rows, err := s.dbFn().Query(`SELECT d.value, m.rx_bytes_sec, m.tx_bytes_sec, m.rx_packets_sec, m.tx_packets_sec, m.rx_errors, m.tx_errors
@@ -303,13 +279,7 @@ func (s *Server) handleMetricsNetwork(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMetricsTemperature(w http.ResponseWriter, r *http.Request) {
 	if temps, gen := s.getCachedTemperature(); temps != nil {
-		etag := metricsGenETag(gen)
-		if r.Header.Get("If-None-Match") == etag {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		writeJSON(w, http.StatusOK, TemperatureResponse{Sensors: temps})
+		serveCached(w, r, TemperatureResponse{Sensors: temps}, gen)
 		return
 	}
 	rows, err := s.dbFn().Query(`SELECT d.value, m.temp_celsius
@@ -337,13 +307,7 @@ func (s *Server) handleMetricsTemperature(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleMetricsPower(w http.ResponseWriter, r *http.Request) {
 	if power, gen := s.getCachedPower(); power != nil {
-		etag := metricsGenETag(gen)
-		if r.Header.Get("If-None-Match") == etag {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		writeJSON(w, http.StatusOK, PowerResponse{Zones: power})
+		serveCached(w, r, PowerResponse{Zones: power}, gen)
 		return
 	}
 	rows, err := s.dbFn().Query(`SELECT d.value, m.watts
@@ -371,13 +335,7 @@ func (s *Server) handleMetricsPower(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMetricsDashboard(w http.ResponseWriter, r *http.Request) {
 	if dash, gen := s.getCachedDashboard(); dash != nil {
-		etag := metricsGenETag(gen)
-		if r.Header.Get("If-None-Match") == etag {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		writeJSON(w, http.StatusOK, dash)
+		serveCached(w, r, dash, gen)
 		return
 	}
 	dash := DashboardData{}
@@ -529,13 +487,7 @@ func (s *Server) handleMetricsDashboard(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleMetricsECC(w http.ResponseWriter, r *http.Request) {
 	if ecc, gen := s.getCachedECC(); ecc != nil {
-		etag := metricsGenETag(gen)
-		if r.Header.Get("If-None-Match") == etag {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		writeJSON(w, http.StatusOK, ECCResponse{ECC: ecc})
+		serveCached(w, r, ECCResponse{ECC: ecc}, gen)
 		return
 	}
 	var m ECCMetric
@@ -549,15 +501,8 @@ func (s *Server) handleMetricsECC(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMetricsGPU(w http.ResponseWriter, r *http.Request) {
-	gpus, gen := s.getCachedGPU()
-	if gpus != nil {
-		etag := metricsGenETag(gen)
-		if r.Header.Get("If-None-Match") == etag {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		writeJSON(w, http.StatusOK, GPUResponse{GPUs: gpus, Hints: s.gpuHints})
+	if gpus, gen := s.getCachedGPU(); gpus != nil {
+		serveCached(w, r, GPUResponse{GPUs: gpus, Hints: s.gpuHints}, gen)
 		return
 	}
 	rows, err := s.dbFn().Query(`SELECT d.value, m.utilization_pct, m.memory_used_bytes, m.memory_total_bytes,
@@ -595,13 +540,7 @@ func (s *Server) handleMetricsProcess(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, &ProcessResponse{})
 		return
 	}
-	etag := metricsGenETag(gen)
-	if r.Header.Get("If-None-Match") == etag {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-	w.Header().Set("ETag", etag)
-	writeJSON(w, http.StatusOK, snap)
+	serveCached(w, r, snap, gen)
 }
 
 func nf(n sql.NullFloat64) float64 {

@@ -23,7 +23,7 @@ type Engine struct {
 func NewEngine(dbFn func() *sql.DB, cfg *config.AlertsConfig) *Engine {
 	interval := 10 * time.Second
 	if cfg.EvaluationInterval != "" {
-		if d, err := time.ParseDuration(cfg.EvaluationInterval); err == nil {
+		if d, err := config.ParseDuration(cfg.EvaluationInterval); err == nil {
 			interval = d
 		}
 	}

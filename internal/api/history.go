@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/duggan/bewitch/internal/store"
 )
 
 // querySource determines where to query data from based on archive configuration.
@@ -60,7 +61,7 @@ func (s *Server) getQuerySource(start, end time.Time) querySource {
 // have not.
 func (s *Server) getQuerySourceForTable(start, end time.Time, table string) querySource {
 	source := s.getQuerySource(start, end)
-	if source != querySourceDuckDB && !hasParquetFiles(s.archivePath, table) {
+	if source != querySourceDuckDB && !store.HasParquetFiles(s.archivePath, table) {
 		return querySourceDuckDB
 	}
 	return source
@@ -69,7 +70,7 @@ func (s *Server) getQuerySourceForTable(start, end time.Time, table string) quer
 // hasAnyParquetFiles returns true if any metric table has archived Parquet files.
 func (s *Server) hasAnyParquetFiles() bool {
 	for _, table := range archiveViewTables {
-		if hasParquetFiles(s.archivePath, table) {
+		if store.HasParquetFiles(s.archivePath, table) {
 			return true
 		}
 	}

@@ -140,7 +140,7 @@ func collectorInterval(configured string, defaultInterval time.Duration) time.Du
 	if configured == "" {
 		return defaultInterval
 	}
-	d, err := parseDuration(configured)
+	d, err := ParseDuration(configured)
 	if err != nil {
 		return defaultInterval
 	}
@@ -258,7 +258,7 @@ func (c *DiskCollectorConfig) GetSMARTInterval() time.Duration {
 	if c.SMARTInterval == "" {
 		return 5 * time.Minute
 	}
-	d, err := parseDuration(c.SMARTInterval)
+	d, err := ParseDuration(c.SMARTInterval)
 	if err != nil {
 		return 5 * time.Minute
 	}
@@ -315,7 +315,7 @@ func (c *TUIConfig) ParseHistoryRanges() ([]HistoryRange, error) {
 	}
 	ranges := make([]HistoryRange, 0, len(c.HistoryRanges))
 	for _, s := range c.HistoryRanges {
-		d, err := parseDuration(s)
+		d, err := ParseDuration(s)
 		if err != nil {
 			return nil, fmt.Errorf("invalid history range %q: %w", s, err)
 		}
@@ -324,8 +324,8 @@ func (c *TUIConfig) ParseHistoryRanges() ([]HistoryRange, error) {
 	return ranges, nil
 }
 
-// parseDuration parses a duration string supporting "Nd" day format and Go durations.
-func parseDuration(s string) (time.Duration, error) {
+// ParseDuration parses a duration string supporting "Nd" day format and Go durations.
+func ParseDuration(s string) (time.Duration, error) {
 	if len(s) > 1 && s[len(s)-1] == 'd' {
 		var n int
 		if _, err := fmt.Sscanf(s[:len(s)-1], "%d", &n); err != nil {
@@ -342,7 +342,7 @@ func (c *DaemonConfig) DefaultCollectionInterval() (time.Duration, error) {
 	if c.DefaultInterval == "" {
 		return 5 * time.Second, nil
 	}
-	d, err := parseDuration(c.DefaultInterval)
+	d, err := ParseDuration(c.DefaultInterval)
 	if err != nil {
 		return 0, fmt.Errorf("invalid default_interval %q: %w", c.DefaultInterval, err)
 	}
@@ -359,16 +359,7 @@ func (c *DaemonConfig) RetentionDuration() (time.Duration, error) {
 	if c.Retention == "" {
 		return 0, nil
 	}
-	// Handle "Nd" day format
-	if len(c.Retention) > 1 && c.Retention[len(c.Retention)-1] == 'd' {
-		days := c.Retention[:len(c.Retention)-1]
-		var n int
-		if _, err := fmt.Sscanf(days, "%d", &n); err != nil {
-			return 0, fmt.Errorf("invalid retention %q: %w", c.Retention, err)
-		}
-		return time.Duration(n) * 24 * time.Hour, nil
-	}
-	d, err := time.ParseDuration(c.Retention)
+	d, err := ParseDuration(c.Retention)
 	if err != nil {
 		return 0, fmt.Errorf("invalid retention %q: %w", c.Retention, err)
 	}
@@ -381,7 +372,7 @@ func (c *DaemonConfig) PruneDuration() (time.Duration, error) {
 	if c.PruneInterval == "" {
 		return time.Hour, nil
 	}
-	return parseDuration(c.PruneInterval)
+	return ParseDuration(c.PruneInterval)
 }
 
 // CompactionDuration parses the compaction_interval string.
@@ -390,7 +381,7 @@ func (c *DaemonConfig) CompactionDuration() (time.Duration, error) {
 	if c.CompactionInterval == "" {
 		return 0, nil
 	}
-	return parseDuration(c.CompactionInterval)
+	return ParseDuration(c.CompactionInterval)
 }
 
 // CheckpointDuration parses the checkpoint_interval string.
@@ -399,7 +390,7 @@ func (c *DaemonConfig) CheckpointDuration() (time.Duration, error) {
 	if c.CheckpointInterval == "" {
 		return 0, nil
 	}
-	return parseDuration(c.CheckpointInterval)
+	return ParseDuration(c.CheckpointInterval)
 }
 
 // ArchiveThresholdDuration parses the archive_threshold string.
@@ -408,7 +399,7 @@ func (c *DaemonConfig) ArchiveThresholdDuration() (time.Duration, error) {
 	if c.ArchiveThreshold == "" {
 		return 0, nil
 	}
-	return parseDuration(c.ArchiveThreshold)
+	return ParseDuration(c.ArchiveThreshold)
 }
 
 // ArchiveIntervalDuration parses the archive_interval string.
@@ -417,7 +408,7 @@ func (c *DaemonConfig) ArchiveIntervalDuration() (time.Duration, error) {
 	if c.ArchiveInterval == "" {
 		return 6 * time.Hour, nil
 	}
-	return parseDuration(c.ArchiveInterval)
+	return ParseDuration(c.ArchiveInterval)
 }
 
 // ValidateTLS checks TLS configuration for consistency.

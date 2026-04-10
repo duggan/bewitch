@@ -29,9 +29,9 @@ type NetworkCollector struct {
 }
 
 func NewNetworkCollector() (*NetworkCollector, error) {
-	fs, err := procfs.NewDefaultFS()
+	fs, err := newProcFS()
 	if err != nil {
-		return nil, fmt.Errorf("creating procfs: %w", err)
+		return nil, err
 	}
 	netDev, err := fs.NetDev()
 	if err != nil {

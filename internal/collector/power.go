@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-const zoneCacheRefreshInterval = 60 * time.Second
 
 type PowerZoneSample struct {
 	Zone  string
@@ -24,10 +23,10 @@ type zonePath struct {
 }
 
 type PowerCollector struct {
-	zones         []zonePath
-	prev          map[string]int64 // zone path -> energy_uj
-	prevTime      time.Time
-	lastDiscovery time.Time
+	zones    []zonePath
+	prev     map[string]int64 // zone path -> energy_uj
+	prevTime time.Time
+	sysfsCache
 }
 
 func NewPowerCollector() *PowerCollector {
@@ -77,14 +76,13 @@ func (c *PowerCollector) discoverZones() {
 		})
 	}
 
-	c.lastDiscovery = time.Now()
+	c.markRefreshed()
 }
 
 func (c *PowerCollector) Collect() (Sample, error) {
 	now := time.Now()
 
-	// Refresh zone discovery periodically
-	if time.Since(c.lastDiscovery) > zoneCacheRefreshInterval || len(c.zones) == 0 {
+	if c.needsRefresh(len(c.zones)) {
 		c.discoverZones()
 	}
 

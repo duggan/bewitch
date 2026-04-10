@@ -29,13 +29,13 @@ func TestParseDuration(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got, err := parseDuration(tt.input)
+			got, err := ParseDuration(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseDuration(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				t.Errorf("ParseDuration(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
 				return
 			}
 			if got != tt.want {
-				t.Errorf("parseDuration(%q) = %v, want %v", tt.input, got, tt.want)
+				t.Errorf("ParseDuration(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
 	}

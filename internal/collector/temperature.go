@@ -1,14 +1,12 @@
 package collector
 
 import (
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
 
-const sensorCacheRefreshInterval = 60 * time.Second
 
 type TempSensorSample struct {
 	Sensor      string
@@ -26,8 +24,8 @@ type sensorPath struct {
 }
 
 type TemperatureCollector struct {
-	sensors       []sensorPath
-	lastDiscovery time.Time
+	sensors  []sensorPath
+	sysfsCache
 }
 
 func NewTemperatureCollector() *TemperatureCollector {
@@ -75,12 +73,11 @@ func (c *TemperatureCollector) discoverSensors() {
 		}
 	}
 
-	c.lastDiscovery = time.Now()
+	c.markRefreshed()
 }
 
 func (c *TemperatureCollector) Collect() (Sample, error) {
-	// Refresh sensor discovery periodically
-	if time.Since(c.lastDiscovery) > sensorCacheRefreshInterval || len(c.sensors) == 0 {
+	if c.needsRefresh(len(c.sensors)) {
 		c.discoverSensors()
 	}
 
@@ -109,20 +106,4 @@ func (c *TemperatureCollector) Collect() (Sample, error) {
 		Kind:      "temperature",
 		Data:      TemperatureData{Sensors: sensors},
 	}, nil
-}
-
-func readString(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
-}
-
-func readStringFile(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return string(data)
 }
