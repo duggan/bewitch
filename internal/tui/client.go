@@ -102,6 +102,14 @@ func (c *DaemonClient) GetStatus() (map[string]any, error) {
 	return result, nil
 }
 
+func (c *DaemonClient) Stats() (*api.StatsResponse, error) {
+	var resp api.StatsResponse
+	if err := c.getJSON("/api/stats", &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *DaemonClient) GetDashboard() (*api.DashboardData, error) {
 	var dash api.DashboardData
 	if err := c.getJSON("/api/metrics/dashboard", &dash); err != nil {

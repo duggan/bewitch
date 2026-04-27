@@ -36,6 +36,8 @@ type Server struct {
 	unarchiveFn      func() error        // called to reload Parquet data into DuckDB
 	archiveStatusFn  func() ([]ArchiveStatusItem, error)
 	archiveDirStatFn func() (*ArchiveDirStats, error)
+	statsFn          func() (*StatsCore, error)
+	version          string
 	archivePath      string
 	archiveThreshold time.Duration
 	notifiers          []alert.Notifier   // notification destinations for test endpoint
@@ -135,6 +137,16 @@ func (s *Server) SetArchiveStatusFunc(fn func() ([]ArchiveStatusItem, error)) {
 // SetArchiveDirStatFunc sets the callback to get archive directory stats.
 func (s *Server) SetArchiveDirStatFunc(fn func() (*ArchiveDirStats, error)) {
 	s.archiveDirStatFn = fn
+}
+
+// SetStatsFunc sets the callback that supplies the store-sourced bits of /api/stats.
+func (s *Server) SetStatsFunc(fn func() (*StatsCore, error)) {
+	s.statsFn = fn
+}
+
+// SetVersion records the daemon version string for /api/status and /api/stats.
+func (s *Server) SetVersion(v string) {
+	s.version = v
 }
 
 // SetCollectorIntervals stores per-collector interval info for the status endpoint.
@@ -430,6 +442,7 @@ func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/status", s.handleStatus)
+	mux.HandleFunc("GET /api/stats", s.handleStats)
 	mux.HandleFunc("GET /api/alerts", s.handleListAlerts)
 	mux.HandleFunc("POST /api/alerts/{id}/ack", s.handleAckAlert)
 	mux.HandleFunc("GET /api/config", s.handleGetConfig)

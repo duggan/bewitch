@@ -11,12 +11,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
+	"github.com/duggan/bewitch/internal/api"
 	"github.com/duggan/bewitch/internal/config"
 	"github.com/duggan/bewitch/internal/format"
 	"github.com/duggan/bewitch/internal/repl"
@@ -81,6 +83,9 @@ func main() {
 			return
 		case "snapshot":
 			runSnapshot(cfg, *addr, tlsCfg, effectiveToken)
+			return
+		case "stats":
+			runStats(cfg, *addr, tlsCfg, effectiveToken)
 			return
 		case "capture-views":
 			runCaptureViews(cfg, *addr, tlsCfg, effectiveToken)
@@ -304,6 +309,177 @@ func runSnapshot(cfg *config.Config, addr string, tlsCfg *tls.Config, token stri
 		os.Exit(1)
 	}
 	fmt.Printf("snapshot created: %s (%.1f MB)\n", resp.Path, float64(resp.SizeBytes)/(1024*1024))
+}
+
+func runStats(cfg *config.Config, addr string, tlsCfg *tls.Config, token string) {
+	args := flag.Args()[1:] // skip "stats"
+	var jsonOut bool
+	for _, arg := range args {
+		switch arg {
+		case "-json", "--json":
+			jsonOut = true
+		default:
+			fmt.Fprintf(os.Stderr, "unexpected argument: %s\n", arg)
+			os.Exit(1)
+		}
+	}
+
+	client := makeClient(cfg, addr, tlsCfg, token)
+	resp, err := client.Stats()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "stats failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	if jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(resp); err != nil {
+			fmt.Fprintf(os.Stderr, "encoding json: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	printStats(os.Stdout, resp)
+}
+
+// printStats renders a human-readable stats summary.
+func printStats(w *os.File, s *api.StatsResponse) {
+	tsFmt := func(ns int64) string {
+		if ns == 0 {
+			return "—"
+		}
+		return time.Unix(0, ns).Format("2006-01-02 15:04:05")
+	}
+	commas := func(n int64) string {
+		neg := n < 0
+		if neg {
+			n = -n
+		}
+		s := strconv.FormatInt(n, 10)
+		if len(s) <= 3 {
+			if neg {
+				return "-" + s
+			}
+			return s
+		}
+		var b strings.Builder
+		first := len(s) % 3
+		if first > 0 {
+			b.WriteString(s[:first])
+			if len(s) > first {
+				b.WriteByte(',')
+			}
+		}
+		for i := first; i < len(s); i += 3 {
+			b.WriteString(s[i : i+3])
+			if i+3 < len(s) {
+				b.WriteByte(',')
+			}
+		}
+		if neg {
+			return "-" + b.String()
+		}
+		return b.String()
+	}
+
+	fmt.Fprintln(w, "bewitch stats")
+	fmt.Fprintln(w, strings.Repeat("─", 40))
+	if s.Version != "" {
+		fmt.Fprintf(w, "Version:   %s\n", s.Version)
+	}
+	fmt.Fprintf(w, "Uptime:    %s\n\n", formatDuration(time.Duration(s.UptimeSec*float64(time.Second))))
+
+	fmt.Fprintln(w, "Database")
+	fmt.Fprintf(w, "  Path:    %s\n", s.Database.Path)
+	fmt.Fprintf(w, "  Size:    %s\n", format.BytesLong(s.Database.SizeBytes))
+	fmt.Fprintf(w, "  WAL:     %s\n\n", format.BytesLong(s.Database.WALBytes))
+
+	if s.Archive != nil {
+		fmt.Fprintln(w, "Archive")
+		fmt.Fprintf(w, "  Path:    %s\n", s.Archive.Path)
+		fmt.Fprintf(w, "  Files:   %d\n", s.Archive.FileCount)
+		fmt.Fprintf(w, "  Size:    %s\n\n", format.BytesLong(s.Archive.TotalBytes))
+	}
+
+	fmt.Fprintln(w, "Coverage")
+	fmt.Fprintf(w, "  Oldest:  %s\n", tsFmt(s.Coverage.OldestTs))
+	fmt.Fprintf(w, "  Newest:  %s\n", tsFmt(s.Coverage.NewestTs))
+	if s.Coverage.SpanSeconds > 0 {
+		fmt.Fprintf(w, "  Span:    %s\n", formatDuration(time.Duration(s.Coverage.SpanSeconds*float64(time.Second))))
+	} else {
+		fmt.Fprintln(w, "  Span:    —")
+	}
+	fmt.Fprintln(w)
+
+	fmt.Fprintln(w, "Tables (live DB)")
+	for _, t := range s.Tables {
+		rng := "—"
+		if t.OldestTs > 0 {
+			rng = fmt.Sprintf("%s → %s", tsFmt(t.OldestTs), tsFmt(t.NewestTs))
+		}
+		fmt.Fprintf(w, "  %-22s %14s   %s\n", t.Name, commas(t.Rows), rng)
+	}
+	fmt.Fprintln(w)
+
+	if len(s.Dimensions) > 0 {
+		fmt.Fprintln(w, "Dimensions")
+		cats := make([]string, 0, len(s.Dimensions))
+		for k := range s.Dimensions {
+			cats = append(cats, k)
+		}
+		sort.Strings(cats)
+		var parts []string
+		for _, c := range cats {
+			parts = append(parts, fmt.Sprintf("%s: %d", c, s.Dimensions[c]))
+		}
+		fmt.Fprintf(w, "  %s\n\n", strings.Join(parts, "   "))
+	}
+
+	fmt.Fprintf(w, "Processes tracked: %s\n\n", commas(s.Processes))
+
+	fmt.Fprintln(w, "Alerts")
+	fmt.Fprintf(w, "  Rules:   %d enabled, %d disabled\n", s.Alerts.RulesEnabled, s.Alerts.RulesDisabled)
+	fmt.Fprintf(w, "  Fired:   %d total, %d unacknowledged\n\n", s.Alerts.FiredTotal, s.Alerts.FiredUnacked)
+
+	if len(s.Collectors) > 0 {
+		fmt.Fprintln(w, "Collectors")
+		names := make([]string, 0, len(s.Collectors))
+		for k := range s.Collectors {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		var parts []string
+		for _, n := range names {
+			parts = append(parts, fmt.Sprintf("%s: %s", n, s.Collectors[n]))
+		}
+		fmt.Fprintf(w, "  %s\n", strings.Join(parts, "   "))
+	}
+}
+
+// formatDuration prints a duration in the form "2d 14h 22m" / "3h 12m" / "45s".
+func formatDuration(d time.Duration) string {
+	if d < time.Second {
+		return "0s"
+	}
+	days := int(d / (24 * time.Hour))
+	d -= time.Duration(days) * 24 * time.Hour
+	hours := int(d / time.Hour)
+	d -= time.Duration(hours) * time.Hour
+	mins := int(d / time.Minute)
+	d -= time.Duration(mins) * time.Minute
+	secs := int(d / time.Second)
+	switch {
+	case days > 0:
+		return fmt.Sprintf("%dd %dh %dm", days, hours, mins)
+	case hours > 0:
+		return fmt.Sprintf("%dh %dm", hours, mins)
+	case mins > 0:
+		return fmt.Sprintf("%dm %ds", mins, secs)
+	default:
+		return fmt.Sprintf("%ds", secs)
+	}
 }
 
 func runCaptureViews(cfg *config.Config, addr string, tlsCfg *tls.Config, token string) {

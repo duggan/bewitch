@@ -28,7 +28,85 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(s.startTime).Seconds()
 	interval := s.cfg.Daemon.DefaultInterval
 	writeJSON(w, http.StatusOK,
-		StatusResponse{Status: "ok", UptimeSec: uptime, DefaultInterval: interval, CollectorIntervals: s.collectorIntervals})
+		StatusResponse{Status: "ok", Version: s.version, UptimeSec: uptime, DefaultInterval: interval, CollectorIntervals: s.collectorIntervals})
+}
+
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	resp := StatsResponse{
+		Version:    s.version,
+		UptimeSec:  time.Since(s.startTime).Seconds(),
+		Database:   DatabaseStats{Path: s.cfg.Daemon.DBPath},
+		Dimensions: map[string]int64{},
+		Tables:     []TableStats{},
+		Collectors: s.collectorIntervals,
+	}
+
+	if info, err := os.Stat(s.cfg.Daemon.DBPath); err == nil {
+		resp.Database.SizeBytes = info.Size()
+	}
+	if info, err := os.Stat(s.cfg.Daemon.DBPath + ".wal"); err == nil {
+		resp.Database.WALBytes = info.Size()
+	}
+
+	if s.statsFn != nil {
+		core, err := s.statsFn()
+		if err != nil {
+			writeError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if core != nil {
+			resp.Tables = core.Tables
+			if core.Dimensions != nil {
+				resp.Dimensions = core.Dimensions
+			}
+			resp.Processes = core.Processes
+			resp.Alerts = core.Alerts
+		}
+	}
+
+	// Compute live-DB coverage from per-table min/max
+	var oldest, newest int64
+	for _, t := range resp.Tables {
+		if t.OldestTs > 0 && (oldest == 0 || t.OldestTs < oldest) {
+			oldest = t.OldestTs
+		}
+		if t.NewestTs > newest {
+			newest = t.NewestTs
+		}
+	}
+
+	// Archive section + extend coverage backwards using oldest archive file date
+	if s.cfg.Daemon.ArchivePath != "" && s.archiveDirStatFn != nil {
+		dirStats, err := s.archiveDirStatFn()
+		if err == nil && dirStats != nil {
+			resp.Archive = &ArchiveStats{
+				Path:       s.cfg.Daemon.ArchivePath,
+				FileCount:  dirStats.TotalFiles,
+				TotalBytes: dirStats.TotalBytes,
+			}
+			for _, t := range dirStats.Tables {
+				if t.OldestFile == "" {
+					continue
+				}
+				d, err := time.Parse("2006-01-02", t.OldestFile)
+				if err != nil {
+					continue
+				}
+				ts := d.UnixNano()
+				if oldest == 0 || ts < oldest {
+					oldest = ts
+				}
+			}
+		}
+	}
+
+	resp.Coverage.OldestTs = oldest
+	resp.Coverage.NewestTs = newest
+	if oldest > 0 && newest > oldest {
+		resp.Coverage.SpanSeconds = float64(newest-oldest) / float64(time.Second)
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {

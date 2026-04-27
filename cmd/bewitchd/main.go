@@ -153,11 +153,38 @@ func main() {
 
 	// Start API server
 	apiServer := api.NewServer(cfg, st.DB)
+	apiServer.SetVersion(version)
 	apiServer.SetCompactFunc(func() error {
 		return st.CompactExclusive(cfg.Daemon.DBPath)
 	})
 	apiServer.SetSnapshotFunc(func(path string, withSystemTables bool) error {
 		return st.SnapshotExclusive(path, cfg.Daemon.ArchivePath, withSystemTables)
+	})
+	apiServer.SetStatsFunc(func() (*api.StatsCore, error) {
+		ss, err := st.Stats()
+		if err != nil {
+			return nil, err
+		}
+		tables := make([]api.TableStats, len(ss.Tables))
+		for i, t := range ss.Tables {
+			tables[i] = api.TableStats{
+				Name:     t.Name,
+				Rows:     t.Rows,
+				OldestTs: t.OldestTs,
+				NewestTs: t.NewestTs,
+			}
+		}
+		return &api.StatsCore{
+			Tables:     tables,
+			Dimensions: ss.Dimensions,
+			Processes:  ss.Processes,
+			Alerts: api.AlertCountStats{
+				RulesEnabled:  ss.AlertRulesEnabled,
+				RulesDisabled: ss.AlertRulesDisabled,
+				FiredTotal:    ss.AlertsFiredTotal,
+				FiredUnacked:  ss.AlertsFiredUnacked,
+			},
+		}, nil
 	})
 
 	// Configure archive if enabled

@@ -70,9 +70,66 @@ type PreferencesResponse struct {
 
 type StatusResponse struct {
 	Status             string            `json:"status"`
+	Version            string            `json:"version,omitempty"`
 	UptimeSec          float64           `json:"uptime_sec"`
 	DefaultInterval    string            `json:"default_interval"`
 	CollectorIntervals map[string]string `json:"collector_intervals,omitempty"`
+}
+
+// StatsResponse is the response for GET /api/stats.
+type StatsResponse struct {
+	Version    string            `json:"version"`
+	UptimeSec  float64           `json:"uptime_sec"`
+	Database   DatabaseStats     `json:"database"`
+	Archive    *ArchiveStats     `json:"archive,omitempty"`
+	Coverage   CoverageStats     `json:"coverage"`
+	Tables     []TableStats      `json:"tables"`
+	Dimensions map[string]int64  `json:"dimensions"`
+	Processes  int64             `json:"processes"`
+	Alerts     AlertCountStats   `json:"alerts"`
+	Collectors map[string]string `json:"collectors,omitempty"`
+}
+
+type DatabaseStats struct {
+	Path      string `json:"path"`
+	SizeBytes int64  `json:"size_bytes"`
+	WALBytes  int64  `json:"wal_bytes"`
+}
+
+type ArchiveStats struct {
+	Path       string `json:"path"`
+	FileCount  int64  `json:"file_count"`
+	TotalBytes int64  `json:"total_bytes"`
+}
+
+type CoverageStats struct {
+	OldestTs    int64   `json:"oldest_ts"`
+	NewestTs    int64   `json:"newest_ts"`
+	SpanSeconds float64 `json:"span_seconds"`
+}
+
+type TableStats struct {
+	Name     string `json:"name"`
+	Rows     int64  `json:"rows"`
+	OldestTs int64  `json:"oldest_ts"`
+	NewestTs int64  `json:"newest_ts"`
+}
+
+type AlertCountStats struct {
+	RulesEnabled  int `json:"rules_enabled"`
+	RulesDisabled int `json:"rules_disabled"`
+	FiredTotal    int `json:"fired_total"`
+	FiredUnacked  int `json:"fired_unacked"`
+}
+
+// StatsCore holds the store-sourced bits of the stats response. The handler
+// composes the full StatsResponse by adding file sizes, archive dir stats,
+// version, uptime, and collector intervals.
+type StatsCore struct {
+	Tables     []TableStats
+	Dimensions map[string]int64
+	Processes  int64
+	Alerts     AlertCountStats
 }
 
 type HistoryResponse struct {
