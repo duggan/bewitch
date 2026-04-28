@@ -6,6 +6,7 @@ const latestStable = `v${__BEWITCH_LATEST_STABLE__}`
 const isDev = current !== latestStable
 
 const archived = [
+  { label: 'v0.5.0', path: '/docs/v0.5.0' },
   { label: 'v0.4.0', path: '/docs/v0.4.0' },
   { label: 'v0.3.1', path: '/docs/v0.3.1' },
   { label: 'v0.3.0', path: '/docs/v0.3.0' },

@@ -9,6 +9,21 @@ export const ChangelogDocs: FC = () => (
       <a href="https://github.com/duggan/bewitch/blob/main/CHANGELOG.md">CHANGELOG.md</a> on GitHub.
     </p>
 
+    <h2>0.5.1</h2>
+    <p class="text-muted text-sm">2026-04-28</p>
+    <h3>Added</h3>
+    <ul>
+      <li><code>bewitch stats</code> subcommand for at-a-glance system footprint</li>
+      <li>Auto-generated API reference docs page</li>
+      <li>Uninstall script (<code>uninstall.sh</code>) supporting both APT and tarball installs, with <code>KEEP_DATA=1</code> to preserve the database</li>
+      <li>Documented <code>b</code> keybinding (bits/bytes toggle) on the network view</li>
+    </ul>
+    <h3>Changed</h3>
+    <ul>
+      <li>Installer auto-starts <code>bewitchd</code> after install — quick start reduced from 4 steps to 2</li>
+      <li>Internal refactors to consolidate duplicated plumbing across collectors, API handlers, REPL, and TUI client</li>
+    </ul>
+
     <h2>0.5.0</h2>
     <p class="text-muted text-sm">2026-04-02</p>
     <h3>Added</h3>

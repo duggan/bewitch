@@ -2,6 +2,20 @@
 
 All notable changes to bewitch are documented here.
 
+## [0.5.1] - 2026-04-28
+
+### Added
+
+- `bewitch stats` subcommand for at-a-glance system footprint
+- Auto-generated API reference docs page
+- Uninstall script (`uninstall.sh`) supporting both APT and tarball installs, with `KEEP_DATA=1` to preserve the database
+- Documented `b` keybinding (bits/bytes toggle) on the network view
+
+### Changed
+
+- Installer auto-starts `bewitchd` after install — quick start reduced from 4 steps to 2
+- Internal refactors to consolidate duplicated plumbing across collectors, API handlers, REPL, and TUI client
+
 ## [0.5.0] - 2026-04-02
 
 ### Added
