@@ -29,10 +29,17 @@ type Notifier interface {
 	Send(a *Alert) NotifyResult
 }
 
+// notifySem bounds the number of concurrent notification goroutines. Notifiers
+// can block for up to ~10s (SMTP, shell commands); without a cap, a burst of
+// fired alerts could spawn an unbounded number of goroutines.
+var notifySem = make(chan struct{}, 8)
+
 // sendNotifications sends the alert to all notifiers asynchronously (fire-and-forget).
 func sendNotifications(notifiers []Notifier, a *Alert) {
 	for _, n := range notifiers {
 		go func(notifier Notifier) {
+			notifySem <- struct{}{}
+			defer func() { <-notifySem }()
 			r := notifier.Send(a)
 			if r.Error != "" {
 				log.Errorf("%s: %s", notifier.Name(), r.Error)

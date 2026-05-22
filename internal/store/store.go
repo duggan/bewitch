@@ -84,8 +84,12 @@ func (s *Store) loadDimensionCache() {
 	}
 }
 
-// loadProcessInfoCache populates the process info cache from the database
+// loadProcessInfoCache rebuilds the process info cache from the database,
+// discarding any existing entries. Callers must hold procInfoCacheMu (or be
+// running before the store is shared, e.g. New).
 func (s *Store) loadProcessInfoCache() {
+	s.procInfoCache = make(map[processKey]bool)
+
 	rows, err := s.db.Query("SELECT pid, start_time FROM process_info")
 	if err != nil {
 		return // Table might not exist yet
@@ -381,6 +385,13 @@ func (s *Store) Prune(retention time.Duration) error {
 		return fmt.Errorf("prune process_info: %w", err)
 	}
 
+	// Rebuild the in-memory process info cache to match the pruned table.
+	// Otherwise the cache grows unbounded over uptime as short-lived processes
+	// come and go, even though their process_info rows are deleted here.
+	s.procInfoCacheMu.Lock()
+	s.loadProcessInfoCache()
+	s.procInfoCacheMu.Unlock()
+
 	log.Infof("prune: deleted rows older than %v", retention)
 	return nil
 }
@@ -548,7 +559,9 @@ func (s *Store) Compact(dbPath string) error {
 
 	// Reload caches for the new connection
 	s.loadDimensionCache()
+	s.procInfoCacheMu.Lock()
 	s.loadProcessInfoCache()
+	s.procInfoCacheMu.Unlock()
 
 	// Remove backup and any leftover compact WAL
 	os.Remove(backupPath)

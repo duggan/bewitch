@@ -391,16 +391,21 @@ func main() {
 		log.Infof("compaction interval: %v", compactionInterval)
 	}
 
+	// shutdownCh is closed on SIGTERM/SIGINT to stop all background ticker
+	// goroutines (scheduled jobs, checkpointing) so they don't keep running
+	// against a closing database.
+	shutdownCh := make(chan struct{})
+
 	// Start periodic data pruning if retention is configured
 	if retention > 0 {
-		runScheduledJob(st, "prune", pruneInterval, func() error {
+		runScheduledJob(st, "prune", pruneInterval, shutdownCh, func() error {
 			return st.PruneExclusive(retention)
 		})
 	}
 
 	// Start periodic compaction if configured
 	if compactionInterval > 0 {
-		runScheduledJob(st, "compact", compactionInterval, func() error {
+		runScheduledJob(st, "compact", compactionInterval, shutdownCh, func() error {
 			return st.CompactExclusive(cfg.Daemon.DBPath)
 		})
 	}
@@ -415,7 +420,12 @@ func main() {
 		go func() {
 			ticker := time.NewTicker(checkpointInterval)
 			defer ticker.Stop()
-			for range ticker.C {
+			for {
+				select {
+				case <-shutdownCh:
+					return
+				case <-ticker.C:
+				}
 				log.Debugf("checkpoint starting")
 				if checkpointErr := st.Checkpoint(); checkpointErr != nil {
 					log.Errorf("checkpoint error: %v", checkpointErr)
@@ -427,7 +437,7 @@ func main() {
 	// Start periodic archiving if configured
 	if archiveThreshold > 0 && cfg.Daemon.ArchivePath != "" {
 		log.Infof("archive threshold: %v, interval: %v, path: %s", archiveThreshold, archiveInterval, cfg.Daemon.ArchivePath)
-		runScheduledJob(st, "archive", archiveInterval, func() error {
+		runScheduledJob(st, "archive", archiveInterval, shutdownCh, func() error {
 			if err := st.ArchiveExclusive(cfg.Daemon.ArchivePath, archiveThreshold); err != nil {
 				return err
 			}
@@ -544,6 +554,7 @@ func main() {
 			log.Infof("received %v, shutting down", sig)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
+			close(shutdownCh) // stop scheduled-job and checkpoint goroutines
 			alertEngine.Stop()
 			// Stop long-lived collector subprocesses (e.g. intel_gpu_top)
 			for _, sc := range scheduled {
@@ -730,8 +741,8 @@ func pushSampleToCache(srv *api.Server, procCol collector.ProcessCollectorI, s c
 }
 
 // runScheduledJob starts a goroutine that checks if jobName is overdue,
-// runs it immediately if so, then ticks at interval.
-func runScheduledJob(st *store.Store, jobName string, interval time.Duration, run func() error) {
+// runs it immediately if so, then ticks at interval until done is closed.
+func runScheduledJob(st *store.Store, jobName string, interval time.Duration, done <-chan struct{}, run func() error) {
 	go func() {
 		overdue, err := st.IsJobOverdue(jobName, interval)
 		if err != nil {
@@ -750,7 +761,12 @@ func runScheduledJob(st *store.Store, jobName string, interval time.Duration, ru
 
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		for range ticker.C {
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+			}
 			log.Infof("scheduled %s starting", jobName)
 			if err := run(); err != nil {
 				log.Errorf("%s error: %v", jobName, err)

@@ -104,6 +104,7 @@ func (b *intelGPUBackend) readLoop(r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	// intel_gpu_top outputs one JSON object per sample, each on its own set of lines.
 	// We accumulate lines between braces to form complete JSON objects.
+	const maxBufBytes = 1 << 20 // 1MB cap to bound memory if braces never rebalance
 	var depth int
 	var buf strings.Builder
 
@@ -124,6 +125,15 @@ func (b *intelGPUBackend) readLoop(r io.Reader) {
 		}
 		buf.WriteString(line)
 		buf.WriteByte('\n')
+
+		// Guard against unbounded growth from a malformed/unbalanced stream:
+		// if we've buffered more than the cap without closing the object,
+		// discard and resync rather than accumulating forever.
+		if buf.Len() > maxBufBytes {
+			buf.Reset()
+			depth = 0
+			continue
+		}
 
 		if depth == 0 && buf.Len() > 2 {
 			raw := buf.String()
