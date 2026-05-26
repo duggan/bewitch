@@ -2,6 +2,15 @@
 
 All notable changes to bewitch are documented here.
 
+## [0.5.2] - 2026-05-26
+
+### Fixed
+
+- Unbounded `process_info` cache growth on hosts with high process churn
+- Background goroutines (scheduled jobs, checkpoint loop) now stop cleanly on daemon shutdown instead of running against a closing DB
+- Notification sends bounded by an 8-slot semaphore
+- Intel GPU reader accumulation buffer capped at 1MB
+
 ## [0.5.1] - 2026-04-28
 
 ### Added

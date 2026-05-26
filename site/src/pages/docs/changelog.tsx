@@ -9,6 +9,16 @@ export const ChangelogDocs: FC = () => (
       <a href="https://github.com/duggan/bewitch/blob/main/CHANGELOG.md">CHANGELOG.md</a> on GitHub.
     </p>
 
+    <h2>0.5.2</h2>
+    <p class="text-muted text-sm">2026-05-26</p>
+    <h3>Fixed</h3>
+    <ul>
+      <li>Unbounded <code>process_info</code> cache growth on hosts with high process churn</li>
+      <li>Background goroutines (scheduled jobs, checkpoint loop) now stop cleanly on daemon shutdown instead of running against a closing DB</li>
+      <li>Notification sends bounded by an 8-slot semaphore</li>
+      <li>Intel GPU reader accumulation buffer capped at 1MB</li>
+    </ul>
+
     <h2>0.5.1</h2>
     <p class="text-muted text-sm">2026-04-28</p>
     <h3>Added</h3>
