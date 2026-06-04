@@ -188,6 +188,10 @@ type Model struct {
 	powerData  []api.PowerMetric
 	alertsData []api.AlertMetric
 	dashData   *api.DashboardData
+	// Active (unacknowledged) alert summary, refreshed every tick on all views so the
+	// status bar can surface problems at a glance even with no notifier backend configured.
+	activeAlerts        int    // count of unacknowledged alerts
+	activeAlertSeverity string // highest severity among them: "", "info", "warning", "critical"
 	// Date picker overlay
 	datePickerActive bool
 	datePicker       datePickerModel
@@ -1136,6 +1140,52 @@ func (m *Model) refreshAlertsData() {
 	m.d("refresh: alerts (%s)", time.Since(t))
 	m.alertsData = alerts
 	m.lastDataChange[viewAlerts] = time.Now()
+}
+
+// refreshActiveAlerts fetches the unacknowledged alerts and caches the count plus the
+// highest severity, so the status bar can surface active alerts on every view.
+func (m *Model) refreshActiveAlerts() {
+	t := time.Now()
+	alerts, err := m.client.GetActiveAlerts()
+	if errors.Is(err, ErrNotModified) {
+		m.d("refresh: active-alerts 304 (%s)", time.Since(t))
+		return
+	}
+	if err != nil {
+		m.d("refresh: active-alerts err=%v (%s)", err, time.Since(t))
+		m.activeAlerts = 0
+		m.activeAlertSeverity = ""
+		return
+	}
+	m.d("refresh: active-alerts n=%d (%s)", len(alerts), time.Since(t))
+	m.setActiveAlerts(alerts)
+}
+
+// setActiveAlerts caches the count and highest severity from a slice of unacknowledged
+// alerts. (When on the Alerts view we pass the already-fetched list, filtered to
+// unacknowledged, to avoid a redundant query.)
+func (m *Model) setActiveAlerts(alerts []api.AlertMetric) {
+	m.activeAlerts = len(alerts)
+	m.activeAlertSeverity = ""
+	for _, a := range alerts {
+		if severityRank(a.Severity) > severityRank(m.activeAlertSeverity) {
+			m.activeAlertSeverity = a.Severity
+		}
+	}
+}
+
+// severityRank orders alert severities so the most urgent wins. Unknown/empty rank 0.
+func severityRank(s string) int {
+	switch s {
+	case "critical":
+		return 3
+	case "warning":
+		return 2
+	case "info":
+		return 1
+	default:
+		return 0
+	}
 }
 
 func (m *Model) refreshDashData() {
@@ -2759,6 +2809,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshAlertRules()
 			m.refreshAlertsData()
 		}
+		// Refresh the active-alert summary on every view so the status bar always
+		// reflects current problems. On the Alerts view, derive it from the list we
+		// just fetched to avoid a redundant query.
+		if m.current == viewAlerts {
+			var active []api.AlertMetric
+			for _, a := range m.alertsData {
+				if !a.Acknowledged {
+					active = append(active, a)
+				}
+			}
+			m.setActiveAlerts(active)
+		} else {
+			m.refreshActiveAlerts()
+		}
 		if m.ready {
 			m.viewport.SetContent(m.renderCurrentContent())
 		}
@@ -2776,7 +2840,7 @@ func (m *Model) captureViewContent() string {
 	content := m.renderCurrentContent()
 	var gutter string
 	if m.statusData != nil {
-		gutter = "\n" + renderStatusBar(buildStatusBar(m.statusData, m.current, m.lastDataChange[m.current]), m.width)
+		gutter = "\n" + renderStatusBar(buildStatusBar(m.statusData, m.current, m.lastDataChange[m.current], m.activeAlerts, m.activeAlertSeverity), m.width, m.activeAlertSeverity)
 	}
 	return header + content + gutter
 }
@@ -2926,8 +2990,10 @@ func (m Model) View() string {
 	if m.captureFlash != "" && time.Now().Before(m.captureFlashUntil) {
 		flash := lipgloss.NewStyle().Foreground(colorGreen).Render(m.captureFlash)
 		gutter = lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(flash)
-	} else if m.statusData != nil {
-		gutter = renderStatusBar(buildStatusBar(m.statusData, m.current, m.lastDataChange[m.current]), m.width)
+	} else if m.statusData != nil || m.activeAlerts > 0 {
+		// Render the gutter when we have collector info to show, or whenever there are
+		// active alerts to surface (even if the status fetch failed at startup).
+		gutter = renderStatusBar(buildStatusBar(m.statusData, m.current, m.lastDataChange[m.current], m.activeAlerts, m.activeAlertSeverity), m.width, m.activeAlertSeverity)
 	}
 
 	var debugPanel string

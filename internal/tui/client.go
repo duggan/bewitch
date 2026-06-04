@@ -36,6 +36,7 @@ type daemonClient interface {
 	GetGPU() ([]api.GPUMetric, []string, error)
 	GetProcesses() (*api.ProcessResponse, error)
 	GetAlerts() ([]api.AlertMetric, error)
+	GetActiveAlerts() ([]api.AlertMetric, error)
 	GetHistory(metric string, start, end time.Time) ([]api.TimeSeries, error)
 	GetHistoryByName(metric string, start, end time.Time, names []string) ([]api.TimeSeries, error)
 	GetAlertRules() ([]api.AlertRuleMetric, error)
@@ -196,6 +197,14 @@ func (c *DaemonClient) GetProcesses() (*api.ProcessResponse, error) {
 func (c *DaemonClient) GetAlerts() ([]api.AlertMetric, error) {
 	var resp api.AlertsResponse
 	if err := c.getJSON("/api/alerts", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Alerts, nil
+}
+
+func (c *DaemonClient) GetActiveAlerts() ([]api.AlertMetric, error) {
+	var resp api.AlertsResponse
+	if err := c.getJSON("/api/alerts?ack=false", &resp); err != nil {
 		return nil, err
 	}
 	return resp.Alerts, nil

@@ -83,6 +83,16 @@ func (m *mockClient) GetProcesses() (*api.ProcessResponse, error) {
 
 func (m *mockClient) GetAlerts() ([]api.AlertMetric, error) { return m.alerts, nil }
 
+func (m *mockClient) GetActiveAlerts() ([]api.AlertMetric, error) {
+	var active []api.AlertMetric
+	for _, a := range m.alerts {
+		if !a.Acknowledged {
+			active = append(active, a)
+		}
+	}
+	return active, nil
+}
+
 func (m *mockClient) GetHistory(_ string, _, _ time.Time) ([]api.TimeSeries, error) {
 	return m.hist, nil
 }

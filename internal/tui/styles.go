@@ -381,63 +381,86 @@ var collectorDisplayNames = map[string]string{
 	"ecc": "ECC", "temperature": "Temperature", "power": "Power", "process": "Process",
 }
 
-func buildStatusBar(status map[string]any, current view, lastChange time.Time) string {
-	names, ok := collectorsForView[current]
-	if !ok {
-		return ""
-	}
-	intervals, ok := status["collector_intervals"].(map[string]string)
-	if !ok || len(intervals) == 0 {
-		return ""
-	}
+func buildStatusBar(status map[string]any, current view, lastChange time.Time, activeAlerts int, severity string) string {
+	// Build the collection-interval text (may be empty for views without collectors,
+	// e.g. the Alerts view, or when the daemon reported no intervals).
 	var text string
-	if len(names) == 1 {
-		if v, ok := intervals[names[0]]; ok {
-			text = "Collection interval: " + v
-		}
-	} else {
-		var parts []string
-		for _, name := range names {
-			if v, ok := intervals[name]; ok {
-				display := collectorDisplayNames[name]
-				parts = append(parts, display+" "+v)
+	if names, ok := collectorsForView[current]; ok {
+		if intervals, ok := status["collector_intervals"].(map[string]string); ok && len(intervals) > 0 {
+			if len(names) == 1 {
+				if v, ok := intervals[names[0]]; ok {
+					text = "Collection interval: " + v
+				}
+			} else {
+				var parts []string
+				for _, name := range names {
+					if v, ok := intervals[name]; ok {
+						display := collectorDisplayNames[name]
+						parts = append(parts, display+" "+v)
+					}
+				}
+				if len(parts) > 0 {
+					text = "Collection intervals: " + strings.Join(parts, ", ")
+				}
 			}
-		}
-		if len(parts) > 0 {
-			text = "Collection intervals: " + strings.Join(parts, ", ")
-		}
-	}
-	if text == "" {
-		return ""
-	}
 
-	// Append staleness indicator when data is older than 3× the longest collector interval
-	if !lastChange.IsZero() {
-		var maxInterval time.Duration
-		for _, name := range names {
-			if v, ok := intervals[name]; ok {
-				if d, err := config.ParseDuration(v); err == nil && d > maxInterval {
-					maxInterval = d
+			// Append staleness indicator when data is older than 3× the longest interval.
+			if text != "" && !lastChange.IsZero() {
+				var maxInterval time.Duration
+				for _, name := range names {
+					if v, ok := intervals[name]; ok {
+						if d, err := config.ParseDuration(v); err == nil && d > maxInterval {
+							maxInterval = d
+						}
+					}
+				}
+				if maxInterval > 0 {
+					age := time.Since(lastChange)
+					if age > 3*maxInterval {
+						text += fmt.Sprintf(" · stale (%ds ago)", int(age.Seconds()))
+					}
 				}
 			}
 		}
-		if maxInterval > 0 {
-			age := time.Since(lastChange)
-			if age > 3*maxInterval {
-				text += fmt.Sprintf(" · stale (%ds ago)", int(age.Seconds()))
-			}
+	}
+
+	// Prepend the active-alert indicator so problems are surfaced on every view, even
+	// with no notifier backend configured.
+	if activeAlerts > 0 {
+		plural := ""
+		if activeAlerts != 1 {
+			plural = "s"
+		}
+		indicator := fmt.Sprintf("⚠ %d active alert%s", activeAlerts, plural)
+		if text == "" {
+			text = indicator
+		} else {
+			text = indicator + " · " + text
 		}
 	}
 
 	return text
 }
 
-func renderStatusBar(text string, width int) string {
+// statusBarBackground picks the status bar background based on the highest active-alert
+// severity: red for critical, orange for any other active alert, deep purple otherwise.
+func statusBarBackground(severity string) lipgloss.CompleteColor {
+	switch severity {
+	case "":
+		return colorDeepPurple
+	case "critical":
+		return colorRed
+	default:
+		return colorOrange
+	}
+}
+
+func renderStatusBar(text string, width int, severity string) string {
 	if text == "" {
 		return ""
 	}
 	return lipgloss.NewStyle().
-		Background(colorDeepPurple).
+		Background(statusBarBackground(severity)).
 		Foreground(colorDarkBg).
 		Width(width).
 		Render(" " + text)
