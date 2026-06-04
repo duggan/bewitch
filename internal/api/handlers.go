@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -234,6 +235,18 @@ func (s *Server) handleCreateAlertRule(w http.ResponseWriter, r *http.Request) {
 
 	db := s.dbFn()
 
+	// Rule names must be unique: fired alerts, the engine's debounce, and the delete-time
+	// cleanup all key on rule_name, so two rules sharing a name corrupt each other.
+	var dup int
+	if err := db.QueryRow("SELECT count(*) FROM alert_rules WHERE name = ?", rule.Name).Scan(&dup); err != nil {
+		writeError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if dup > 0 {
+		writeError(w, r, http.StatusConflict, "a rule named "+rule.Name+" already exists")
+		return
+	}
+
 	// Insert into base alert_rules table and get the ID. Use RETURNING rather than
 	// LastInsertId(): the DuckDB driver does not support LastInsertId() and returns 0,
 	// which would write the type-specific config rows with rule_id=0 and orphan them
@@ -298,6 +311,128 @@ func (s *Server) handleCreateAlertRule(w http.ResponseWriter, r *http.Request) {
 	writeGenericStatus(w, http.StatusCreated, "created")
 }
 
+// handleUpdateAlertRule updates an existing rule's name, severity, and type-specific
+// config in place. The rule's type is locked (changing it would mean swapping config
+// tables); enabled stays under /toggle and created_at is preserved. All writes run in a
+// single transaction so a partial failure leaves the rule untouched.
+func (s *Server) handleUpdateAlertRule(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	var rule AlertRuleMetric
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if rule.Name == "" {
+		writeError(w, r, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	tx, err := s.dbFn().Begin()
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer tx.Rollback()
+
+	// The type is immutable: load the stored type (and current name) and reject a type
+	// mismatch. This guarantees the per-type config row already exists, so a plain UPDATE
+	// is always correct.
+	var storedType, oldName string
+	if err := tx.QueryRow("SELECT type, name FROM alert_rules WHERE id = ?", id).Scan(&storedType, &oldName); err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, r, http.StatusNotFound, "rule not found")
+			return
+		}
+		writeError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if rule.Type != "" && rule.Type != storedType {
+		writeError(w, r, http.StatusBadRequest, "rule type is immutable (delete and recreate to change it)")
+		return
+	}
+
+	// Names stay unique (see create); reject a rename onto another rule's name.
+	if rule.Name != oldName {
+		var dup int
+		if err := tx.QueryRow("SELECT count(*) FROM alert_rules WHERE name = ? AND id != ?", rule.Name, id).Scan(&dup); err != nil {
+			writeError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if dup > 0 {
+			writeError(w, r, http.StatusConflict, "a rule named "+rule.Name+" already exists")
+			return
+		}
+	}
+
+	if _, err := tx.Exec(`UPDATE alert_rules SET name = ?, severity = ? WHERE id = ?`,
+		rule.Name, rule.Severity, id); err != nil {
+		writeError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Fired alerts are linked to the rule by name; carry them across a rename so they
+	// stay attributable (and the delete-time cleanup can still find them).
+	if rule.Name != oldName {
+		if _, err := tx.Exec("UPDATE alerts SET rule_name = ? WHERE rule_name = ?", rule.Name, oldName); err != nil {
+			writeError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	switch storedType {
+	case "threshold":
+		_, err = tx.Exec(`UPDATE alert_rule_threshold SET
+			metric = ?, operator = ?, value = ?, duration = ?, mount = ?, interface_name = ?, sensor = ?
+			WHERE rule_id = ?`,
+			rule.Metric, rule.Operator, rule.Value, rule.Duration,
+			rule.Mount, rule.InterfaceName, rule.Sensor, id)
+
+	case "predictive":
+		_, err = tx.Exec(`UPDATE alert_rule_predictive SET
+			metric = ?, mount = ?, predict_hours = ?, threshold_pct = ?
+			WHERE rule_id = ?`,
+			rule.Metric, rule.Mount, rule.PredictHours, rule.ThresholdPct, id)
+
+	case "variance":
+		_, err = tx.Exec(`UPDATE alert_rule_variance SET
+			metric = ?, delta_threshold = ?, min_count = ?, duration = ?
+			WHERE rule_id = ?`,
+			rule.Metric, rule.DeltaThreshold, rule.MinCount, rule.Duration, id)
+
+	case "process_down":
+		_, err = tx.Exec(`UPDATE alert_rule_process_down SET
+			process_name = ?, process_pattern = ?, min_instances = ?, check_duration = ?
+			WHERE rule_id = ?`,
+			rule.ProcessName, rule.ProcessPattern, rule.MinInstances, rule.CheckDuration, id)
+
+	case "process_thrashing":
+		_, err = tx.Exec(`UPDATE alert_rule_process_thrashing SET
+			process_name = ?, process_pattern = ?, restart_threshold = ?, restart_window = ?
+			WHERE rule_id = ?`,
+			rule.ProcessName, rule.ProcessPattern, rule.RestartThreshold, rule.RestartWindow, id)
+
+	default:
+		writeError(w, r, http.StatusInternalServerError, "unknown rule type: "+storedType)
+		return
+	}
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeGenericStatus(w, http.StatusOK, "updated")
+}
+
 func (s *Server) handleDeleteAlertRule(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
@@ -305,23 +440,51 @@ func (s *Server) handleDeleteAlertRule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "invalid id")
 		return
 	}
-	db := s.dbFn()
-
-	// Delete type-specific config (no FK constraints, so clean up explicitly)
-	db.Exec("DELETE FROM alert_rule_threshold WHERE rule_id = ?", id)
-	db.Exec("DELETE FROM alert_rule_predictive WHERE rule_id = ?", id)
-	db.Exec("DELETE FROM alert_rule_variance WHERE rule_id = ?", id)
-	db.Exec("DELETE FROM alert_rule_process_down WHERE rule_id = ?", id)
-	db.Exec("DELETE FROM alert_rule_process_thrashing WHERE rule_id = ?", id)
-
-	result, err := db.Exec("DELETE FROM alert_rules WHERE id = ?", id)
+	tx, err := s.dbFn().Begin()
 	if err != nil {
 		writeError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
-	affected, _ := result.RowsAffected()
-	if affected == 0 {
-		writeError(w, r, http.StatusNotFound, "rule not found")
+	defer tx.Rollback()
+
+	// Resolve the rule name first so we can clean up its fired alerts. Fired alerts are
+	// linked to a rule by rule_name (not id), and would otherwise linger forever as
+	// unacknowledged "active" alerts for a rule the user can no longer see or manage.
+	var name string
+	if err := tx.QueryRow("SELECT name FROM alert_rules WHERE id = ?", id).Scan(&name); err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, r, http.StatusNotFound, "rule not found")
+			return
+		}
+		writeError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Delete type-specific config (no FK constraints, so clean up explicitly).
+	for _, t := range []string{
+		"alert_rule_threshold", "alert_rule_predictive", "alert_rule_variance",
+		"alert_rule_process_down", "alert_rule_process_thrashing",
+	} {
+		if _, err := tx.Exec("DELETE FROM "+t+" WHERE rule_id = ?", id); err != nil {
+			writeError(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	// Remove the rule's fired alerts so they don't remain as orphaned, undismissable
+	// active alerts after the rule is gone.
+	if _, err := tx.Exec("DELETE FROM alerts WHERE rule_name = ?", name); err != nil {
+		writeError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if _, err := tx.Exec("DELETE FROM alert_rules WHERE id = ?", id); err != nil {
+		writeError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, r, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeGenericStatus(w, http.StatusOK, "deleted")

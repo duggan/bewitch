@@ -467,6 +467,7 @@ func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	mux.HandleFunc("GET /api/history/process", s.handleHistoryProcess)
 	mux.HandleFunc("GET /api/alert-rules", s.handleListAlertRules)
 	mux.HandleFunc("POST /api/alert-rules", s.handleCreateAlertRule)
+	mux.HandleFunc("PUT /api/alert-rules/{id}", s.handleUpdateAlertRule)
 	mux.HandleFunc("DELETE /api/alert-rules/{id}", s.handleDeleteAlertRule)
 	mux.HandleFunc("PUT /api/alert-rules/{id}/toggle", s.handleToggleAlertRule)
 	mux.HandleFunc("GET /api/preferences", s.handleGetPreferences)

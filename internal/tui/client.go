@@ -41,6 +41,7 @@ type daemonClient interface {
 	GetHistoryByName(metric string, start, end time.Time, names []string) ([]api.TimeSeries, error)
 	GetAlertRules() ([]api.AlertRuleMetric, error)
 	CreateAlertRule(rule api.AlertRuleMetric) error
+	UpdateAlertRule(rule api.AlertRuleMetric) error
 	DeleteAlertRule(id int) error
 	ToggleAlertRule(id int) error
 	AckAlert(id int) error
@@ -369,6 +370,28 @@ func (c *DaemonClient) CreateAlertRule(rule api.AlertRuleMetric) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		return extractPostError("POST", "/api/alert-rules", resp)
+	}
+	return nil
+}
+
+func (c *DaemonClient) UpdateAlertRule(rule api.AlertRuleMetric) error {
+	body, err := json.Marshal(rule)
+	if err != nil {
+		return err
+	}
+	path := fmt.Sprintf("/api/alert-rules/%d", rule.ID)
+	req, err := http.NewRequest(http.MethodPut, c.baseURL+path, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return extractPostError("PUT", path, resp)
 	}
 	return nil
 }

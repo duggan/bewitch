@@ -105,36 +105,36 @@ type viewHistoryCache struct {
 	// Process Top-N incremental state: after the first full Top-N fetch,
 	// subsequent ticks use GetHistoryByName with cached names + tail window.
 	// A full Top-N refetch runs periodically to update the selection.
-	topNNames       []string  // process names from last full Top-N fetch
-	topNLastFullAt  time.Time // when the last full Top-N query ran
+	topNNames      []string  // process names from last full Top-N fetch
+	topNLastFullAt time.Time // when the last full Top-N query ran
 }
 
 type Model struct {
-	historyRanges []config.HistoryRange
-	client        daemonClient
-	current       view
-	width         int
-	height        int
-	interval      time.Duration
-	historyRange  int
-	historySeries []api.TimeSeries
-	historyStart  time.Time // actual start time used when fetching history
-	historyEnd    time.Time // actual end time used when fetching history
-	viewport      viewport.Model
-	alertTable     table.Model
-	ready          bool
-	visibleTabs    []view // ordered list of currently visible tabs
-	tempSparkData   map[string][]float64
-	tempSparkInited bool
-	tempSelected    map[string]bool
-	tempCursor      int
-	tempSensorNames []string // ordered sensor names for cursor navigation
-	netSparkData    map[string][]float64 // keys: "iface_rx", "iface_tx"
-	netSparkInited  bool
-	netSelected     map[string]bool // keys: interface names
-	netCursor       int
-	netIfaceNames   []string
-	netDisplayBits  bool
+	historyRanges    []config.HistoryRange
+	client           daemonClient
+	current          view
+	width            int
+	height           int
+	interval         time.Duration
+	historyRange     int
+	historySeries    []api.TimeSeries
+	historyStart     time.Time // actual start time used when fetching history
+	historyEnd       time.Time // actual end time used when fetching history
+	viewport         viewport.Model
+	alertTable       table.Model
+	ready            bool
+	visibleTabs      []view // ordered list of currently visible tabs
+	tempSparkData    map[string][]float64
+	tempSparkInited  bool
+	tempSelected     map[string]bool
+	tempCursor       int
+	tempSensorNames  []string             // ordered sensor names for cursor navigation
+	netSparkData     map[string][]float64 // keys: "iface_rx", "iface_tx"
+	netSparkInited   bool
+	netSelected      map[string]bool // keys: interface names
+	netCursor        int
+	netIfaceNames    []string
+	netDisplayBits   bool
 	powerSparkData   map[string][]float64
 	powerSparkInited bool
 	powerSelected    map[string]bool
@@ -147,32 +147,35 @@ type Model struct {
 	gpuSelected      map[string]bool
 	gpuCursor        int
 	gpuDeviceNames   []string
-	hardwareSection  int // active hardware sub-tab: hwSectionTemp, hwSectionPower, hwSectionECC, hwSectionGPU
+	hardwareSection  int                  // active hardware sub-tab: hwSectionTemp, hwSectionPower, hwSectionECC, hwSectionGPU
 	dashSparkData    map[string][]float64 // keys: "cpu", "mem"
 	dashSparkInited  bool
 	// Alert view state
-	alertRules     []api.AlertRuleMetric
-	alertRuleCursor int
-	alertFocus      int // 0 = rules panel, 1 = alerts table
-	alertFormActive bool
-	alertForm       *huh.Form
-	alertFormState  *alertFormState
-	notifyLog     []notifyLogEntry
-	notifySending bool
+	alertRules         []api.AlertRuleMetric
+	alertRuleCursor    int
+	alertFocus         int // 0 = rules panel, 1 = alerts table
+	alertFormActive    bool
+	alertForm          *huh.Form
+	alertFormState     *alertFormState
+	alertFormErr       string // last create/update error, surfaced in the alerts view
+	alertConfirmDelete bool   // awaiting y/N confirmation to delete the rule under the cursor
+	alertConfirmName   string // name of the rule pending delete confirmation
+	notifyLog          []notifyLogEntry
+	notifySending      bool
 	// Process view state
-	procSortBy       procSortField
-	procCursor       int
-	procData         *api.ProcessResponse // cached process data, refreshed on tick
-	procSearchActive bool                 // true when search input is active
-	procSearchQuery  string               // current search filter text
-	procFilteredLen  int                  // cached count of filtered results for cursor bounds
-	pinnedProcesses  map[string]bool      // process names pinned via TUI (stored in preferences)
-	procPinnedOnly   bool                 // table filter: show only pinned processes
-	procChartPinned  bool                 // chart mode: false=top CPU, true=pinned
-	procPinnedSeries       []api.TimeSeries // cached history data for pinned chart mode
-	procPinnedChart        string           // pre-rendered pinned chart string
-	procPinnedLastFetchEnd time.Time        // end time of last pinned fetch (for incremental)
-	procPinnedNames        []string         // sorted pinned names at last fetch (detect changes)
+	procSortBy             procSortField
+	procCursor             int
+	procData               *api.ProcessResponse // cached process data, refreshed on tick
+	procSearchActive       bool                 // true when search input is active
+	procSearchQuery        string               // current search filter text
+	procFilteredLen        int                  // cached count of filtered results for cursor bounds
+	pinnedProcesses        map[string]bool      // process names pinned via TUI (stored in preferences)
+	procPinnedOnly         bool                 // table filter: show only pinned processes
+	procChartPinned        bool                 // chart mode: false=top CPU, true=pinned
+	procPinnedSeries       []api.TimeSeries     // cached history data for pinned chart mode
+	procPinnedChart        string               // pre-rendered pinned chart string
+	procPinnedLastFetchEnd time.Time            // end time of last pinned fetch (for incremental)
+	procPinnedNames        []string             // sorted pinned names at last fetch (detect changes)
 	// Cached rendered chart strings (regenerated only when history data changes)
 	cachedHistoryCharts map[view]string
 	// Per-view history cache for instant view switching
@@ -251,17 +254,17 @@ func NewModel(client daemonClient, interval time.Duration, historyRanges []confi
 		dbg = newDebugLog(100)
 	}
 	m := Model{
-		client:          client,
-		current:         viewDashboard,
-		width:           80,
-		height:          24,
-		interval:        interval,
-		historyRanges:   historyRanges,
-		historyRange:    defaultIdx,
-		alertTable:      t,
-		debug:           dbg,
-		captureSettings: captureSettings,
-		lastDataChange:  make(map[view]time.Time),
+		client:              client,
+		current:             viewDashboard,
+		width:               80,
+		height:              24,
+		interval:            interval,
+		historyRanges:       historyRanges,
+		historyRange:        defaultIdx,
+		alertTable:          t,
+		debug:               dbg,
+		captureSettings:     captureSettings,
+		lastDataChange:      make(map[view]time.Time),
 		cachedHistoryCharts: make(map[view]string),
 		historyFetching:     make(map[view]bool),
 	}
@@ -868,6 +871,9 @@ func pinnedNamesEqual(a, b []string) bool {
 func (m *Model) switchView(v view) tea.Cmd {
 	if m.current == viewAlerts && v != viewAlerts {
 		m.notifyLog = nil
+		m.alertConfirmDelete = false
+		m.alertConfirmName = ""
+		m.alertFormErr = ""
 	}
 	if m.current == viewProcess && v != viewProcess {
 		m.procSearchActive = false
@@ -1973,7 +1979,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if f.State == huh.StateCompleted {
 				m.alertFormActive = false
 				rule := m.alertFormState.toAlertRuleMetric()
-				m.client.CreateAlertRule(rule)
+				var err error
+				if rule.ID != 0 {
+					err = m.client.UpdateAlertRule(rule)
+				} else {
+					err = m.client.CreateAlertRule(rule)
+				}
+				if err != nil {
+					m.alertFormErr = err.Error()
+					m.d("alert form submit err=%v", err)
+				} else {
+					m.alertFormErr = ""
+				}
 				m.alertForm = nil
 				m.alertFormState = nil
 				m.refreshAlertRules()
@@ -2343,6 +2360,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "a":
 				if selectedProc, ok := m.selectedProcess(); ok {
 					m.alertFormState = &alertFormState{
+						enabled:     true,
 						category:    "process",
 						processName: selectedProc.Name,
 					}
@@ -2362,19 +2380,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport, cmd = m.viewport.Update(msg)
 				return m, cmd
 			}
+			// While a delete confirmation is pending, only 'y' confirms; any other
+			// key cancels it and is otherwise ignored.
+			if m.alertConfirmDelete && msg.String() != "y" {
+				m.alertConfirmDelete = false
+				m.alertConfirmName = ""
+				return m, nil
+			}
 			switch msg.String() {
 			case "q", "ctrl+c":
 				return m, tea.Quit
 			case "n":
-				m.alertFormState = &alertFormState{}
+				m.alertFormErr = ""
+				m.alertFormState = &alertFormState{enabled: true}
 				m.alertForm = buildAlertForm(m.alertFormState)
 				m.alertFormActive = true
 				return m, m.alertForm.Init()
+			case "e":
+				if m.alertFocus == 0 && m.alertRuleCursor < len(m.alertRules) {
+					m.alertFormErr = ""
+					m.alertFormState = fromAlertRuleMetric(m.alertRules[m.alertRuleCursor])
+					m.alertForm = buildAlertForm(m.alertFormState)
+					m.alertFormActive = true
+					return m, m.alertForm.Init()
+				}
+				return m, nil
 			case "d":
 				if m.alertFocus == 0 && m.alertRuleCursor < len(m.alertRules) {
+					// Require confirmation: a stray 'd' must not silently delete a rule
+					// (and, with it, its fired alerts).
+					m.alertConfirmDelete = true
+					m.alertConfirmName = m.alertRules[m.alertRuleCursor].Name
+				}
+				return m, nil
+			case "y":
+				if m.alertConfirmDelete && m.alertFocus == 0 && m.alertRuleCursor < len(m.alertRules) {
 					id := m.alertRules[m.alertRuleCursor].ID
-					go m.client.DeleteAlertRule(id)
+					m.alertConfirmDelete = false
+					m.alertConfirmName = ""
+					// Synchronous (like the ack path) so the refreshes below observe the
+					// delete. Deleting a rule also clears its fired alerts server-side, so
+					// refresh the fired-alerts table and active count too — otherwise both
+					// show the just-cleared alerts until the next tick.
+					m.client.DeleteAlertRule(id)
 					m.refreshAlertRules()
+					m.refreshAlertsData()
+					m.refreshActiveAlerts()
 					if m.alertRuleCursor >= len(m.alertRules) && m.alertRuleCursor > 0 {
 						m.alertRuleCursor--
 					}
@@ -2389,13 +2440,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "enter":
 				if m.alertFocus == 1 {
-					row := m.alertTable.SelectedRow()
-					if row != nil {
-						alerts, _ := m.client.GetAlerts()
-						idx := m.alertTable.Cursor()
-						if idx < len(alerts) {
-							go m.client.AckAlert(alerts[idx].ID)
-						}
+					// The table rows are built from m.alertsData in order, so the table
+					// cursor indexes m.alertsData directly. (The previous code re-fetched
+					// GetAlerts() and re-indexed the fresh slice, which could ack the wrong
+					// row if the order changed between render and keypress.)
+					idx := m.alertTable.Cursor()
+					if idx >= 0 && idx < len(m.alertsData) {
+						// Synchronous (like the surrounding refresh* calls) so the
+						// follow-up refresh observes the ack and shows it immediately.
+						m.client.AckAlert(m.alertsData[idx].ID)
+						m.refreshAlertsData()
 					}
 				}
 				return m, nil
@@ -2870,7 +2924,11 @@ func (m *Model) renderCurrentContent() string {
 		return renderPanel("Select Time Range", m.datePicker.view(m.width-6), m.width)
 	}
 	if m.alertFormActive && m.alertForm != nil {
-		return renderPanel("Create Alert Rule", m.alertForm.View(), m.width) +
+		title := "Create Alert Rule"
+		if m.alertFormState != nil && m.alertFormState.editID != 0 {
+			title = "Edit Alert Rule"
+		}
+		return renderPanel(title, m.alertForm.View(), m.width) +
 			"\n" + helpStyle.Render("esc: cancel")
 	}
 	switch m.current {
@@ -2907,7 +2965,7 @@ func (m *Model) renderCurrentContent() string {
 		m.procFilteredLen = fl
 		return c
 	case viewAlerts:
-		return renderAlertView(m.alertsData, m.width, &m.alertTable, m.alertRules, m.alertRuleCursor, m.alertFocus, m.notifyLog, m.notifySending)
+		return renderAlertView(m.alertsData, m.width, &m.alertTable, m.alertRules, m.alertRuleCursor, m.alertFocus, m.notifyLog, m.notifySending, m.alertConfirmDelete, m.alertConfirmName, m.alertFormErr)
 	default:
 		return ""
 	}
@@ -3008,7 +3066,7 @@ func (m Model) View() string {
 		// Overlay capture form as a popover
 		if m.captureFormActive && m.captureForm != nil {
 			popup := renderPanel("Export Screenshot", m.captureForm.View(), 62) +
-			"\n" + helpStyle.Render("esc: cancel")
+				"\n" + helpStyle.Render("esc: cancel")
 			viewportView = placeOverlay(viewportView, popup, m.width, m.viewport.Height)
 		}
 

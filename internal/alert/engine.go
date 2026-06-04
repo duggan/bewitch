@@ -227,6 +227,14 @@ func (e *Engine) run() {
 	}
 }
 
+// EvaluateOnce runs a single reload-and-evaluate cycle synchronously. It is the same work
+// the background loop does per tick, exposed so the full create→load→evaluate→fire
+// pipeline can be exercised in tests without spinning up the goroutine.
+func (e *Engine) EvaluateOnce() {
+	e.ReloadRules()
+	e.evaluate()
+}
+
 func (e *Engine) evaluate() {
 	db := e.dbFn()
 	e.mu.RLock()

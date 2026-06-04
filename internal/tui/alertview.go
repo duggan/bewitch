@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,12 +18,17 @@ var (
 	notifyDimStyle  = lipgloss.NewStyle().Foreground(colorMuted)
 )
 
-func renderAlertView(alerts []api.AlertMetric, width int, alertTable *table.Model, rules []api.AlertRuleMetric, ruleCursor int, alertFocus int, notifyLog []notifyLogEntry, notifySending bool) string {
+func renderAlertView(alerts []api.AlertMetric, width int, alertTable *table.Model, rules []api.AlertRuleMetric, ruleCursor int, alertFocus int, notifyLog []notifyLogEntry, notifySending bool, confirmDelete bool, confirmName string, formErr string) string {
 	var sections []string
 
 	// --- Rules section ---
 	rulesContent := renderRulesSection(rules, ruleCursor, width, alertFocus == 0)
 	sections = append(sections, rulesContent)
+
+	// --- Selected rule detail ---
+	if ruleCursor >= 0 && ruleCursor < len(rules) {
+		sections = append(sections, renderRuleDetail(rules[ruleCursor], width))
+	}
 
 	// --- Fired alerts section ---
 	if alerts == nil {
@@ -53,40 +59,111 @@ func renderAlertView(alerts []api.AlertMetric, width int, alertTable *table.Mode
 		sections = append(sections, renderNotifyLog(notifyLog, notifySending, width))
 	}
 
-	// Build help line with active-state highlighting for current focus panel
-	normalHelp := lipgloss.NewStyle().Foreground(colorDeepPurple)
-	activeHelp := lipgloss.NewStyle().Foreground(colorPink).Bold(true)
+	// --- Transient form error ---
+	if formErr != "" {
+		sections = append(sections, notifyErrStyle.Render("  ⚠ "+formErr))
+	}
+
+	// --- Delete confirmation prompt (takes the place of the help line) ---
+	if confirmDelete {
+		prompt := alertCritStyle.Render(fmt.Sprintf("Delete rule %q and its fired alerts?", confirmName)) +
+			normalHelpStyle.Render("   ") +
+			alertCritStyle.Bold(true).Render("y") + normalHelpStyle.Render(" / ") +
+			lipgloss.NewStyle().Foreground(colorPink).Bold(true).Render("N")
+		sections = append(sections, lipgloss.NewStyle().MarginTop(1).Render(prompt))
+		return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	}
+
+	// Build help line with active-state highlighting for current focus panel.
 	type helpItem struct {
 		text   string
 		active bool
 	}
-	focusLabel := "tab:rules"
-	if alertFocus == 1 {
-		focusLabel = "tab:alerts"
-	}
 	helpItems := []helpItem{
-		{"n:new", false},
+		{"n:new", alertFocus == 0},
+		{"e:edit", alertFocus == 0},
 		{"d:delete", alertFocus == 0},
 		{"space:toggle", alertFocus == 0},
-		{"t:test notify", false},
-		{"c:clear", false},
-		{focusLabel, true},
 		{"enter:ack", alertFocus == 1},
+		{"t:test", false},
+		{"tab:switch", true},
 		{"PgUp/Dn:scroll", false},
 	}
 	var helpParts []string
 	for _, item := range helpItems {
 		if item.active {
-			helpParts = append(helpParts, activeHelp.Render(item.text))
+			helpParts = append(helpParts, activeHelpStyle.Render(item.text))
 		} else {
-			helpParts = append(helpParts, normalHelp.Render(item.text))
+			helpParts = append(helpParts, normalHelpStyle.Render(item.text))
 		}
 	}
-	helpLine := strings.Join(helpParts, normalHelp.Render("  "))
+	helpLine := strings.Join(helpParts, normalHelpStyle.Render("  "))
 	help := lipgloss.NewStyle().MarginTop(1).Render(helpLine)
 	sections = append(sections, help)
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+var (
+	normalHelpStyle = lipgloss.NewStyle().Foreground(colorDeepPurple)
+	activeHelpStyle = lipgloss.NewStyle().Foreground(colorPink).Bold(true)
+)
+
+// renderRuleDetail renders the full configuration of the selected rule in a labeled
+// key/value block, so every field (exact value, duration, scope, id) is visible without
+// opening the edit form. ruleDetail() remains the one-line summary used in the list.
+func renderRuleDetail(r api.AlertRuleMetric, width int) string {
+	label := labelStyle.Render
+	val := valueStyle.Render
+	ftoa := func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+
+	var lines []string
+	row := func(k, v string) {
+		if v != "" {
+			lines = append(lines, "  "+label(fmt.Sprintf("%-12s", k))+val(v))
+		}
+	}
+
+	status := "enabled"
+	if !r.Enabled {
+		status = "disabled"
+	}
+	row("name", r.Name)
+	row("type", ruleTypeDisplay(r.Type))
+	row("metric", r.Metric)
+
+	switch r.Type {
+	case "threshold":
+		row("condition", fmt.Sprintf("%s %s for %s", r.Operator, ftoa(r.Value), r.Duration))
+		switch {
+		case r.Mount != "":
+			row("mount", r.Mount)
+		case r.InterfaceName != "":
+			row("interface", r.InterfaceName)
+		case r.Sensor != "":
+			row("sensor", r.Sensor)
+		}
+	case "predictive":
+		row("mount", r.Mount)
+		row("predict", fmt.Sprintf("fills to %s%% within %dh", ftoa(r.ThresholdPct), r.PredictHours))
+	case "variance":
+		row("condition", fmt.Sprintf("Δ > %s%% × %d over %s", ftoa(r.DeltaThreshold), r.MinCount, r.Duration))
+	case "process_down":
+		row("process", r.ProcessName)
+		row("pattern", r.ProcessPattern)
+		row("condition", fmt.Sprintf("fewer than %d for %s", r.MinInstances, r.CheckDuration))
+	case "process_thrashing":
+		row("process", r.ProcessName)
+		row("pattern", r.ProcessPattern)
+		row("condition", fmt.Sprintf("> %d restarts in %s", r.RestartThreshold, r.RestartWindow))
+	}
+
+	row("severity", r.Severity)
+	row("status", status)
+	row("id", fmt.Sprintf("%d", r.ID))
+
+	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
+	return renderPanel("Rule Detail", content, width)
 }
 
 func renderNotifyLog(entries []notifyLogEntry, sending bool, width int) string {

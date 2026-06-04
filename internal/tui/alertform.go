@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -10,6 +11,16 @@ import (
 )
 
 type alertFormState struct {
+	// editID is 0 when creating a new rule, or the rule's id when editing an existing
+	// one. In edit mode the category + alert-type selection steps are skipped (type is
+	// immutable) and the form opens straight on the rule's parameter group.
+	editID  int
+	enabled bool
+	// origMetric is the rule's metric captured on edit. Because the metric is locked in
+	// edit mode, it is written back verbatim so rules round-trip losslessly (including
+	// metrics the create form can't produce, e.g. gpu.temperature).
+	origMetric string
+
 	// Step 1: category
 	category string // cpu, memory, disk, network, temperature, process
 
@@ -76,47 +87,51 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 		))
 	}
 
-	groups = append(groups, huh.NewGroup(
-		huh.NewSelect[string]().
-			Title("Alert Type").
-			OptionsFunc(func() []huh.Option[string] {
-				switch state.category {
-				case "cpu":
-					return []huh.Option[string]{
-						huh.NewOption("Sustained usage over threshold", "threshold"),
+	// In edit mode the alert type is locked (changing it would mean moving the rule to a
+	// different config table); skip the selection step entirely.
+	if state.editID == 0 {
+		groups = append(groups, huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Alert Type").
+				OptionsFunc(func() []huh.Option[string] {
+					switch state.category {
+					case "cpu":
+						return []huh.Option[string]{
+							huh.NewOption("Sustained usage over threshold", "threshold"),
+						}
+					case "memory":
+						return []huh.Option[string]{
+							huh.NewOption("Sustained usage over threshold", "threshold"),
+							huh.NewOption("Variance / thrashing detection", "variance"),
+						}
+					case "disk":
+						return []huh.Option[string]{
+							huh.NewOption("Usage exceeds percentage", "threshold"),
+							huh.NewOption("Fill rate prediction", "predictive"),
+						}
+					case "network":
+						return []huh.Option[string]{
+							huh.NewOption("Sustained throughput", "threshold"),
+						}
+					case "temperature":
+						return []huh.Option[string]{
+							huh.NewOption("Sustained high temperature", "threshold"),
+						}
+					case "gpu":
+						return []huh.Option[string]{
+							huh.NewOption("Sustained GPU utilization", "threshold"),
+						}
+					case "process":
+						return []huh.Option[string]{
+							huh.NewOption("Process went down", "process_down"),
+							huh.NewOption("Process restarting (thrashing)", "process_thrashing"),
+						}
 					}
-				case "memory":
-					return []huh.Option[string]{
-						huh.NewOption("Sustained usage over threshold", "threshold"),
-						huh.NewOption("Variance / thrashing detection", "variance"),
-					}
-				case "disk":
-					return []huh.Option[string]{
-						huh.NewOption("Usage exceeds percentage", "threshold"),
-						huh.NewOption("Fill rate prediction", "predictive"),
-					}
-				case "network":
-					return []huh.Option[string]{
-						huh.NewOption("Sustained throughput", "threshold"),
-					}
-				case "temperature":
-					return []huh.Option[string]{
-						huh.NewOption("Sustained high temperature", "threshold"),
-					}
-			case "gpu":
-				return []huh.Option[string]{
-					huh.NewOption("Sustained GPU utilization", "threshold"),
-				}
-			case "process":
-					return []huh.Option[string]{
-						huh.NewOption("Process went down", "process_down"),
-						huh.NewOption("Process restarting (thrashing)", "process_thrashing"),
-					}
-				}
-				return nil
-			}, &state.category).
-			Value(&state.alertType),
-	))
+					return nil
+				}, &state.category).
+				Value(&state.alertType),
+		))
+	}
 
 	groups = append(groups,
 		// Threshold parameters
@@ -315,8 +330,8 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 				Value(&state.name).
 				Validate(validateNotEmpty),
 			huh.NewConfirm().
-				Title("Create this alert rule?").
-				Affirmative("Create").
+				Title(confirmTitle(state)).
+				Affirmative(confirmAffirmative(state)).
 				Negative("Cancel"),
 		),
 	)
@@ -342,12 +357,27 @@ func thresholdDesc(state *alertFormState) string {
 	return ""
 }
 
+func confirmTitle(state *alertFormState) string {
+	if state.editID != 0 {
+		return "Update this alert rule?"
+	}
+	return "Create this alert rule?"
+}
+
+func confirmAffirmative(state *alertFormState) string {
+	if state.editID != 0 {
+		return "Update"
+	}
+	return "Create"
+}
+
 func (s *alertFormState) toAlertRuleMetric() api.AlertRuleMetric {
 	rule := api.AlertRuleMetric{
+		ID:       s.editID,
 		Name:     s.name,
 		Type:     s.alertType,
 		Severity: s.severity,
-		Enabled:  true,
+		Enabled:  s.enabled,
 	}
 
 	switch s.alertType {
@@ -402,7 +432,87 @@ func (s *alertFormState) toAlertRuleMetric() api.AlertRuleMetric {
 		rule.RestartWindow = s.restartWindow
 	}
 
+	// On edit the metric is locked: write the captured original back verbatim so it can
+	// never be silently changed by the derived mapping above.
+	if s.editID != 0 && s.origMetric != "" {
+		rule.Metric = s.origMetric
+	}
+
 	return rule
+}
+
+// fromAlertRuleMetric builds form state pre-populated for editing an existing rule. The
+// category, alert type, and (for network) direction are derived from the rule's type and
+// metric so the form opens straight on the locked rule's parameter group. Numeric values
+// are stringified at full precision so they round-trip without loss (the list cell's
+// %.0f formatting is display-only).
+func fromAlertRuleMetric(rule api.AlertRuleMetric) *alertFormState {
+	s := &alertFormState{
+		editID:     rule.ID,
+		enabled:    rule.Enabled,
+		origMetric: rule.Metric,
+		alertType:  rule.Type,
+		severity:   rule.Severity,
+		name:       rule.Name,
+	}
+
+	ftoa := func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+
+	switch rule.Type {
+	case "threshold":
+		s.operator = rule.Operator
+		s.valueStr = ftoa(rule.Value)
+		s.durationStr = rule.Duration
+		switch rule.Metric {
+		case "cpu.aggregate":
+			s.category = "cpu"
+		case "memory.used_pct":
+			s.category = "memory"
+		case "disk.used_pct":
+			s.category = "disk"
+			s.mount = rule.Mount
+		case "network.rx", "network.tx":
+			s.category = "network"
+			s.ifaceName = rule.InterfaceName
+			if rule.Metric == "network.tx" {
+				s.direction = "tx"
+			} else {
+				s.direction = "rx"
+			}
+		case "temperature.sensor":
+			s.category = "temperature"
+			s.sensor = rule.Sensor
+		default:
+			if strings.HasPrefix(rule.Metric, "gpu.") {
+				s.category = "gpu"
+				s.sensor = rule.Sensor
+			}
+		}
+	case "variance":
+		s.category = "memory"
+		s.deltaStr = ftoa(rule.DeltaThreshold)
+		s.countStr = strconv.Itoa(rule.MinCount)
+		s.durationStr = rule.Duration
+	case "predictive":
+		s.category = "disk"
+		s.mount = rule.Mount
+		s.predictHours = strconv.Itoa(rule.PredictHours)
+		s.thresholdPct = ftoa(rule.ThresholdPct)
+	case "process_down":
+		s.category = "process"
+		s.processName = rule.ProcessName
+		s.processPattern = rule.ProcessPattern
+		s.minInstances = strconv.Itoa(rule.MinInstances)
+		s.checkDuration = rule.CheckDuration
+	case "process_thrashing":
+		s.category = "process"
+		s.processName = rule.ProcessName
+		s.processPattern = rule.ProcessPattern
+		s.restartThreshold = strconv.Itoa(rule.RestartThreshold)
+		s.restartWindow = rule.RestartWindow
+	}
+
+	return s
 }
 
 func validateFloat(s string) error {

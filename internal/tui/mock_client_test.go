@@ -29,6 +29,11 @@ type mockClient struct {
 
 	// Track SetPreference calls
 	prefSets []struct{ key, value string }
+
+	// Track alert mutations (guarded by mu)
+	updatedRules   []api.AlertRuleMetric
+	deletedRuleIDs []int
+	ackedIDs       []int
 }
 
 func (m *mockClient) GetStatus() (map[string]any, error) {
@@ -105,11 +110,28 @@ func (m *mockClient) GetAlertRules() ([]api.AlertRuleMetric, error) { return m.r
 
 func (m *mockClient) CreateAlertRule(_ api.AlertRuleMetric) error { return nil }
 
-func (m *mockClient) DeleteAlertRule(_ int) error { return nil }
+func (m *mockClient) UpdateAlertRule(r api.AlertRuleMetric) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updatedRules = append(m.updatedRules, r)
+	return nil
+}
+
+func (m *mockClient) DeleteAlertRule(id int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deletedRuleIDs = append(m.deletedRuleIDs, id)
+	return nil
+}
 
 func (m *mockClient) ToggleAlertRule(_ int) error { return nil }
 
-func (m *mockClient) AckAlert(_ int) error { return nil }
+func (m *mockClient) AckAlert(id int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ackedIDs = append(m.ackedIDs, id)
+	return nil
+}
 
 func (m *mockClient) GetPreferences() (map[string]string, error) {
 	if m.prefs != nil {
