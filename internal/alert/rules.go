@@ -70,6 +70,7 @@ type Alert struct {
 
 // Rule evaluates whether an alert condition is met.
 type Rule interface {
+	ID() int
 	Name() string
 	Evaluate(db *sql.DB) (*Alert, error)
 }
@@ -84,6 +85,7 @@ func NewThresholdRule(base AlertRuleBase, cfg ThresholdConfig) *ThresholdRule {
 	return &ThresholdRule{base: base, cfg: cfg}
 }
 
+func (r *ThresholdRule) ID() int      { return r.base.ID }
 func (r *ThresholdRule) Name() string { return r.base.Name }
 
 func (r *ThresholdRule) Evaluate(db *sql.DB) (*Alert, error) {
@@ -184,6 +186,7 @@ func NewPredictiveRule(base AlertRuleBase, cfg PredictiveConfig) *PredictiveRule
 	return &PredictiveRule{base: base, cfg: cfg}
 }
 
+func (r *PredictiveRule) ID() int      { return r.base.ID }
 func (r *PredictiveRule) Name() string { return r.base.Name }
 
 func (r *PredictiveRule) Evaluate(db *sql.DB) (*Alert, error) {
@@ -260,6 +263,7 @@ func NewVarianceRule(base AlertRuleBase, cfg VarianceConfig) *VarianceRule {
 	return &VarianceRule{base: base, cfg: cfg}
 }
 
+func (r *VarianceRule) ID() int      { return r.base.ID }
 func (r *VarianceRule) Name() string { return r.base.Name }
 
 func (r *VarianceRule) Evaluate(db *sql.DB) (*Alert, error) {
@@ -320,6 +324,7 @@ func NewProcessDownRule(base AlertRuleBase, cfg ProcessDownConfig) *ProcessDownR
 	return &ProcessDownRule{base: base, cfg: cfg}
 }
 
+func (r *ProcessDownRule) ID() int      { return r.base.ID }
 func (r *ProcessDownRule) Name() string { return r.base.Name }
 
 func (r *ProcessDownRule) Evaluate(db *sql.DB) (*Alert, error) {
@@ -383,6 +388,7 @@ func NewProcessThrashingRule(base AlertRuleBase, cfg ProcessThrashingConfig) *Pr
 	return &ProcessThrashingRule{base: base, cfg: cfg}
 }
 
+func (r *ProcessThrashingRule) ID() int      { return r.base.ID }
 func (r *ProcessThrashingRule) Name() string { return r.base.Name }
 
 func (r *ProcessThrashingRule) Evaluate(db *sql.DB) (*Alert, error) {

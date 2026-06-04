@@ -170,6 +170,28 @@ func (e *Engine) ReloadRules() {
 		rows.Close()
 	}
 
+	// Warn about enabled base rules that loaded no config row. The per-type JOINs above
+	// silently skip such orphans, which previously masked a bug where rule config was
+	// written with rule_id=0 (see handleCreateAlertRule). Surfacing it makes the
+	// misconfiguration visible instead of a rule that quietly never fires.
+	loaded := make(map[int]bool, len(rules))
+	for _, r := range rules {
+		loaded[r.ID()] = true
+	}
+	if rows, err := db.Query(`SELECT id, name, type FROM alert_rules WHERE enabled = true`); err == nil {
+		for rows.Next() {
+			var id int
+			var name, typ string
+			if err := rows.Scan(&id, &name, &typ); err != nil {
+				continue
+			}
+			if !loaded[id] {
+				log.Warnf("alert rule %q (id=%d, type=%s) is enabled but has no config row; it will not be evaluated — recreate the rule", name, id, typ)
+			}
+		}
+		rows.Close()
+	}
+
 	e.mu.Lock()
 	e.rules = rules
 	e.mu.Unlock()

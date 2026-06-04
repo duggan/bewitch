@@ -234,16 +234,15 @@ func (s *Server) handleCreateAlertRule(w http.ResponseWriter, r *http.Request) {
 
 	db := s.dbFn()
 
-	// Insert into base alert_rules table and get the ID
-	result, err := db.Exec(`INSERT INTO alert_rules (name, type, severity) VALUES (?, ?, ?)`,
-		rule.Name, rule.Type, rule.Severity)
+	// Insert into base alert_rules table and get the ID. Use RETURNING rather than
+	// LastInsertId(): the DuckDB driver does not support LastInsertId() and returns 0,
+	// which would write the type-specific config rows with rule_id=0 and orphan them
+	// from the sequence-assigned base rule id (so the engine's JOIN never matches).
+	var ruleID int64
+	err := db.QueryRow(`INSERT INTO alert_rules (name, type, severity) VALUES (?, ?, ?) RETURNING id`,
+		rule.Name, rule.Type, rule.Severity).Scan(&ruleID)
 	if err != nil {
 		writeError(w, r, http.StatusInternalServerError, err.Error())
-		return
-	}
-	ruleID, err := result.LastInsertId()
-	if err != nil {
-		writeError(w, r, http.StatusInternalServerError, "failed to get rule id: "+err.Error())
 		return
 	}
 
