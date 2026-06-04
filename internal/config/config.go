@@ -30,6 +30,7 @@ type DaemonConfig struct {
 	PruneInterval       string `toml:"prune_interval"`        // e.g. "1h", "30m"; default "1h"
 	CompactionInterval  string `toml:"compaction_interval"`   // e.g. "24h", "7d"; empty = disabled
 	CheckpointThreshold string `toml:"checkpoint_threshold"`  // e.g. "16MB", "256MB"; default "16MB" (DuckDB default)
+	DBMemoryLimit       string `toml:"db_memory_limit"`       // e.g. "512MB", "1GB"; caps DuckDB working memory; empty = DuckDB default (~80% RAM)
 	CheckpointInterval  string `toml:"checkpoint_interval"`   // e.g. "5m", "1m"; forced checkpoint interval for crash safety
 	ArchiveThreshold    string `toml:"archive_threshold"`     // e.g. "7d"; archive data older than this to Parquet
 	ArchiveInterval     string `toml:"archive_interval"`      // e.g. "6h"; how often to run archive; default "6h"
@@ -353,6 +354,23 @@ func (c *DaemonConfig) DefaultCollectionInterval() (time.Duration, error) {
 		return 100 * time.Millisecond, nil
 	}
 	return d, nil
+}
+
+// DefaultDBMemoryLimit caps DuckDB's working memory when the user hasn't set
+// one. DuckDB otherwise defaults to ~80% of physical RAM, which is far too much
+// for a background monitoring daemon and is the proximate cause of OOM kills on
+// small hosts. A conservative cap (with temp_directory spilling) is always safer
+// for a tool that is meant to sit quietly in the background.
+const DefaultDBMemoryLimit = "512MB"
+
+// DBMemoryLimitValue returns the configured DuckDB memory limit, falling back to
+// DefaultDBMemoryLimit. It never returns "" so DuckDB's ~80%-of-RAM default is
+// never used.
+func (c *DaemonConfig) DBMemoryLimitValue() string {
+	if c.DBMemoryLimit == "" {
+		return DefaultDBMemoryLimit
+	}
+	return c.DBMemoryLimit
 }
 
 // RetentionDuration parses the retention string into a time.Duration.

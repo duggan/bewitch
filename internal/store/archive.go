@@ -20,13 +20,18 @@ func (s *Store) ArchiveExclusive(archivePath string, threshold time.Duration) er
 
 // Archive exports data older than threshold to Parquet files.
 // Data is organized into daily Parquet files per table.
+//
+// Unlike a naive implementation, this does NOT pause writes for the whole run.
+// Exports read only already-settled data older than the cutoff, so they run
+// concurrently with live collection; only the small per-day DELETE briefly pauses
+// writes (see archiveTable). This is essential on memory-constrained hosts: a
+// first-ever archive of months of data can take a long time, and pausing for the
+// duration would balloon the in-memory write buffer and appear to lock up the
+// daemon. Work is also committed per day so an interrupted run resumes cleanly.
 func (s *Store) Archive(archivePath string, threshold time.Duration) error {
 	if threshold == 0 || archivePath == "" {
 		return nil
 	}
-
-	s.pause()
-	defer s.resume()
 
 	cutoff := time.Now().Add(-threshold)
 
@@ -37,13 +42,17 @@ func (s *Store) Archive(archivePath string, threshold time.Duration) error {
 		}
 	}
 
-	// Snapshot dimension tables (these are append-only, so a full snapshot is safe)
+	// Snapshot dimension tables (these are append-only, so a full snapshot is safe).
+	// Read-only COPY, no pause needed.
 	if err := s.snapshotDimensionTables(archivePath); err != nil {
 		return fmt.Errorf("snapshot dimension tables: %w", err)
 	}
 
-	// Checkpoint to flush WAL and reclaim space from deleted rows
-	if _, err := s.db.Exec("CHECKPOINT"); err != nil {
+	// Checkpoint to flush WAL and reclaim space from deleted rows.
+	if err := s.withPause(func() error {
+		_, err := s.db.Exec("CHECKPOINT")
+		return err
+	}); err != nil {
 		log.Warnf("archive: checkpoint failed: %v", err)
 	}
 
@@ -83,7 +92,12 @@ func (s *Store) archiveTable(table, archivePath string, cutoff time.Time) error 
 		return fmt.Errorf("create archive dir: %w", err)
 	}
 
-	// Group data by day and export
+	// Group data by day. Each day is exported (unpaused, read-only) then its rows
+	// are deleted and archive_state advanced under a brief pause. Doing the work
+	// one day at a time keeps both the export-vs-writes overlap and each DELETE
+	// transaction small, and makes the run resumable: archive_state always reflects
+	// the last fully-committed day.
+	var rowsDeleted int64
 	current := time.Date(minTs.Year(), minTs.Month(), minTs.Day(), 0, 0, 0, 0, time.UTC)
 	for !current.After(maxTs) {
 		nextDay := current.AddDate(0, 0, 1)
@@ -100,31 +114,36 @@ func (s *Store) archiveTable(table, archivePath string, cutoff time.Time) error 
 			dayEnd = cutoff
 		}
 
-		// Export data for this day
+		// Export data for this day (read-only; runs while collection continues).
 		if err := s.exportToParquet(table, parquetPath, dayStart, dayEnd); err != nil {
 			return fmt.Errorf("export %s to %s: %w", table, parquetPath, err)
+		}
+
+		// Delete this day's rows and advance archive_state, pausing writes only
+		// for the brief delete.
+		ds, de := dayStart, dayEnd
+		if err := s.withPause(func() error {
+			result, err := s.db.Exec(fmt.Sprintf("DELETE FROM %s WHERE ts > ? AND ts <= ?", table), ds, de)
+			if err != nil {
+				return fmt.Errorf("delete archived data: %w", err)
+			}
+			if n, e := result.RowsAffected(); e == nil {
+				rowsDeleted += n
+			}
+			if _, err := s.db.Exec(`INSERT INTO archive_state (table_name, last_archived_ts) VALUES (?, ?)
+				ON CONFLICT (table_name) DO UPDATE SET last_archived_ts = excluded.last_archived_ts`,
+				table, de); err != nil {
+				return fmt.Errorf("update archive_state: %w", err)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 
 		current = nextDay
 	}
 
-	// Delete archived data from DuckDB
-	deleteQuery := fmt.Sprintf("DELETE FROM %s WHERE ts > ? AND ts <= ?", table)
-	result, err := s.db.Exec(deleteQuery, lastArchived, cutoff)
-	if err != nil {
-		return fmt.Errorf("delete archived data: %w", err)
-	}
-	rowsDeleted, _ := result.RowsAffected()
-
-	// Update archive state
-	_, err = s.db.Exec(`INSERT INTO archive_state (table_name, last_archived_ts) VALUES (?, ?)
-		ON CONFLICT (table_name) DO UPDATE SET last_archived_ts = excluded.last_archived_ts`,
-		table, cutoff)
-	if err != nil {
-		return fmt.Errorf("update archive_state: %w", err)
-	}
-
-	log.Infof("archive: %s - exported %d rows, deleted from DuckDB", table, rowsDeleted)
+	log.Infof("archive: %s - exported and deleted %d rows from DuckDB", table, rowsDeleted)
 	return nil
 }
 
@@ -135,6 +154,10 @@ func (s *Store) exportToParquet(table, parquetPath string, start, end time.Time)
 	_, err := os.Stat(parquetPath)
 	fileExists := err == nil
 
+	// Note: no ORDER BY. Sorting whole days forces DuckDB to materialize/sort the
+	// entire batch in memory (expensive on small hosts and a contributor to the
+	// archive lockup). Parquet does not require sorted input and the history API
+	// re-aggregates on read, so ordering here would be wasted work.
 	if fileExists {
 		// Merge existing Parquet data with new data
 		tmpPath := parquetPath + ".tmp"
@@ -142,7 +165,6 @@ func (s *Store) exportToParquet(table, parquetPath string, start, end time.Time)
 			SELECT * FROM read_parquet('%s')
 			UNION ALL
 			SELECT * FROM %s WHERE ts > ? AND ts <= ?
-			ORDER BY ts
 		) TO '%s' (FORMAT parquet, COMPRESSION zstd)`, parquetPath, table, tmpPath)
 
 		if _, err := s.db.Exec(query, start, end); err != nil {
@@ -157,7 +179,7 @@ func (s *Store) exportToParquet(table, parquetPath string, start, end time.Time)
 		}
 	} else {
 		// Simple export - no existing file
-		query := fmt.Sprintf(`COPY (SELECT * FROM %s WHERE ts > ? AND ts <= ? ORDER BY ts) TO '%s' (FORMAT parquet, COMPRESSION zstd)`,
+		query := fmt.Sprintf(`COPY (SELECT * FROM %s WHERE ts > ? AND ts <= ?) TO '%s' (FORMAT parquet, COMPRESSION zstd)`,
 			table, parquetPath)
 
 		if _, err := s.db.Exec(query, start, end); err != nil {

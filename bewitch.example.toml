@@ -13,6 +13,9 @@ db_path = "/var/lib/bewitch/bewitch.duckdb"
 # prune_interval = "1h"  # how often to delete old data (requires retention); default "1h"
 # compaction_interval = "7d"  # full DB rebuild interval; empty = disabled
 # checkpoint_threshold = "16MB"  # DuckDB WAL auto-checkpoint size; default "16MB"
+# db_memory_limit = "512MB"  # cap DuckDB working memory; default "512MB". Large queries,
+                             # exports, and archives spill to disk (duckdb_tmp next to db_path)
+                             # instead of OOM-killing the daemon. Raise on big hosts with spare RAM.
 # checkpoint_interval = "5m"  # forced checkpoint interval for crash safety; empty = disabled
 # archive_threshold = "7d"  # archive data older than this to Parquet; empty = disabled
 # archive_interval = "6h"  # how often to run archive; default "6h"

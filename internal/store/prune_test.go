@@ -12,7 +12,7 @@ import (
 func newPruneTestStore(t *testing.T) *Store {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "prune.duckdb")
-	database, err := db.Open(dbPath, "")
+	database, err := db.Open(dbPath, "", "")
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
 	}
@@ -73,12 +73,12 @@ func TestPruneShrinksProcInfoCache(t *testing.T) {
 		t.Errorf("cache size after prune = %d, want 2 (orphaned entries should be evicted)", got)
 	}
 	for pid := 1; pid <= 2; pid++ {
-		if !s.procInfoCache[processKey{pid: int32(pid), startTime: int64(pid * 1000)}] {
+		if _, ok := s.procInfoCache[processKey{pid: int32(pid), startTime: int64(pid * 1000)}]; !ok {
 			t.Errorf("pid %d missing from cache after prune", pid)
 		}
 	}
 	for pid := 3; pid <= 4; pid++ {
-		if s.procInfoCache[processKey{pid: int32(pid), startTime: int64(pid * 1000)}] {
+		if _, ok := s.procInfoCache[processKey{pid: int32(pid), startTime: int64(pid * 1000)}]; ok {
 			t.Errorf("pid %d should have been evicted from cache after prune", pid)
 		}
 	}

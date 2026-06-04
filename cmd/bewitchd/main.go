@@ -24,6 +24,15 @@ import (
 
 var version = "dev"
 
+const (
+	// procInfoCacheEvictInterval is how often stale process-info cache entries are
+	// swept. procInfoCacheMaxAge is how long an unseen (pid,start_time) is kept
+	// before eviction; comfortably longer than the eviction interval so processes
+	// that briefly drop out of the enriched/top-N set aren't churned.
+	procInfoCacheEvictInterval = 5 * time.Minute
+	procInfoCacheMaxAge        = 15 * time.Minute
+)
+
 func main() {
 	log.SetReportTimestamp(true)
 
@@ -61,13 +70,14 @@ func main() {
 		log.Warn(warn)
 	}
 
-	database, err := db.Open(cfg.Daemon.DBPath, cfg.Daemon.CheckpointThreshold)
+	database, err := db.Open(cfg.Daemon.DBPath, cfg.Daemon.CheckpointThreshold, cfg.Daemon.DBMemoryLimitValue())
 	if err != nil {
 		log.Fatalf("opening database: %v", err)
 	}
 	if cfg.Daemon.CheckpointThreshold != "" {
 		log.Infof("checkpoint threshold: %s", cfg.Daemon.CheckpointThreshold)
 	}
+	log.Infof("DuckDB memory limit: %s", cfg.Daemon.DBMemoryLimitValue())
 
 	st := store.New(database)
 	defer st.DB().Close()
@@ -409,6 +419,27 @@ func main() {
 			return st.CompactExclusive(cfg.Daemon.DBPath)
 		})
 	}
+
+	// Always-on process-info cache eviction. The procInfoCache is otherwise only
+	// rebuilt by prune/compact (both optional); without this it grows for the
+	// lifetime of the daemon as short-lived processes churn (a real source of the
+	// observed multi-hundred-MB RSS growth). Evicting stale entries keeps the cache
+	// bounded by the live process set regardless of retention configuration.
+	go func() {
+		ticker := time.NewTicker(procInfoCacheEvictInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-shutdownCh:
+				return
+			case <-ticker.C:
+			}
+			if n := st.EvictStaleProcInfoCache(procInfoCacheMaxAge); n > 0 {
+				log.Debugf("evicted %d stale process-info cache entries (%d remain)",
+					n, st.ProcInfoCacheLen())
+			}
+		}
+	}()
 
 	// Start periodic checkpointing if configured (for crash safety)
 	checkpointInterval, err := cfg.Daemon.CheckpointDuration()

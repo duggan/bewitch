@@ -320,6 +320,22 @@ func TestDaemonConfigDurations(t *testing.T) {
 		}
 	})
 
+	t.Run("DBMemoryLimitValue", func(t *testing.T) {
+		// Empty must fall back to the built-in default, never DuckDB's ~80%-of-RAM
+		// default which OOM-kills the daemon on small hosts.
+		empty := DaemonConfig{}
+		if got := empty.DBMemoryLimitValue(); got != DefaultDBMemoryLimit {
+			t.Errorf("empty db_memory_limit = %q, want default %q", got, DefaultDBMemoryLimit)
+		}
+		set := DaemonConfig{DBMemoryLimit: "1GB"}
+		if got := set.DBMemoryLimitValue(); got != "1GB" {
+			t.Errorf("configured db_memory_limit = %q, want %q", got, "1GB")
+		}
+		if DefaultDBMemoryLimit == "" {
+			t.Error("DefaultDBMemoryLimit must not be empty")
+		}
+	})
+
 	t.Run("RetentionDuration", func(t *testing.T) {
 		tests := []struct {
 			name    string

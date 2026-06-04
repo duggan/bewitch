@@ -26,19 +26,25 @@ type processKey struct {
 // Store writes collected metrics to DuckDB. When paused (during maintenance
 // or compaction), incoming samples are buffered and flushed on resume.
 type Store struct {
-	db     *sql.DB
-	mu     sync.Mutex
-	buf    []collector.Sample
-	paused bool
-	opMu   sync.Mutex // prevents concurrent maintenance/compaction
+	db         *sql.DB
+	mu         sync.Mutex
+	buf        []collector.Sample
+	bufDropped int // samples dropped because the pause buffer hit its cap
+	paused     bool
+	opMu       sync.Mutex // prevents concurrent maintenance/compaction
 
 	// Dimension ID caches (category -> value -> id)
 	dimCache   map[string]map[string]int16
 	dimCacheMu sync.RWMutex
 	dimNextID  map[string]int16 // next available ID per category
 
-	// Process info cache - tracks which (pid, start_time) pairs have been inserted
-	procInfoCache   map[processKey]bool
+	// Process info cache - tracks which (pid, start_time) pairs have been inserted,
+	// mapping each to the last time it was seen in a collection cycle. Entries are
+	// evicted once they go stale (see EvictStaleProcInfoCache) so the map stays
+	// bounded by the live process set rather than growing for the lifetime of the
+	// daemon. Re-inserting an evicted-but-still-present process is harmless
+	// (process_info inserts use ON CONFLICT DO NOTHING).
+	procInfoCache   map[processKey]time.Time
 	procInfoCacheMu sync.RWMutex
 }
 
@@ -47,7 +53,7 @@ func New(db *sql.DB) *Store {
 		db:            db,
 		dimCache:      make(map[string]map[string]int16),
 		dimNextID:     make(map[string]int16),
-		procInfoCache: make(map[processKey]bool),
+		procInfoCache: make(map[processKey]time.Time),
 	}
 	// Initialize caches for each dimension category
 	for _, cat := range []string{"sensor", "interface", "mount", "device", "zone", "gpu"} {
@@ -86,9 +92,11 @@ func (s *Store) loadDimensionCache() {
 
 // loadProcessInfoCache rebuilds the process info cache from the database,
 // discarding any existing entries. Callers must hold procInfoCacheMu (or be
-// running before the store is shared, e.g. New).
+// running before the store is shared, e.g. New). Loaded entries are stamped with
+// the current time so they age out via EvictStaleProcInfoCache if they are not
+// seen again (most rows on disk are for long-dead processes).
 func (s *Store) loadProcessInfoCache() {
-	s.procInfoCache = make(map[processKey]bool)
+	s.procInfoCache = make(map[processKey]time.Time)
 
 	rows, err := s.db.Query("SELECT pid, start_time FROM process_info")
 	if err != nil {
@@ -96,14 +104,41 @@ func (s *Store) loadProcessInfoCache() {
 	}
 	defer rows.Close()
 
+	now := time.Now()
 	for rows.Next() {
 		var pid int32
 		var startTime int64
 		if err := rows.Scan(&pid, &startTime); err != nil {
 			continue
 		}
-		s.procInfoCache[processKey{pid: pid, startTime: startTime}] = true
+		s.procInfoCache[processKey{pid: pid, startTime: startTime}] = now
 	}
+}
+
+// EvictStaleProcInfoCache removes process info cache entries that have not been
+// seen within maxAge. This keeps the cache bounded by the live process set even
+// when retention/compaction are disabled (those are the only other paths that
+// rebuild the cache). Safe to call concurrently with writes.
+func (s *Store) EvictStaleProcInfoCache(maxAge time.Duration) int {
+	cutoff := time.Now().Add(-maxAge)
+	s.procInfoCacheMu.Lock()
+	defer s.procInfoCacheMu.Unlock()
+	var evicted int
+	for key, lastSeen := range s.procInfoCache {
+		if lastSeen.Before(cutoff) {
+			delete(s.procInfoCache, key)
+			evicted++
+		}
+	}
+	return evicted
+}
+
+// ProcInfoCacheLen returns the number of entries in the process info cache.
+// Exposed for observability and testing.
+func (s *Store) ProcInfoCacheLen() int {
+	s.procInfoCacheMu.RLock()
+	defer s.procInfoCacheMu.RUnlock()
+	return len(s.procInfoCache)
 }
 
 // getDimensionID returns the ID for a dimension value, creating it if needed
@@ -150,12 +185,29 @@ func (s *Store) DB() *sql.DB {
 	return s.db
 }
 
+// maxBufferedSamples caps how many samples are held in memory while writes are
+// paused. With per-chunk maintenance pauses the buffer normally holds only a
+// handful of samples; this is a safety net so an unexpectedly long pause (e.g.
+// compaction of a very large DB) cannot grow the buffer without bound and OOM the
+// daemon. When exceeded, the oldest buffered samples are dropped.
+const maxBufferedSamples = 2048
+
+// bufferLocked appends a sample to the pause buffer, dropping the oldest samples
+// if the cap is exceeded. The caller must hold s.mu.
+func (s *Store) bufferLocked(sample collector.Sample) {
+	s.buf = append(s.buf, sample)
+	if over := len(s.buf) - maxBufferedSamples; over > 0 {
+		s.buf = s.buf[over:]
+		s.bufDropped += over
+	}
+}
+
 // Write dispatches a sample to the appropriate insert method. If the store
 // is paused, the sample is buffered in memory and will be flushed on resume.
 func (s *Store) Write(sample collector.Sample) error {
 	s.mu.Lock()
 	if s.paused {
-		s.buf = append(s.buf, sample)
+		s.bufferLocked(sample)
 		s.mu.Unlock()
 		return nil
 	}
@@ -196,7 +248,7 @@ func (s *Store) WriteBatch(samples []collector.Sample) error {
 	if s.paused {
 		for _, sample := range samples {
 			if sample.Data != nil {
-				s.buf = append(s.buf, sample)
+				s.bufferLocked(sample)
 			}
 		}
 		s.mu.Unlock()
@@ -273,15 +325,19 @@ func (s *Store) prepareSampleForAppender(sample collector.Sample) error {
 // prepareProcessInfo inserts new process_info records before appender phase.
 // Uses batch insert for better performance per DuckDB guidelines.
 func (s *Store) prepareProcessInfo(sample collector.Sample, data collector.ProcessData) {
-	s.procInfoCacheMu.RLock()
+	seen := sample.Timestamp
+	s.procInfoCacheMu.Lock()
 	var newProcs []collector.ProcessSample
 	for _, p := range data.Processes {
 		key := processKey{pid: p.PID, startTime: p.StartTime}
-		if !s.procInfoCache[key] {
+		if _, ok := s.procInfoCache[key]; ok {
+			// Already inserted; refresh last-seen so it isn't evicted while alive.
+			s.procInfoCache[key] = seen
+		} else {
 			newProcs = append(newProcs, p)
 		}
 	}
-	s.procInfoCacheMu.RUnlock()
+	s.procInfoCacheMu.Unlock()
 
 	if len(newProcs) == 0 {
 		return
@@ -308,7 +364,7 @@ func (s *Store) prepareProcessInfo(sample collector.Sample, data collector.Proce
 	// Update cache for all successfully inserted processes
 	s.procInfoCacheMu.Lock()
 	for _, p := range newProcs {
-		s.procInfoCache[processKey{pid: p.PID, startTime: p.StartTime}] = true
+		s.procInfoCache[processKey{pid: p.PID, startTime: p.StartTime}] = seen
 	}
 	s.procInfoCacheMu.Unlock()
 }
@@ -347,15 +403,30 @@ func (s *Store) pause() {
 func (s *Store) resume() {
 	s.mu.Lock()
 	pending := s.buf
+	dropped := s.bufDropped
 	s.buf = nil
+	s.bufDropped = 0
 	s.paused = false
 	s.mu.Unlock()
 
+	if dropped > 0 {
+		log.Warnf("dropped %d buffered samples during pause (buffer cap %d exceeded)", dropped, maxBufferedSamples)
+	}
 	for _, sample := range pending {
 		if err := s.writeSample(sample); err != nil {
 			log.Errorf("flush buffered %s: %v", sample.Kind, err)
 		}
 	}
+}
+
+// withPause runs fn with writes paused, flushing any samples buffered during the
+// pause on return. Maintenance operations (archive deletes, checkpoint) use this
+// for short critical sections so the write buffer drains between them rather than
+// accumulating for the whole operation.
+func (s *Store) withPause(fn func() error) error {
+	s.pause()
+	defer s.resume()
+	return fn()
 }
 
 // metricTables aliases db.MetricTables for convenience.

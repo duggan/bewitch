@@ -307,6 +307,15 @@ func (c *ProcessCollector) Collect() (Sample, error) {
 	}, nil
 }
 
+// memoryFromStatus extracts the memory breakdown from /proc/[pid]/status.
+// prometheus/procfs already converts these fields from kB to bytes when parsing
+// (see procfs proc_status.go), so they must be used AS-IS. A previous bug
+// multiplied each by 1024, inflating every stored RSS value 1024× (~1 TB reported
+// for a ~1 GB process). Keep this conversion-free; the test guards it.
+func memoryFromStatus(status procfs.ProcStatus) (rss, vss, shared, swap uint64) {
+	return status.VmRSS, status.VmSize, status.VmLib, status.VmSwap
+}
+
 // enrichProc adds expensive data (cmdline, status, fd count) to a process.
 // Called only for top N processes after the fast sorting pass.
 func (c *ProcessCollector) enrichProc(b procBasic, now time.Time) ProcessSample {
@@ -322,11 +331,7 @@ func (c *ProcessCollector) enrichProc(b procBasic, now time.Time) ProcessSample 
 	rss := b.rss // Use RSS from stat by default
 	if status, err := proc.NewStatus(); err == nil {
 		uid = uint32(status.UIDs[0])
-		// Status has more accurate memory breakdown
-		rss = uint64(status.VmRSS) * 1024
-		vss = uint64(status.VmSize) * 1024
-		shared = uint64(status.VmLib) * 1024
-		swap = uint64(status.VmSwap) * 1024
+		rss, vss, shared, swap = memoryFromStatus(status)
 	}
 
 	// Get FD count (requires readdir on /proc/[pid]/fd)

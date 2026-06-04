@@ -15,7 +15,10 @@ import (
 // It creates the parent directory if it does not exist.
 // checkpointThreshold configures wal_autocheckpoint (e.g. "16MB", "256MB");
 // empty uses DuckDB's default (16MB).
-func Open(path string, checkpointThreshold string) (*sql.DB, error) {
+// memoryLimit caps DuckDB's working memory (e.g. "512MB", "1GB"); empty uses
+// DuckDB's default (~80% of physical RAM). On memory-constrained hosts this is
+// important so large sorts/exports spill to temp_directory instead of OOM-killing.
+func Open(path string, checkpointThreshold string, memoryLimit string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, fmt.Errorf("creating data directory: %w", err)
 	}
@@ -30,6 +33,23 @@ func Open(path string, checkpointThreshold string) (*sql.DB, error) {
 		if _, err := db.Exec(fmt.Sprintf("SET wal_autocheckpoint = '%s'", checkpointThreshold)); err != nil {
 			db.Close()
 			return nil, fmt.Errorf("setting wal_autocheckpoint: %w", err)
+		}
+	}
+	if memoryLimit != "" {
+		if _, err := db.Exec(fmt.Sprintf("SET memory_limit = '%s'", memoryLimit)); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("setting memory_limit: %w", err)
+		}
+		// Spill to disk (next to the DB file) when a query exceeds memory_limit,
+		// rather than failing or being OOM-killed.
+		tempDir := filepath.Join(filepath.Dir(path), "duckdb_tmp")
+		if err := os.MkdirAll(tempDir, 0755); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("creating temp directory: %w", err)
+		}
+		if _, err := db.Exec(fmt.Sprintf("SET temp_directory = '%s'", tempDir)); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("setting temp_directory: %w", err)
 		}
 	}
 	if err := runMigrations(db); err != nil {
