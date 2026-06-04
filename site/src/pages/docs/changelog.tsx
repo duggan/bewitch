@@ -9,6 +9,29 @@ export const ChangelogDocs: FC = () => (
       <a href="https://github.com/duggan/bewitch/blob/main/CHANGELOG.md">CHANGELOG.md</a> on GitHub.
     </p>
 
+    <h2>0.6.0</h2>
+    <p class="text-muted text-sm">2026-06-04</p>
+    <h3>Added</h3>
+    <ul>
+      <li>Active alerts are now surfaced in the TUI status bar</li>
+      <li>Alert rules can be edited in place — <code>e</code> in the alerts view, or <code>PUT /api/alert-rules/{'{id}'}</code> — instead of delete-and-recreate</li>
+      <li>Alerts view now shows a full rule detail pane, delete confirmation, and surfaced create/update errors</li>
+    </ul>
+    <h3>Changed</h3>
+    <ul>
+      <li>DuckDB memory is capped via a configurable <code>[daemon] db_memory_limit</code> (default <code>512MB</code>) with spill-to-disk, instead of DuckDB's ~80%-of-RAM default that could exhaust low-memory hosts</li>
+      <li>Parquet archival now runs incrementally (per-day, resumable) and no longer pauses the daemon for the whole run</li>
+      <li>Alert rule names must now be unique, enforced by a database index; any pre-existing duplicates are auto-renamed on upgrade</li>
+    </ul>
+    <h3>Fixed</h3>
+    <ul>
+      <li>Alert rules created via the API or TUI never fired — the type-specific config row was linked with <code>rule_id=0</code> (the DuckDB driver has no <code>LastInsertId()</code>), so the engine's join never matched. Rules created before this fix must be recreated.</li>
+      <li>Deleting an alert rule now also clears its fired alerts, instead of leaving orphaned, undismissable "active" alerts</li>
+      <li><code>bewitchd</code> memory leak that could OOM-kill small/low-RAM hosts — the process-info cache is now bounded by an always-on eviction sweep regardless of retention settings</li>
+      <li>Process <code>rss_bytes</code> was stored 1024× too large (≈1 TB reported for a ~1 GB process); now correct for new samples</li>
+      <li>Enabling Parquet archival no longer freezes the daemon on large databases</li>
+    </ul>
+
     <h2>0.5.2</h2>
     <p class="text-muted text-sm">2026-05-26</p>
     <h3>Fixed</h3>

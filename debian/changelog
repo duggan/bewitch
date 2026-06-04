@@ -1,3 +1,19 @@
+bewitch (0.6.0-1) unstable; urgency=medium
+
+  * Active alerts are now surfaced in the TUI status bar
+  * Alert rules can be edited in place (e in the alerts view, or PUT /api/alert-rules/{id}) instead of delete-and-recreate
+  * Alerts view now shows a full rule detail pane, delete confirmation, and surfaced create/update errors
+  * DuckDB memory is capped via a configurable [daemon] db_memory_limit (default 512MB) with spill-to-disk, instead of DuckDB's ~80%-of-RAM default that could exhaust low-memory hosts
+  * Parquet archival now runs incrementally (per-day, resumable) and no longer pauses the daemon for the whole run
+  * Alert rule names must now be unique, enforced by a database index; any pre-existing duplicates are auto-renamed on upgrade
+  * Fix alert rules created via the API or TUI never firing (config row linked with rule_id=0 because the DuckDB driver has no LastInsertId); rules created before this fix must be recreated
+  * Deleting an alert rule now also clears its fired alerts, instead of leaving orphaned undismissable alerts
+  * Fix bewitchd memory leak that could OOM-kill small/low-RAM hosts -- the process-info cache is now bounded by an always-on eviction sweep regardless of retention settings
+  * Fix process rss_bytes stored 1024x too large (~1 TB reported for a ~1 GB process); now correct for new samples
+  * Enabling Parquet archival no longer freezes the daemon on large databases
+
+ -- Ross Duggan <ross@duggan.ie>  Thu, 04 Jun 2026 13:23:51 +0100
+
 bewitch (0.5.2-1) unstable; urgency=medium
 
   * Fix unbounded process_info cache growth on hosts with high process churn
