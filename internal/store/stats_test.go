@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -109,11 +110,11 @@ func TestStatsPopulated(t *testing.T) {
 		}
 	}
 
-	// Insert alert_rules: 2 enabled, 1 disabled
+	// Insert alert_rules: 2 enabled, 1 disabled (names must be unique).
 	for i, enabled := range []bool{true, true, false} {
 		if _, err := database.Exec(
 			`INSERT INTO alert_rules (id, name, type, severity, enabled) VALUES (?, ?, ?, ?, ?)`,
-			i+1, "rule", "threshold", "warning", enabled); err != nil {
+			i+1, fmt.Sprintf("rule_%d", i+1), "threshold", "warning", enabled); err != nil {
 			t.Fatalf("insert alert_rules: %v", err)
 		}
 	}

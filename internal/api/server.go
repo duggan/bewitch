@@ -486,6 +486,13 @@ func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	return s
 }
 
+// Handler returns the server's HTTP handler — the unauthenticated mux that the unix
+// socket listener uses. Exposed so tests can drive the real handlers over httptest
+// without opening a socket or TCP listener.
+func (s *Server) Handler() http.Handler {
+	return s.mux
+}
+
 // cleanHistoryCache periodically evicts expired entries from the history cache.
 func (s *Server) cleanHistoryCache() {
 	ticker := time.NewTicker(30 * time.Second)

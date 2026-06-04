@@ -33,8 +33,8 @@ func TestFreshDB(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM schema_version`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("reading schema_version: %v", err)
 	}
-	if version != 4 {
-		t.Errorf("version = %d, want 4", version)
+	if version != 5 {
+		t.Errorf("version = %d, want 5", version)
 	}
 	if dirty {
 		t.Error("dirty = true, want false")
@@ -70,8 +70,8 @@ func TestExistingDBDetection(t *testing.T) {
 		t.Fatalf("reading schema_version: %v", err)
 	}
 	// Should be stamped at 1 (skipped initial), then ran migrations 2 and 3.
-	if version != 4 {
-		t.Errorf("version = %d, want 4", version)
+	if version != 5 {
+		t.Errorf("version = %d, want 5", version)
 	}
 	if dirty {
 		t.Error("dirty = true, want false")
@@ -115,7 +115,51 @@ func TestIdempotentRestart(t *testing.T) {
 	if err := db.QueryRow(`SELECT version FROM schema_version`).Scan(&version); err != nil {
 		t.Fatalf("reading version: %v", err)
 	}
-	if version != 4 {
-		t.Errorf("version = %d, want 4", version)
+	if version != 5 {
+		t.Errorf("version = %d, want 5", version)
+	}
+}
+
+// TestMigrateUniqueRuleNames covers the dedup-then-unique-index repair for alert rule
+// names. It builds a minimal alert_rules table with a duplicate (as a pre-migration DB
+// would have), runs the migration directly, and asserts names are deduped, the lowest id
+// keeps the original name, the unique index now rejects duplicates, and a re-run is a
+// no-op.
+func TestMigrateUniqueRuleNames(t *testing.T) {
+	db := openTestDB(t)
+	if _, err := db.Exec(`CREATE TABLE alert_rules (id INTEGER, name VARCHAR, type VARCHAR, severity VARCHAR)`); err != nil {
+		t.Fatalf("creating table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO alert_rules VALUES
+		(1,'dup','threshold','warning'),
+		(2,'dup','threshold','warning'),
+		(3,'uniq','threshold','warning')`); err != nil {
+		t.Fatalf("seeding rows: %v", err)
+	}
+
+	if err := migrateUniqueRuleNames(db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	var distinct, total int
+	db.QueryRow(`SELECT count(DISTINCT name), count(*) FROM alert_rules`).Scan(&distinct, &total)
+	if total != 3 || distinct != 3 {
+		t.Errorf("expected 3 distinct names, got distinct=%d total=%d", distinct, total)
+	}
+	var n1, n2 string
+	db.QueryRow(`SELECT name FROM alert_rules WHERE id = 1`).Scan(&n1)
+	db.QueryRow(`SELECT name FROM alert_rules WHERE id = 2`).Scan(&n2)
+	if n1 != "dup" || n2 == "dup" {
+		t.Errorf("expected id1 to keep 'dup' and id2 renamed, got id1=%q id2=%q", n1, n2)
+	}
+
+	// The unique index must now reject a duplicate-name insert.
+	if _, err := db.Exec(`INSERT INTO alert_rules VALUES (4,'uniq','threshold','warning')`); err == nil {
+		t.Error("expected unique index to reject duplicate name insert")
+	}
+
+	// Re-running is a no-op (no error, index already present).
+	if err := migrateUniqueRuleNames(db); err != nil {
+		t.Fatalf("second run should be a no-op: %v", err)
 	}
 }

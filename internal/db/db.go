@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -189,6 +190,71 @@ func migrateFixSequenceSchema(db *sql.DB) error {
 	}
 	if _, err := db.Exec(`ALTER TABLE alert_rules ALTER COLUMN id SET DEFAULT nextval('alert_rule_id_seq')`); err != nil {
 		return fmt.Errorf("fixing alert_rules sequence: %w", err)
+	}
+	return nil
+}
+
+// migrateUniqueRuleNames deduplicates alert rule names and adds a UNIQUE index on
+// alert_rules.name. Fired alerts, the engine debounce, and the delete-time cleanup all
+// link to a rule by name, so two rules sharing a name corrupt each other. The API rejects
+// new duplicates; this migration repairs any that predate that check (the lowest id keeps
+// the original name; later ones get a " #N" suffix) so the unique index can be created.
+func migrateUniqueRuleNames(db *sql.DB) error {
+	exists, err := tableExists(db, "alert_rules")
+	if err != nil {
+		return fmt.Errorf("checking alert_rules table: %w", err)
+	}
+	if !exists {
+		return nil
+	}
+
+	rows, err := db.Query(`SELECT id, name FROM alert_rules ORDER BY name, id`)
+	if err != nil {
+		return fmt.Errorf("listing alert rules: %w", err)
+	}
+	type rule struct {
+		id   int
+		name string
+	}
+	var rules []rule
+	for rows.Next() {
+		var r rule
+		if err := rows.Scan(&r.id, &r.name); err != nil {
+			rows.Close()
+			return fmt.Errorf("scanning alert rule: %w", err)
+		}
+		rules = append(rules, r)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	seen := make(map[string]bool, len(rules))
+	for _, r := range rules {
+		if !seen[r.name] {
+			seen[r.name] = true
+			continue
+		}
+		// Duplicate name: find an unused " #N" variant.
+		newName := r.name
+		for n := 2; ; n++ {
+			candidate := fmt.Sprintf("%s #%d", r.name, n)
+			if !seen[candidate] {
+				newName = candidate
+				break
+			}
+		}
+		seen[newName] = true
+		if _, err := db.Exec(`UPDATE alert_rules SET name = ? WHERE id = ?`, newName, r.id); err != nil {
+			return fmt.Errorf("renaming duplicate rule %d: %w", r.id, err)
+		}
+		log.Printf("alert rule %d renamed %q -> %q (duplicate name)", r.id, r.name, newName)
+	}
+
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_rules_name ON alert_rules(name)`); err != nil {
+		return fmt.Errorf("creating unique index on alert_rules.name: %w", err)
 	}
 	return nil
 }

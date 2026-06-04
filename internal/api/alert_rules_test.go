@@ -3,74 +3,25 @@ package api
 import (
 	"database/sql"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
 	_ "github.com/duckdb/duckdb-go/v2"
+	"github.com/duggan/bewitch/internal/db"
 )
 
-// alertRulesDB creates an in-memory DuckDB with the alert rule schema needed by
-// handleCreateAlertRule (mirrors migration 000001).
+// alertRulesDB opens a real, fully-migrated DuckDB so handler tests run against the same
+// schema production uses (rather than a hand-rolled subset that can silently drift).
 func alertRulesDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("duckdb", "")
+	database, err := db.Open(filepath.Join(t.TempDir(), "alerts.duckdb"), "", "")
 	if err != nil {
-		t.Fatalf("opening in-memory DuckDB: %v", err)
+		t.Fatalf("opening migrated DuckDB: %v", err)
 	}
-	stmts := []string{
-		"CREATE SEQUENCE alert_rule_id_seq START 1",
-		`CREATE TABLE alert_rules (
-			id INTEGER DEFAULT nextval('alert_rule_id_seq'),
-			name VARCHAR NOT NULL,
-			type VARCHAR NOT NULL,
-			severity VARCHAR NOT NULL,
-			enabled BOOLEAN DEFAULT true,
-			created_at TIMESTAMP DEFAULT current_timestamp
-		)`,
-		`CREATE TABLE alert_rule_threshold (
-			rule_id INTEGER NOT NULL,
-			metric VARCHAR NOT NULL,
-			operator VARCHAR NOT NULL,
-			value DOUBLE NOT NULL,
-			duration VARCHAR NOT NULL,
-			mount VARCHAR,
-			interface_name VARCHAR,
-			sensor VARCHAR
-		)`,
-		`CREATE TABLE alert_rule_predictive (
-			rule_id INTEGER NOT NULL, metric VARCHAR NOT NULL, mount VARCHAR,
-			predict_hours INTEGER NOT NULL, threshold_pct DOUBLE NOT NULL
-		)`,
-		`CREATE TABLE alert_rule_variance (
-			rule_id INTEGER NOT NULL, metric VARCHAR NOT NULL,
-			delta_threshold DOUBLE NOT NULL, min_count INTEGER NOT NULL, duration VARCHAR NOT NULL
-		)`,
-		`CREATE TABLE alert_rule_process_down (
-			rule_id INTEGER NOT NULL, process_name VARCHAR NOT NULL, process_pattern VARCHAR,
-			min_instances INTEGER NOT NULL, check_duration VARCHAR NOT NULL
-		)`,
-		`CREATE TABLE alert_rule_process_thrashing (
-			rule_id INTEGER NOT NULL, process_name VARCHAR NOT NULL, process_pattern VARCHAR,
-			restart_threshold INTEGER NOT NULL, restart_window VARCHAR NOT NULL
-		)`,
-		"CREATE SEQUENCE alert_id_seq START 1",
-		`CREATE TABLE alerts (
-			id INTEGER DEFAULT nextval('alert_id_seq'),
-			ts TIMESTAMP NOT NULL,
-			rule_name VARCHAR NOT NULL,
-			severity VARCHAR NOT NULL,
-			message VARCHAR NOT NULL,
-			acknowledged BOOLEAN DEFAULT false
-		)`,
-	}
-	for _, s := range stmts {
-		if _, err := db.Exec(s); err != nil {
-			t.Fatalf("schema setup: %v", err)
-		}
-	}
-	t.Cleanup(func() { db.Close() })
-	return db
+	t.Cleanup(func() { database.Close() })
+	return database
 }
 
 // TestCreateThresholdRuleLinksConfig is a regression test for the DuckDB
