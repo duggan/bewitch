@@ -1,0 +1,152 @@
++++
+title = "Configuration"
+description = "Every TOML option, what it does, and the defaults you can usually leave alone."
+weight = 20
++++
+
+Bewitch uses a TOML configuration file. Both `bewitchd` and `bewitch` accept `-config <path>`.
+The default location when installed via the Debian package is `/etc/bewitch.toml`.
+
+## Daemon Settings
+
+```toml
+[daemon]
+# socket = "/run/bewitch/bewitch.sock"  # Unix socket path
+# listen = ":9119"          # TCP listener for remote access (empty = disabled)
+db_path = "/var/lib/bewitch/bewitch.duckdb"
+# log_level = "info"        # debug, info, warn, error
+# default_interval = "5s"   # global fallback collection interval (min 100ms)
+# mock = false              # synthetic data for macOS TUI development
+```
+
+### Data management
+
+```toml
+[daemon]
+# retention = "30d"           # delete metrics older than this (empty = keep forever)
+# prune_interval = "1h"       # how often to run pruning (requires retention)
+# compaction_interval = "7d"  # full DB rebuild interval (empty = manual only)
+# checkpoint_threshold = "16MB"  # DuckDB WAL auto-checkpoint size
+# checkpoint_interval = "5m"    # forced checkpoint for crash safety (empty = disabled)
+```
+
+### Parquet archival
+
+```toml
+[daemon]
+# archive_threshold = "7d"   # archive data older than this to Parquet
+# archive_interval = "6h"    # how often to run archive
+# archive_path = "/var/lib/bewitch/archive"  # Parquet output directory
+```
+
+### TLS and authentication
+
+```toml
+[daemon]
+# listen = ":9119"           # must be set to enable TCP
+# tls_cert = "/path/cert.pem"  # custom cert (empty = auto-generate)
+# tls_key = "/path/key.pem"    # custom key (empty = auto-generate)
+# tls_disabled = false          # set true for plain TCP (not recommended)
+# auth_token = "my-secret"     # bearer token for TCP clients
+```
+
+## Alert Settings
+
+Alert rules are managed via the TUI (Alerts tab, press `n`), not in the config file.
+The config file controls the evaluation interval and notification channels.
+
+```toml
+[alerts]
+evaluation_interval = "10s"  # how often the alert engine evaluates rules
+
+# Local mail command (postfix/sendmail)
+# [[alerts.email]]
+# use_mail_cmd = true
+# to = ["admin@example.com"]
+# from = "bewitch@myserver.local"  # optional
+
+# Email via SMTP
+# [[alerts.email]]
+# smtp_host = "smtp.example.com"
+# smtp_port = 587
+# username = "alerts@example.com"
+# password = "app-password"
+# from = "alerts@example.com"
+# to = ["admin@example.com"]
+# starttls = true  # false for implicit TLS on port 465
+
+# Shell command
+# [[alerts.commands]]
+# cmd = "/usr/local/bin/alert-handler"
+# receives BEWITCH_RULE, BEWITCH_SEVERITY, BEWITCH_MESSAGE, BEWITCH_TIMESTAMP env vars
+```
+
+## TUI Settings
+
+```toml
+[tui]
+refresh_interval = "2s"
+# history_ranges = ["1h", "6h", "24h", "7d", "30d"]
+```
+
+## Collector Settings
+
+Each collector has its own section with an `interval` field. If omitted, the collector uses
+`default_interval` from the `[daemon]` section (default 5s, minimum 100ms).
+
+```toml
+[collectors.cpu]
+# interval = "1s"
+
+[collectors.memory]
+# interval = "5s"
+
+[collectors.disk]
+# interval = "30s"
+# smart_interval = "5m"         # SMART polling (0 to disable, min 30s)
+# exclude_mounts = ["/boot/efi"]  # additional mount exclusions
+# no_default_excludes = false    # true to disable defaults (/snap/, /run/)
+
+[collectors.network]
+# interval = "5s"
+
+[collectors.ecc]
+# interval = "60s"
+
+[collectors.temperature]
+# interval = "5s"
+# enabled = true   # false to disable
+
+[collectors.power]
+# interval = "5s"
+# enabled = true   # false to disable
+
+[collectors.gpu]
+# interval = "5s"
+# enabled = true   # Intel iGPU via intel_gpu_top, NVIDIA via nvidia-smi
+
+[collectors.process]
+# interval = "5s"
+# max_processes = 100
+# pinned = ["nginx*", "postgres", "redis-server"]
+```
+
+## macOS Mock Mode
+
+For TUI development on macOS, enable mock mode to generate synthetic metrics from a simulated server:
+
+```toml
+[daemon]
+mock = true
+socket = "/tmp/bewitch.sock"
+db_path = "/tmp/bewitch.duckdb"
+```
+
+```bash
+make build
+bin/bewitchd -config dev.toml &
+bin/bewitch -config dev.toml
+```
+
+Mock mode simulates an 8-core server with 32 GB RAM, two disks, two network interfaces, temperature sensors,
+power zones, two GPUs (Intel + NVIDIA), and ~65 processes. Data uses smooth sine waves with jitter for a realistic feel.

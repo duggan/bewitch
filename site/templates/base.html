@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ config.title }}{% endblock title %}</title>
+  <meta name="description" content="{% block description %}{{ config.description }}{% endblock description %}">
+
+  <meta property="og:title" content="{% block og_title %}{{ config.title }}{% endblock og_title %}">
+  <meta property="og:description" content="{{ config.description }}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ config.base_url }}">
+  <meta property="og:image" content="{{ get_url(path='og.png') }}">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="icon" type="image/png" href="{{ get_url(path='favicon.png') }}">
+  <link rel="preconnect" href="https://fonts.bunny.net">
+  <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600|noto-sans-mono:400,500,600,700&display=swap">
+  <link rel="stylesheet" href="{{ get_url(path='style.css', cachebust=true) }}">
+  {% block extra_head %}{% endblock extra_head %}
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="{{ get_url(path='/') }}">
+        <img src="{{ get_url(path='favicon.png') }}" alt="" width="32" height="32">
+        <span class="name">bewitch</span>
+      </a>
+      <nav class="nav">
+        <a href="{{ get_url(path='/docs/') }}">docs</a>
+        <a href="{{ config.extra.github }}" target="_blank" rel="noopener">github</a>
+      </nav>
+    </div>
+  </header>
+
+  {% block body %}{% endblock body %}
+
+  <footer class="site-footer">
+    <div class="wrap inner">
+      <img src="{{ get_url(path='favicon.png') }}" alt="" width="40" height="40">
+      <p class="tagline">A system monitor that keeps the receipts. In hot pink.</p>
+      <div class="links">
+        <a href="{{ config.extra.github }}">GitHub</a>
+        <span class="sep">|</span>
+        <a href="{{ get_url(path='/docs/') }}">Documentation</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Progressive enhancement: a copy button on every docs code block and homepage terminal.
+    document.querySelectorAll("pre, .term").forEach(function (el) {
+      var src = el.querySelector("code") || el.querySelector(".term-body") || el;
+      var text = src.innerText.replace(/^\$ /gm, "").trim();
+      if (!text) return;
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "copy-btn";
+      btn.textContent = "copy";
+      btn.setAttribute("aria-label", "Copy to clipboard");
+      btn.addEventListener("click", function () {
+        navigator.clipboard.writeText(text).then(function () {
+          btn.textContent = "copied";
+          btn.classList.add("ok");
+          setTimeout(function () { btn.textContent = "copy"; btn.classList.remove("ok"); }, 1500);
+        });
+      });
+      el.appendChild(btn);
+    });
+  </script>
+  {% block extra_body %}{% endblock extra_body %}
+</body>
+</html>

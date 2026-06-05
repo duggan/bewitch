@@ -1,0 +1,62 @@
+{# Renders the ordered docs sidebar, marking `current` (a page path) active. #}
+{% macro docs_nav(current) %}
+{% set section = get_section(path="docs/_index.md") %}
+<nav class="sidebar" id="sidebar">
+  <button class="nav-toggle" onclick="document.getElementById('sidebar').classList.toggle('collapsed')">Docs ▾</button>
+  <span class="kicker">Documentation</span>
+  <div class="docs-search">
+    <input type="search" id="docs-search" placeholder="Search docs…"
+           autocomplete="off" spellcheck="false" aria-label="Search documentation">
+    <ul id="docs-search-results" class="search-results" hidden></ul>
+  </div>
+  <ul>
+    <li>
+      <a href="{{ section.permalink }}"{% if current == section.permalink %} class="active"{% endif %}>Overview</a>
+    </li>
+    {% for page in section.pages %}
+    <li>
+      <a href="{{ page.permalink }}"{% if current == page.permalink %} class="active"{% endif %}>{{ page.title }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+</nav>
+{% endmacro docs_nav %}
+
+{# Right-hand "On this page" TOC from Zola's page.toc (H2s + one nested level of H3s). #}
+{% macro page_toc(page) %}
+<nav class="toc" aria-label="On this page">
+  <span class="kicker">On this page</span>
+  <ul>
+    {% for h in page.toc %}
+    <li>
+      <a href="#{{ h.id }}">{{ h.title }}</a>
+      {% if h.children %}
+      <ul>
+        {% for c in h.children %}
+        <li><a href="#{{ c.id }}">{{ c.title }}</a></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</nav>
+{% endmacro page_toc %}
+
+{# API reference: render a field type as a link to its #type-X anchor (or plain code
+   for primitives / map<> types). Used by the api_endpoints / api_types shortcodes. #}
+{% macro tlink(t) %}
+{%- set base = t | replace(from="[]", to="") -%}
+{%- if base in ["string", "number", "boolean", "any"] or base is starting_with("map<") -%}
+<code>{{ t }}</code>
+{%- else -%}
+<a class="type-link" href="#type-{{ base }}"><code>{{ base }}</code></a>{% if t is ending_with("[]") %}<code>[]</code>{% endif %}
+{%- endif -%}
+{% endmacro tlink %}
+
+{# Search scripts for docs pages: Zola-emitted elasticlunr + index, then our UI. #}
+{% macro search_assets() %}
+<script src="{{ get_url(path='elasticlunr.min.js') }}"></script>
+<script src="{{ get_url(path='search_index.en.js') }}"></script>
+<script src="{{ get_url(path='js/search.js') }}"></script>
+{% endmacro search_assets %}

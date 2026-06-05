@@ -1,2 +1,6 @@
 [tools]
+# Static site generator (pin matches the locally tested version).
+zola = "0.22.1"
+# For the demo-bundle build (esbuild) and wrangler deploy.
+node = "lts"
 bun = "latest"
