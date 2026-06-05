@@ -1,3 +1,5 @@
 node_modules/
 dist/
 .vite/
+# Ephemeral APT-repo staging dir (apt-repo target / CI; uploaded to R2, never committed).
+public/

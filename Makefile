@@ -41,10 +41,10 @@ GPG_KEY_FILE ?= $(HOME)/.config/bewitch/signing.key
 apt-repo:
 	docker build -f Dockerfile.repo -t bewitch-repo .
 	docker run --rm \
-		-e SITE_PUBLIC=/work/site/static \
+		-e SITE_PUBLIC=/work/site/public \
 		-e GPG_KEY_FILE=/work/signing.key \
 		-v $(CURDIR)/dist:/work/dist \
-		-v $(CURDIR)/site/static:/work/site/static \
+		-v $(CURDIR)/site/public:/work/site/public \
 		-v $(GPG_KEY_FILE):/work/signing.key:ro \
 		bewitch-repo dist/amd64/bewitch_*.deb dist/arm64/bewitch_*.deb
 
