@@ -1,11 +1,8 @@
 # Bewitch
 
-A charming server monitoring system for Linux.
+A Linux system monitor for the machines nobody else is watching.
 
-Bewitch is comprised of two applications:
-
-- **bewitchd** — a daemon that continuously collects system metrics and stores them for querying
-- **bewitch** — a TUI that provides a rich, interactive interface to the collected data
+bewitch is two small binaries: bewitchd, a daemon that quietly reads /proc and /sys and stores months of metrics in DuckDB, and bewitch, a TUI that makes them legible — live dashboards, historical braille charts, SMART and hardware health, and alerts. There's a SQL REPL over your own data, DB-backed alerts that reach email or a shell command, and optional TLS remote access with SSH-style fingerprint pinning. It's built for homelabbers and hobbyists — the basement rack, the Raspberry Pi, that one VPS — to run quietly on small machines and stay out of the way. And it comes in one colour: hot pink.
 
 ## Features
 
@@ -14,7 +11,7 @@ Bewitch is comprised of two applications:
 - **Per-collector intervals** — each collector has a configurable collection interval (e.g., CPU at 1s, disk at 30s, ECC at 60s) with a global default; failing collectors automatically back off exponentially and recover on success
 - **Persistent storage** — embedded database with automatic WAL checkpointing, optional retention pruning, scheduled or on-demand compaction, and Parquet archival for long-term storage
 - **Alerting** — threshold, predictive (linear regression), and variance alert rules, manageable from the TUI
-- **Webhook delivery** — alert notifications to external services
+- **Email & command delivery** — alert notifications via email (SMTP or the local `mail` command) or any shell command (alert details passed as `BEWITCH_*` environment variables)
 - **TUI dashboard** — real-time system overview with detail views per subsystem; status bar indicates stale data when a collector stops producing updates
 - **Historical charts** — high-resolution braille charts for CPU, memory, disk, hardware (temperature/power), and process CPU with selectable time ranges and dynamic height
 - **Interactive SQL REPL** — `bewitch repl` opens an interactive SQL console against the daemon, with multi-line editing, dot-commands (`.tables`, `.schema`, `.metrics`, `.dimensions`, `.export`), persistent history, tab completion, piped input support, and read-only enforcement
