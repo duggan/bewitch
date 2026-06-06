@@ -256,8 +256,11 @@ func (s *Store) WriteBatch(samples []collector.Sample) error {
 	}
 	s.mu.Unlock()
 
-	// Phase 1: Do all SQL-based operations BEFORE acquiring driver connection.
-	// This avoids deadlock since we only have 1 connection (SetMaxOpenConns(1)).
+	// Phase 1: Do all SQL-based operations BEFORE acquiring the appender's driver
+	// connection. Phase 3 pins one driver connection and keeps an appender open on
+	// it for the whole batch; issuing SQL on that same pinned connection while the
+	// appender is active conflicts, so every SQL statement must complete here first.
+	// (The pool is SetMaxOpenConns(4); see db.Open.)
 	for _, sample := range samples {
 		if sample.Data == nil {
 			continue
@@ -267,7 +270,7 @@ func (s *Store) WriteBatch(samples []collector.Sample) error {
 		}
 	}
 
-	// Phase 2: Get driver connection for appenders (blocks the single connection)
+	// Phase 2: Get the driver connection the appenders write through (pins it).
 	driverConn, sqlConn, err := db.GetDriverConn(context.Background(), s.db)
 	if err != nil {
 		return fmt.Errorf("getting driver conn: %w", err)

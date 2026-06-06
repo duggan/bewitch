@@ -33,8 +33,11 @@ func TestGenerateSelfSignedCert(t *testing.T) {
 	if leaf.Subject.CommonName != "bewitch-daemon" {
 		t.Errorf("CN = %q, want %q", leaf.Subject.CommonName, "bewitch-daemon")
 	}
-	if !leaf.IsCA {
-		t.Error("expected IsCA = true")
+	if leaf.IsCA {
+		t.Error("expected IsCA = false (plain leaf server cert, not a CA)")
+	}
+	if leaf.ExtKeyUsage == nil || leaf.ExtKeyUsage[0] != x509.ExtKeyUsageServerAuth {
+		t.Errorf("expected ServerAuth ext key usage, got %v", leaf.ExtKeyUsage)
 	}
 
 	foundLocalhost := false

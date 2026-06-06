@@ -40,7 +40,11 @@ func GenerateSelfSignedCert() (tls.Certificate, []byte, []byte, error) {
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
 		DNSNames:     []string{"localhost"},
-		IsCA:         true,
+		// A plain leaf server certificate, not a CA: it only ever authenticates
+		// this daemon's TLS endpoint (DigitalSignature + ServerAuth). IsCA:true
+		// without KeyCertSign was a contradictory template; clients pin the
+		// fingerprint (TOFU) rather than validating a chain, so no CA bit is needed.
+		IsCA:                  false,
 		BasicConstraintsValid: true,
 	}
 
