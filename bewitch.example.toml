@@ -44,6 +44,16 @@ evaluation_interval = "10s"
 # [[alerts.commands]]
 # cmd = "/usr/local/bin/alert-handler"  # receives BEWITCH_RULE, BEWITCH_SEVERITY, BEWITCH_MESSAGE, BEWITCH_STATUS (firing|resolved), BEWITCH_TIMESTAMP env vars
 
+# Notification fan-out via Shoutrrr URLs — Discord, Telegram, ntfy, Slack, Pushover,
+# Gotify, generic webhook, and more, each from a single URL. Firing alerts, recovery
+# all-clears, and the collection-stalled dead-man's-switch all go to every URL.
+# See https://containrrr.dev/shoutrrr/services for the URL format of each service.
+# shoutrrr_urls = [
+#   "discord://token@channel-id",
+#   "ntfy://ntfy.sh/my-homelab-topic",
+#   "telegram://token@telegram?chats=12345",
+# ]
+
 [tui]
 refresh_interval = "2s"
 # history_ranges = ["1h", "6h", "24h", "7d", "30d"]  # time range presets for history charts

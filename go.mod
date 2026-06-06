@@ -13,6 +13,7 @@ require (
 	github.com/charmbracelet/log v0.4.2
 	github.com/charmbracelet/x/ansi v0.11.1
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20260209194814-eeb2896ac759
+	github.com/containrrr/shoutrrr v0.8.0
 	github.com/duckdb/duckdb-go/v2 v2.5.5
 	github.com/knz/bubbline v0.0.0-20251201090646-433e881e9884
 	github.com/muesli/termenv v0.16.0
@@ -45,6 +46,7 @@ require (
 	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.3.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
+	github.com/fatih/color v1.15.0 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
@@ -54,6 +56,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lrstanley/bubblezone v0.0.0-20240914071701-b48c55a5e78e // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect

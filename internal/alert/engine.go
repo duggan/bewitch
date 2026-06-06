@@ -40,6 +40,14 @@ func NewEngine(dbFn func() *sql.DB, cfg *config.AlertsConfig) *Engine {
 	for _, c := range cfg.Commands {
 		notifiers = append(notifiers, NewCommandNotifier(c))
 	}
+	for _, u := range cfg.ShoutrrrURLs {
+		n, err := NewShoutrrrNotifier(u)
+		if err != nil {
+			log.Warnf("skipping invalid shoutrrr url %q: %v", redactShoutrrrURL(u), err)
+			continue
+		}
+		notifiers = append(notifiers, n)
+	}
 
 	e := &Engine{
 		dbFn:      dbFn,

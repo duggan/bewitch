@@ -45,6 +45,9 @@ type AlertsConfig struct {
 	EvaluationInterval string        `toml:"evaluation_interval"`
 	Email              []EmailDest   `toml:"email"`
 	Commands           []CommandDest `toml:"commands"`
+	// ShoutrrrURLs are Shoutrrr service URLs (Discord/Telegram/ntfy/Slack/etc.);
+	// alerts are delivered to each. See https://containrrr.dev/shoutrrr/services.
+	ShoutrrrURLs []string `toml:"shoutrrr_urls"`
 }
 
 type EmailDest struct {
