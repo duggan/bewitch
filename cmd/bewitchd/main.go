@@ -8,7 +8,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -503,6 +507,36 @@ func main() {
 	// a writer goroutine drains it asynchronously. This ensures slow DB writes
 	// never delay the next collection tick or the API cache push.
 	writeCh := make(chan []collector.Sample, 8)
+
+	// Self-metrics counters. droppedBatches is bumped lock-free on the rare
+	// write-queue-full path; collectorFails publishes a frozen snapshot of each
+	// collector's consecutiveFails per tick so the /api/stats and /metrics
+	// handler goroutines never touch the live scheduled slice (which collectTick
+	// mutates without a lock). The self-stats closure reads both on demand.
+	var droppedBatches atomic.Uint64
+	var collectorFails atomic.Pointer[map[string]int]
+	apiServer.SetSelfStatsFunc(func() api.SelfStats {
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+		fails := map[string]int{}
+		if snap := collectorFails.Load(); snap != nil {
+			for k, v := range *snap {
+				fails[k] = v
+			}
+		}
+		return api.SelfStats{
+			DroppedWriteBatches:  droppedBatches.Load(),
+			PauseDroppedSamples:  st.PauseDroppedSamplesTotal(),
+			ProcInfoCacheEntries: st.ProcInfoCacheLen(),
+			WriteQueueDepth:      len(writeCh),
+			WriteQueueCap:        cap(writeCh),
+			HeapBytes:            ms.HeapAlloc,
+			RSSBytes:             selfRSSBytes(ms),
+			Goroutines:           runtime.NumGoroutine(),
+			CollectorFails:       fails,
+		}
+	})
+
 	var writeWg sync.WaitGroup
 	writeWg.Add(1)
 	go func() {
@@ -571,10 +605,19 @@ func main() {
 			}
 		}
 
+		// Publish a frozen snapshot of per-collector backoff state for self-metrics.
+		// The handler reads this atomically-swapped copy, never the live slice.
+		fails := make(map[string]int, len(scheduled))
+		for i := range scheduled {
+			fails[scheduled[i].collector.Name()] = scheduled[i].consecutiveFails
+		}
+		collectorFails.Store(&fails)
+
 		// Enqueue samples for async DB write
 		select {
 		case writeCh <- samples:
 		default:
+			droppedBatches.Add(1)
 			log.Warnf("write queue full, dropping batch")
 		}
 	}
@@ -824,4 +867,21 @@ func runScheduledJob(st *store.Store, jobName string, interval time.Duration, do
 			}
 		}
 	}()
+}
+
+// selfRSSBytes returns the daemon's resident set size. On Linux it reads
+// /proc/self/statm (field 2 = resident pages); elsewhere (and if that read
+// fails) it falls back to the Go runtime's Sys figure so the metric is still
+// populated during macOS/dev/test runs. RSS is the figure that matters given
+// bewitch's documented OOM-on-small-host history.
+func selfRSSBytes(ms runtime.MemStats) uint64 {
+	if data, err := os.ReadFile("/proc/self/statm"); err == nil {
+		fields := strings.Fields(string(data))
+		if len(fields) >= 2 {
+			if pages, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+				return pages * uint64(os.Getpagesize())
+			}
+		}
+	}
+	return ms.Sys
 }

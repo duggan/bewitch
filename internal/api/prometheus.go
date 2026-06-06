@@ -5,13 +5,15 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // handlePrometheus serves the cached metrics in the Prometheus/OpenMetrics text
 // exposition format at GET /metrics, so an existing Prometheus/Grafana stack can
 // scrape bewitch's hardware/ECC/power/SMART/GPU metrics rather than competing
 // with it. It reads only the in-memory snapshot (no DB), like the other live
-// metric handlers. All series are gauges and carry a bewitch_ prefix.
+// metric handlers. Series carry a bewitch_ prefix; lifetime _total families and
+// uptime are typed as counters, everything else as gauges.
 func (s *Server) handlePrometheus(w http.ResponseWriter, r *http.Request) {
 	p := &promWriter{}
 
@@ -83,15 +85,15 @@ func (s *Server) handlePrometheus(w http.ResponseWriter, r *http.Request) {
 
 	if net, _ := s.getCachedNetwork(); len(net) > 0 {
 		p.help("bewitch_network_bytes_per_second", "Network throughput, bytes/sec")
-		p.help("bewitch_network_errors_total", "Network error counter (lifetime)")
-		p.help("bewitch_network_dropped_total", "Network dropped-packet counter (lifetime)")
+		p.helpTyped("bewitch_network_errors_total", "Network error counter (lifetime)", "counter")
+		p.helpTyped("bewitch_network_dropped_total", "Network dropped-packet counter (lifetime)", "counter")
 		for _, n := range net {
 			p.gauge("bewitch_network_bytes_per_second", n.RxBytesSec, "interface", n.Interface, "direction", "rx")
 			p.gauge("bewitch_network_bytes_per_second", n.TxBytesSec, "interface", n.Interface, "direction", "tx")
-			p.gauge("bewitch_network_errors_total", float64(n.RxErrors), "interface", n.Interface, "direction", "rx")
-			p.gauge("bewitch_network_errors_total", float64(n.TxErrors), "interface", n.Interface, "direction", "tx")
-			p.gauge("bewitch_network_dropped_total", float64(n.RxDropped), "interface", n.Interface, "direction", "rx")
-			p.gauge("bewitch_network_dropped_total", float64(n.TxDropped), "interface", n.Interface, "direction", "tx")
+			p.counter("bewitch_network_errors_total", float64(n.RxErrors), "interface", n.Interface, "direction", "rx")
+			p.counter("bewitch_network_errors_total", float64(n.TxErrors), "interface", n.Interface, "direction", "tx")
+			p.counter("bewitch_network_dropped_total", float64(n.RxDropped), "interface", n.Interface, "direction", "rx")
+			p.counter("bewitch_network_dropped_total", float64(n.TxDropped), "interface", n.Interface, "direction", "tx")
 		}
 	}
 
@@ -110,9 +112,9 @@ func (s *Server) handlePrometheus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ecc, _ := s.getCachedECC(); ecc != nil {
-		p.help("bewitch_ecc_errors_total", "ECC memory error counter")
-		p.gauge("bewitch_ecc_errors_total", float64(ecc.Corrected), "kind", "corrected")
-		p.gauge("bewitch_ecc_errors_total", float64(ecc.Uncorrected), "kind", "uncorrected")
+		p.helpTyped("bewitch_ecc_errors_total", "ECC memory error counter", "counter")
+		p.counter("bewitch_ecc_errors_total", float64(ecc.Corrected), "kind", "corrected")
+		p.counter("bewitch_ecc_errors_total", float64(ecc.Uncorrected), "kind", "uncorrected")
 	}
 
 	if gpus, _ := s.getCachedGPU(); len(gpus) > 0 {
@@ -139,6 +141,37 @@ func (s *Server) handlePrometheus(w http.ResponseWriter, r *http.Request) {
 		p.gauge("bewitch_processes", float64(procs.ActiveProcs), "state", "active")
 	}
 
+	// Daemon self-health. Uptime is always available (a restart, itself a gap
+	// cause, shows up as a counter reset); the rest need the daemon's self-stats
+	// provider. The single labeled family (collector_consecutive_fails) is bounded
+	// by the fixed collector set, so cardinality stays safe.
+	p.helpTyped("bewitch_self_uptime_seconds", "Seconds since the daemon started (resets on restart)", "counter")
+	p.counter("bewitch_self_uptime_seconds", time.Since(s.startTime).Seconds())
+
+	if s.selfStatsFn != nil {
+		ss := s.selfStatsFn()
+		p.helpTyped("bewitch_self_dropped_write_batches_total", "Metric batches dropped because the async write queue was full", "counter")
+		p.counter("bewitch_self_dropped_write_batches_total", float64(ss.DroppedWriteBatches))
+		p.helpTyped("bewitch_self_pause_dropped_samples_total", "Samples dropped from the pause buffer when it hit its cap during maintenance", "counter")
+		p.counter("bewitch_self_pause_dropped_samples_total", float64(ss.PauseDroppedSamples))
+		p.help("bewitch_self_proc_info_cache_entries", "Entries in the process-info dedup cache (a documented RSS-growth source)")
+		p.gauge("bewitch_self_proc_info_cache_entries", float64(ss.ProcInfoCacheEntries))
+		p.help("bewitch_self_write_queue_depth", "Metric batches buffered awaiting the DB writer")
+		p.gauge("bewitch_self_write_queue_depth", float64(ss.WriteQueueDepth))
+		p.help("bewitch_self_write_queue_capacity", "Capacity of the async write queue")
+		p.gauge("bewitch_self_write_queue_capacity", float64(ss.WriteQueueCap))
+		p.help("bewitch_self_memory_heap_bytes", "Go heap memory currently allocated")
+		p.gauge("bewitch_self_memory_heap_bytes", float64(ss.HeapBytes))
+		p.help("bewitch_self_memory_rss_bytes", "Resident set size of the daemon process")
+		p.gauge("bewitch_self_memory_rss_bytes", float64(ss.RSSBytes))
+		p.help("bewitch_self_goroutines", "Number of goroutines")
+		p.gauge("bewitch_self_goroutines", float64(ss.Goroutines))
+		p.help("bewitch_self_collector_consecutive_fails", "Consecutive collector failures (0 = healthy; >0 means in exponential backoff)")
+		for name, fails := range ss.CollectorFails {
+			p.gauge("bewitch_self_collector_consecutive_fails", float64(fails), "collector", name)
+		}
+	}
+
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.Write([]byte(p.b.String()))
 }
@@ -150,7 +183,16 @@ type promWriter struct {
 	helped map[string]bool
 }
 
+// help emits a HELP/TYPE header for a gauge family (the common case).
 func (p *promWriter) help(name, help string) {
+	p.helpTyped(name, help, "gauge")
+}
+
+// helpTyped emits a HELP/TYPE header with an explicit metric type ("gauge" or
+// "counter"), once per family. Counters must use this so rate()/increase() are
+// valid on _total series — the old hardcoded-"gauge" header silently mislabeled
+// every _total family.
+func (p *promWriter) helpTyped(name, help, typ string) {
 	if p.helped == nil {
 		p.helped = make(map[string]bool)
 	}
@@ -158,10 +200,20 @@ func (p *promWriter) help(name, help string) {
 		return
 	}
 	p.helped[name] = true
-	fmt.Fprintf(&p.b, "# HELP %s %s\n# TYPE %s gauge\n", name, help, name)
+	fmt.Fprintf(&p.b, "# HELP %s %s\n# TYPE %s %s\n", name, help, name, typ)
 }
 
+// gauge and counter write identical sample lines; only the TYPE header (emitted
+// by help/helpTyped) differs. Two names keep call sites self-documenting.
 func (p *promWriter) gauge(name string, value float64, labelKV ...string) {
+	p.series(name, value, labelKV...)
+}
+
+func (p *promWriter) counter(name string, value float64, labelKV ...string) {
+	p.series(name, value, labelKV...)
+}
+
+func (p *promWriter) series(name string, value float64, labelKV ...string) {
 	p.b.WriteString(name)
 	if len(labelKV) > 0 {
 		p.b.WriteByte('{')

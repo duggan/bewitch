@@ -44,6 +44,11 @@ func TestPrometheusEndpoint(t *testing.T) {
 		`bewitch_temperature_celsius{sensor="coretemp/Core 0"} 55`,
 		`bewitch_power_watts{zone="package-0"} 30`,
 		`bewitch_ecc_errors_total{kind="corrected"} 1`,
+		// Lifetime _total families must be typed as counters, not gauges, so
+		// rate()/increase() are valid (the old hardcoded-gauge header was wrong).
+		"# TYPE bewitch_network_errors_total counter",
+		"# TYPE bewitch_network_dropped_total counter",
+		"# TYPE bewitch_ecc_errors_total counter",
 	}
 	for _, w := range want {
 		if !strings.Contains(body, w) {
@@ -63,5 +68,51 @@ func TestPrometheusEndpointEmpty(t *testing.T) {
 	s.handlePrometheus(w, httptest.NewRequest("GET", "/metrics", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	// Uptime is emitted even with no snapshots or self-stats provider.
+	if !strings.Contains(w.Body.String(), "# TYPE bewitch_self_uptime_seconds counter") {
+		t.Errorf("expected uptime counter even on empty endpoint:\n%s", w.Body.String())
+	}
+}
+
+func TestPrometheusSelfMetrics(t *testing.T) {
+	s := &Server{}
+	s.SetSelfStatsFunc(func() SelfStats {
+		return SelfStats{
+			DroppedWriteBatches:  3,
+			PauseDroppedSamples:  5,
+			ProcInfoCacheEntries: 142,
+			WriteQueueDepth:      2,
+			WriteQueueCap:        8,
+			HeapBytes:            1234,
+			RSSBytes:             5678,
+			Goroutines:           17,
+			CollectorFails:       map[string]int{"gpu": 2, "cpu": 0},
+		}
+	})
+
+	w := httptest.NewRecorder()
+	s.handlePrometheus(w, httptest.NewRequest("GET", "/metrics", nil))
+	body := w.Body.String()
+
+	want := []string{
+		"# TYPE bewitch_self_dropped_write_batches_total counter",
+		"bewitch_self_dropped_write_batches_total 3",
+		"# TYPE bewitch_self_pause_dropped_samples_total counter",
+		"bewitch_self_pause_dropped_samples_total 5",
+		"# TYPE bewitch_self_proc_info_cache_entries gauge",
+		"bewitch_self_proc_info_cache_entries 142",
+		"bewitch_self_write_queue_depth 2",
+		"bewitch_self_write_queue_capacity 8",
+		"bewitch_self_memory_heap_bytes 1234",
+		"bewitch_self_memory_rss_bytes 5678",
+		"bewitch_self_goroutines 17",
+		`bewitch_self_collector_consecutive_fails{collector="gpu"} 2`,
+		`bewitch_self_collector_consecutive_fails{collector="cpu"} 0`,
+	}
+	for _, ln := range want {
+		if !strings.Contains(body, ln) {
+			t.Errorf("output missing line:\n  %s\n--- full ---\n%s", ln, body)
+		}
 	}
 }

@@ -37,6 +37,7 @@ type Server struct {
 	archiveStatusFn    func() ([]ArchiveStatusItem, error)
 	archiveDirStatFn   func() (*ArchiveDirStats, error)
 	statsFn            func() (*StatsCore, error)
+	selfStatsFn        func() SelfStats // daemon self-health (dropped batches, backoff, memory); pulled on demand
 	version            string
 	archivePath        string
 	archiveThreshold   time.Duration
@@ -143,6 +144,14 @@ func (s *Server) SetArchiveDirStatFunc(fn func() (*ArchiveDirStats, error)) {
 // SetStatsFunc sets the callback that supplies the store-sourced bits of /api/stats.
 func (s *Server) SetStatsFunc(fn func() (*StatsCore, error)) {
 	s.statsFn = fn
+}
+
+// SetSelfStatsFunc sets the callback that supplies daemon self-health metrics
+// (dropped write batches, collector backoff, memory). It is pulled on demand by
+// the /api/stats and /metrics handlers — keep it cheap but it may read
+// runtime.ReadMemStats since scrapes are infrequent. Set once at startup.
+func (s *Server) SetSelfStatsFunc(fn func() SelfStats) {
+	s.selfStatsFn = fn
 }
 
 // SetVersion records the daemon version string for /api/status and /api/stats.

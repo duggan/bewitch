@@ -26,12 +26,13 @@ type processKey struct {
 // Store writes collected metrics to DuckDB. When paused (during maintenance
 // or compaction), incoming samples are buffered and flushed on resume.
 type Store struct {
-	db         *sql.DB
-	mu         sync.Mutex
-	buf        []collector.Sample
-	bufDropped int // samples dropped because the pause buffer hit its cap
-	paused     bool
-	opMu       sync.Mutex // prevents concurrent maintenance/compaction
+	db              *sql.DB
+	mu              sync.Mutex
+	buf             []collector.Sample
+	bufDropped      int    // samples dropped because the pause buffer hit its cap (reset each resume)
+	bufDroppedTotal uint64 // lifetime accumulator (never reset) for self-metrics
+	paused          bool
+	opMu            sync.Mutex // prevents concurrent maintenance/compaction
 
 	// DuckDB settings re-applied when compaction reopens the database (they are
 	// per-instance and reset to defaults on a fresh connection pool). Set via
@@ -145,6 +146,16 @@ func (s *Store) ProcInfoCacheLen() int {
 	s.procInfoCacheMu.RLock()
 	defer s.procInfoCacheMu.RUnlock()
 	return len(s.procInfoCache)
+}
+
+// PauseDroppedSamplesTotal returns the lifetime count of samples dropped from
+// the pause buffer when it hit its cap during maintenance. Unlike bufDropped
+// (which resume() zeroes), this accumulator survives across pauses so a
+// monitoring scrape sees the true total rather than almost always zero.
+func (s *Store) PauseDroppedSamplesTotal() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bufDroppedTotal
 }
 
 // getDimensionID returns the ID for a dimension value, creating it if needed
@@ -418,6 +429,7 @@ func (s *Store) resume() {
 	pending := s.buf
 	dropped := s.bufDropped
 	s.buf = nil
+	s.bufDroppedTotal += uint64(s.bufDropped)
 	s.bufDropped = 0
 	s.paused = false
 	s.mu.Unlock()

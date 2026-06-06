@@ -88,6 +88,24 @@ type StatsResponse struct {
 	Processes  int64             `json:"processes"`
 	Alerts     AlertCountStats   `json:"alerts"`
 	Collectors map[string]string `json:"collectors,omitempty"`
+	Self       *SelfStats        `json:"self,omitempty"`
+}
+
+// SelfStats is the daemon's own health: counters and gauges that make a silent
+// monitoring failure (dropped batches, a wedged collector, runaway memory)
+// visible instead of looking identical to "all healthy". Pulled on demand by
+// the /api/stats and /metrics handlers via Server.selfStatsFn; omitempty so
+// older clients/daemons tolerate its absence.
+type SelfStats struct {
+	DroppedWriteBatches  uint64         `json:"dropped_write_batches"`     // counter: batches dropped, write queue full
+	PauseDroppedSamples  uint64         `json:"pause_dropped_samples"`     // counter: samples dropped, pause buffer capped
+	ProcInfoCacheEntries int            `json:"proc_info_cache_entries"`   // gauge
+	WriteQueueDepth      int            `json:"write_queue_depth"`         // gauge: len(writeCh)
+	WriteQueueCap        int            `json:"write_queue_cap"`           // gauge: cap(writeCh)
+	HeapBytes            uint64         `json:"heap_bytes"`                // gauge: runtime HeapAlloc
+	RSSBytes             uint64         `json:"rss_bytes"`                 // gauge: resident set size
+	Goroutines           int            `json:"goroutines"`                // gauge
+	CollectorFails       map[string]int `json:"collector_fails,omitempty"` // gauge per collector: consecutive failures (only unhealthy listed)
 }
 
 type DatabaseStats struct {
@@ -183,8 +201,8 @@ type DaemonConfigResponse struct {
 }
 
 type AlertsConfigResponse struct {
-	EvaluationInterval string               `json:"evaluation_interval"`
-	Email              []EmailDestResponse  `json:"email,omitempty"`
+	EvaluationInterval string                `json:"evaluation_interval"`
+	Email              []EmailDestResponse   `json:"email,omitempty"`
 	Commands           []CommandDestResponse `json:"commands,omitempty"`
 }
 

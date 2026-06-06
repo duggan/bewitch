@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"crypto/tls"
-	"encoding/json"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -443,6 +443,34 @@ func printStats(w *os.File, s *api.StatsResponse) {
 	fmt.Fprintf(w, "  Rules:   %d enabled, %d disabled\n", s.Alerts.RulesEnabled, s.Alerts.RulesDisabled)
 	fmt.Fprintf(w, "  Fired:   %d total, %d unacknowledged\n\n", s.Alerts.FiredTotal, s.Alerts.FiredUnacked)
 
+	if sm := s.Self; sm != nil {
+		fmt.Fprintln(w, "Daemon health")
+		fmt.Fprintf(w, "  Memory:  RSS %s · heap %s\n", format.BytesLong(int64(sm.RSSBytes)), format.BytesLong(int64(sm.HeapBytes)))
+		fmt.Fprintf(w, "  Goroutines: %d\n", sm.Goroutines)
+		fmt.Fprintf(w, "  Write queue: %d / %d buffered\n", sm.WriteQueueDepth, sm.WriteQueueCap)
+		fmt.Fprintf(w, "  Proc-info cache: %s entries\n", commas(int64(sm.ProcInfoCacheEntries)))
+		fmt.Fprintf(w, "  Dropped write batches: %d\n", sm.DroppedWriteBatches)
+		fmt.Fprintf(w, "  Pause-buffer drops: %d\n", sm.PauseDroppedSamples)
+		// Only call out collectors actually in backoff; healthy ones are noise.
+		var backoff []string
+		names := make([]string, 0, len(sm.CollectorFails))
+		for k := range sm.CollectorFails {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			if sm.CollectorFails[n] > 0 {
+				backoff = append(backoff, fmt.Sprintf("%s ×%d", n, sm.CollectorFails[n]))
+			}
+		}
+		if len(backoff) > 0 {
+			fmt.Fprintf(w, "  Collector backoff: %s\n", strings.Join(backoff, ", "))
+		} else {
+			fmt.Fprintln(w, "  Collectors: all healthy")
+		}
+		fmt.Fprintln(w)
+	}
+
 	if len(s.Collectors) > 0 {
 		fmt.Fprintln(w, "Collectors")
 		names := make([]string, 0, len(s.Collectors))
@@ -669,4 +697,3 @@ func runCaptureFrames(cfg *config.Config, addr string, tlsCfg *tls.Config, token
 	fi, _ := f.Stat()
 	fmt.Printf("done: %d states, %d total frames, %s\n", len(stateMap.States), totalFrames, format.BytesLong(fi.Size()))
 }
-

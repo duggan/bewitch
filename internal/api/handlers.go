@@ -107,6 +107,11 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		resp.Coverage.SpanSeconds = float64(newest-oldest) / float64(time.Second)
 	}
 
+	if s.selfStatsFn != nil {
+		self := s.selfStatsFn()
+		resp.Self = &self
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }
 
