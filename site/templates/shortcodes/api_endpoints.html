@@ -1,0 +1,26 @@
+{%- import "macros.html" as m -%}
+{%- set schema = load_data(path="data/api-schema.json") -%}
+{# Distinct categories in first-seen order. #}
+{%- set_global cats = [] -%}
+{%- for ep in schema.endpoints -%}
+{%- if ep.category not in cats -%}{%- set_global cats = cats | concat(with=ep.category) -%}{%- endif -%}
+{%- endfor -%}
+{%- for cat in cats %}
+<h3 id="cat-{{ cat | slugify }}">{{ cat }}</h3>
+{%- if cat == "History" %}
+<p>All history endpoints accept <code>?start=</code> and <code>?end=</code> query parameters (Unix seconds). Bucket size auto-scales: 1&nbsp;min (1h range) to 6&nbsp;hr (30d range).</p>
+{%- endif %}
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Description</th><th>Response</th></tr></thead>
+<tbody>
+{%- for ep in schema.endpoints | filter(attribute="category", value=cat) %}
+<tr>
+<td><code class="m-{{ ep.method | lower }}">{{ ep.method }}</code></td>
+<td><code>{{ ep.path }}</code></td>
+<td>{{ ep.description }}</td>
+<td>{% if ep.response %}{{ m::tlink(t=ep.response) }}{% endif %}</td>
+</tr>
+{%- endfor %}
+</tbody>
+</table>
+{%- endfor -%}

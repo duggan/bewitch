@@ -1,0 +1,44 @@
+# Zola configuration for the bewitch site.
+#
+# Deploy target: Cloudflare Pages (bewitch.dev) via `wrangler pages deploy`.
+# Output goes to `dist/` (gitignored) — NOT the Zola default `public/`, which is
+# kept free because the APT-repo tooling and Cloudflare Pages Functions live
+# alongside. The `functions/` dir (R2 proxies for apt/releases/gpg/versioned
+# docs) is picked up by wrangler from the project root and must stay put.
+base_url = "https://bewitch.dev"
+output_dir = "dist"
+
+title = "bewitch"
+description = "A Linux system monitor for homelabs and hobbyists. Live TUI, historical charts, SMART and hardware health, alerts, and a SQL REPL over your own metrics. In hot pink."
+
+# Zola bundles a SASS compiler; sass/style.scss compiles to /style.css.
+compile_sass = true
+
+# Client-side docs search (elasticlunr). Emits search_index.en.js + elasticlunr.min.js.
+build_search_index = true
+
+# Docs site, not a blog — no feeds.
+generate_feeds = false
+
+[markdown]
+# Clickable heading anchors (styled as .zola-anchor in the stylesheet).
+insert_anchor_links = "right"
+
+[markdown.highlighting]
+# Server-side syntax highlighting; dark theme to suit the near-black ground.
+enabled = true
+theme = "dracula"
+
+[link_checker]
+# Internal links must resolve; external links only warned about.
+internal_level = "error"
+external_level = "warn"
+
+[search]
+index_format = "elasticlunr_javascript"
+include_title = true
+include_description = true
+include_content = true
+
+[extra]
+github = "https://github.com/duggan/bewitch"

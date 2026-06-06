@@ -1,0 +1,13 @@
+{%- import "macros.html" as m -%}
+{%- set schema = load_data(path="data/api-schema.json") -%}
+{%- for name, td in schema.types %}
+<h3 id="type-{{ name }}">{{ name }}</h3>
+<table>
+<thead><tr><th>Field</th><th>Type</th><th></th></tr></thead>
+<tbody>
+{%- for f in td.fields %}
+<tr><td><code>{{ f.json_name }}</code></td><td>{{ m::tlink(t=f.type) }}</td><td>{% if f.optional %}<span class="opt">optional</span>{% endif %}</td></tr>
+{%- endfor %}
+</tbody>
+</table>
+{%- endfor -%}

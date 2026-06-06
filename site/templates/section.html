@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "macros.html" as nav %}
+
+{% block title %}{{ section.title }} — bewitch docs{% endblock title %}
+{% block description %}{{ section.description | default(value=config.description) }}{% endblock description %}
+
+{% block body %}
+<div class="docs">
+  {{ nav::docs_nav(current=section.permalink) }}
+  <article class="content">
+    <h1>{{ section.title }}</h1>
+    {{ section.content | safe }}
+
+    <ul class="doc-index">
+      {% for page in section.pages %}
+      <li>
+        <a href="{{ page.permalink }}">{{ page.title }}</a>
+        {% if page.description %}<div class="desc">{{ page.description }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </article>
+</div>
+{% endblock body %}
+
+{% block extra_body %}{{ nav::search_assets() }}{% endblock extra_body %}

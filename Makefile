@@ -1,4 +1,4 @@
-.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install demo-frames docgen
+.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install demo-frames docgen site site-serve site-demo
 
 VERSION := $(shell cat VERSION)
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
@@ -54,8 +54,8 @@ apt-upload:
 
 stamp-install:
 	@V=$$(cat VERSION) && \
-	sed 's/^VERSION="[^"]*"/VERSION="'"$$V"'"/' site/public/install.sh > site/public/install.sh.tmp && \
-	mv site/public/install.sh.tmp site/public/install.sh
+	sed 's/^VERSION="[^"]*"/VERSION="'"$$V"'"/' site/static/install.sh > site/static/install.sh.tmp && \
+	mv site/static/install.sh.tmp site/static/install.sh
 
 demo-frames: build
 	@echo "Starting mock daemon..."
@@ -63,19 +63,34 @@ demo-frames: build
 	sleep 3; \
 	bin/bewitch -config data/bewitch.toml capture-frames \
 		--cols 120 --rows 32 --frames 5 --delay 400ms \
-		site/public/demo-frames.json; \
+		site/static/demo-frames.json; \
 	kill $$DAEMON_PID 2>/dev/null; \
 	wait $$DAEMON_PID 2>/dev/null || true
 
 docgen:
-	go run cmd/docgen/main.go . > site/src/generated/api-schema.json
+	go run cmd/docgen/main.go . > site/data/api-schema.json
 
-deploy:
-	cd site && bun run build
+# Build the static site with Zola (output: site/dist/).
+site:
+	cd site && zola build
+
+# Serve the site locally with live reload at http://127.0.0.1:1111.
+site-serve:
+	cd site && zola serve
+
+# Rebuild the homepage terminal-demo bundle (site/static/js/demo-bundle.js) from
+# site/demo/. Run after changing site/demo/terminal-demo.ts or demo-frames.json,
+# then commit the bundle. Self-contained (its own package.json; ghostty-web + esbuild).
+site-demo:
+	cd site/demo && npm install --no-audit --no-fund && npm run build
+
+deploy: docgen
+	cd site && zola build
 	@V=$$(cat VERSION) && \
+	sed 's/^VERSION="[^"]*"/VERSION="'"$$V"'"/' site/static/install.sh > site/dist/install.sh && \
 	sed -e 's/^VERSION="[^"]*"/VERSION="'"$$V"'"/' \
 	    -e 's/BEWITCH_CHANNEL:-stable/BEWITCH_CHANNEL:-dev/' \
-	    site/public/install.sh > site/dist/install-dev.sh
+	    site/static/install.sh > site/dist/install-dev.sh
 	cd site && wrangler pages deploy dist --project-name=bewitch --commit-dirty=true
 
 release: stamp-install deb-docker apt-upload apt-repo deploy

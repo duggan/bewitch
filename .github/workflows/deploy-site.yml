@@ -3,7 +3,7 @@ name: Deploy Site
 on:
   push:
     branches: [main]
-    paths: [site/**, .github/workflows/deploy-site.yml]
+    paths: [site/**, VERSION, .github/workflows/deploy-site.yml]
   pull_request:
     paths: [site/**]
   workflow_dispatch:
@@ -11,6 +11,9 @@ on:
 concurrency:
   group: deploy-site-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  ZOLA_VERSION: 0.22.1
 
 jobs:
   deploy:
@@ -22,22 +25,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
-        working-directory: site
-        run: bun install --frozen-lockfile
+      - name: Install Zola
+        run: |
+          curl -sSL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz
+          sudo mv zola /usr/local/bin/
+          zola --version
 
       - name: Build
         working-directory: site
-        run: bun run build
+        # Production (push to main) builds with the absolute base_url for correct
+        # sitemap / canonical / OG tags. PR previews build root-relative so CSS,
+        # JS, images and links resolve on the *.pages.dev preview origin instead
+        # of pointing back at production bewitch.dev.
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            zola build --base-url "/"
+          else
+            zola build
+          fi
 
-      - name: Generate install-dev.sh
+      - name: Stamp install scripts with VERSION
         run: |
           VERSION=$(cat VERSION)
+          # Zola copies static/install.sh verbatim; stamp the deployed copies.
+          sed "s/^VERSION=\"[^\"]*\"/VERSION=\"${VERSION}\"/" \
+              site/static/install.sh > site/dist/install.sh
           sed -e "s/^VERSION=\"[^\"]*\"/VERSION=\"${VERSION}\"/" \
               -e 's/BEWITCH_CHANNEL:-stable/BEWITCH_CHANNEL:-dev/' \
-              site/public/install.sh > site/dist/install-dev.sh
+              site/static/install.sh > site/dist/install-dev.sh
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
@@ -46,22 +62,3 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: site
           command: pages deploy dist --project-name=bewitch --branch=${{ github.head_ref || github.ref_name }} --commit-dirty=true
-
-      - name: Deploy dev docs to R2
-        if: github.ref == 'refs/heads/main'
-        run: |
-          VERSION=$(cat VERSION)
-          STABLE=$(cat LATEST_STABLE)
-          if [ "$VERSION" != "$STABLE" ]; then
-            echo "VERSION ($VERSION) != LATEST_STABLE ($STABLE), deploying dev docs..."
-            cd site
-            VITE_DOCS_BASE=/docs/dev bun run build
-            cd ..
-            npm install -g wrangler
-            scripts/upload-dev-docs.sh site/dist
-          else
-            echo "VERSION matches LATEST_STABLE, skipping dev docs."
-          fi
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

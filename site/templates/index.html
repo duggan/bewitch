@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+
+{% block title %}bewitch — system monitoring for the machines nobody's watching{% endblock title %}
+{% block og_title %}bewitch — system monitoring for the machines nobody's watching{% endblock og_title %}
+
+{% block body %}
+{# ---- Hero ---- #}
+<section class="hero">
+  <img class="mascot" src="{{ get_url(path='witch.png') }}" alt="bewitch mascot" width="208" height="208">
+  <h1>bewitch</h1>
+  <p class="tagline">A system monitor for the machines nobody else is watching.</p>
+  <p class="hook">
+    The basement rack. The Pi behind the telly. That one VPS you keep meaning to
+    cancel. bewitch keeps an eye on them so you don't have to remember to.
+  </p>
+  <p class="supporting">
+    A daemon collects the metrics and a TUI makes them legible — live dashboards,
+    historical braille charts, SMART and hardware health, alerts, and a SQL REPL over
+    your own data. It comes in one colour: <span class="c-pink">hot pink</span>.
+  </p>
+  <div class="term install-cmd glow-box">
+    <div class="term-bar">
+      <span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span>
+      <span class="term-title">install</span>
+    </div>
+    <div class="term-body">
+      <code><span class="c-purple">$</span> <span class="c-lavender">curl -sSL</span> <span class="c-pink">https://bewitch.dev/install.sh</span> <span class="c-lavender">| sh</span></code>
+    </div>
+  </div>
+</section>
+
+{# ---- Positioning ---- #}
+<section class="section positioning">
+  <h2>Monitoring for people who aren't running fleets.</h2>
+  <p>
+    Most monitoring is built for fleets — clusters, dashboards-as-a-service, a control
+    plane bigger than the thing it's watching. You have three machines and a hunch that
+    one of them is dying.
+  </p>
+  <p>
+    bewitch fills that gap. Two small binaries: a daemon that quietly reads /proc and
+    /sys into a local DuckDB file, and a TUI that makes the numbers legible. No cloud
+    account, no agents to herd, no monthly bill. It runs lean enough to leave on a 1GB
+    host and forget about — which is the point.
+  </p>
+  <p>
+    It will not scale to a thousand nodes. It was never trying to. It's for the handful
+    of machines you actually care about.
+  </p>
+
+  <div class="features-grid" style="margin-top:2.5rem">
+    <a class="feature-card" href="{{ get_url(path='/docs/collectors/') }}#cpu">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg></span>
+      <h3>CPU</h3>
+      <p>Per-core and aggregate usage, live and as history you can scroll back through — deltas computed for you.</p>
+    </a>
+    <a class="feature-card" href="{{ get_url(path='/docs/collectors/') }}#memory">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12v-2"/><path d="M12 18v-2"/><path d="M16 12v-2"/><path d="M16 18v-2"/><path d="M2 11h1.5"/><path d="M20 18v-2"/><path d="M20.5 11H22"/><path d="M4 18v-2"/><path d="M8 12v-2"/><path d="M8 18v-2"/><rect x="2" y="6" width="20" height="10" rx="2"/></svg></span>
+      <h3>Memory + ECC</h3>
+      <p>Used, available, and free at a glance, plus ECC error counts — because silent bit-flips on a long-running box are exactly the thing you won't notice in time.</p>
+    </a>
+    <a class="feature-card" href="{{ get_url(path='/docs/collectors/') }}#disk">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 16h.01"/><path d="M2.212 11.577a2 2 0 0 0-.212.896V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5.527a2 2 0 0 0-.212-.896L18.55 5.11A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M21.946 12.013H2.054"/><path d="M6 16h.01"/></svg></span>
+      <h3>Disk + SMART</h3>
+      <p>Space, I/O rates, and SMART health read per physical device — NVMe and SATA — so a failing drive isn't a surprise.</p>
+    </a>
+    <a class="feature-card" href="{{ get_url(path='/docs/collectors/') }}#network">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg></span>
+      <h3>Network</h3>
+      <p>Per-interface RX and TX charted over time, with a keystroke to flip between bits and bytes — for when something's hammering the uplink and you'd like to know who.</p>
+    </a>
+    <a class="feature-card" href="{{ get_url(path='/docs/collectors/') }}#temperature">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg></span>
+      <h3>Hardware</h3>
+      <p>Temperature sensors, Intel and NVIDIA GPUs, RAPL power draw, and ECC — every reading the board will report, in one place.</p>
+    </a>
+    <a class="feature-card" href="{{ get_url(path='/docs/collectors/') }}#process">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg></span>
+      <h3>Process</h3>
+      <p>Every process is visible; the busy ones get the full detail, and a glob pattern pins the handful you actually care about — sortable, searchable, no scrolling roulette.</p>
+    </a>
+    <a class="feature-card" href="{{ get_url(path='/docs/alerts/') }}">
+      <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M22 8c0-2.3-.8-4.3-2-6"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/><path d="M4 2C2.8 3.7 2 5.7 2 8"/></svg></span>
+      <h3>Alerts</h3>
+      <p>Threshold, predictive, and variance rules, stored in the database and edited in the TUI — delivered by email or any shell command you can write.</p>
+    </a>
+  </div>
+</section>
+
+{# ---- One-liner band ---- #}
+<section class="oneliner">
+  <p>Other monitors show you <span class="c-purple">now</span>. bewitch keeps the <span class="c-pink">history</span> — and lets you query it in SQL.</p>
+</section>
+
+{# ---- Demo ---- #}
+<section class="demo-section">
+  <h2>See it in action</h2>
+  <div class="glow-box" id="demo-terminal">
+    <div id="demo-tab-overlay">
+      {% for tab in ["Dashboard", "CPU", "Memory", "Disk", "Network", "Hardware", "Process", "Alerts"] %}
+      <button type="button" data-demo-tab="{{ loop.index0 }}"{% if loop.index0 == 0 %} class="active"{% endif %}>{{ loop.index }} {{ tab }}</button>
+      {% endfor %}
+    </div>
+    <div id="demo-terminal-mount" class="demo-terminal-mount" style="display:none"></div>
+    <div id="demo-fallback">
+      <img src="{{ get_url(path='screenshots/dashboard.png') }}" alt="bewitch dashboard view" loading="eager" width="2072" height="1280">
+    </div>
+    <div class="demo-hint">Press 1–8 to switch views · &lt;/&gt; change time range · Tab cycles hardware sections</div>
+  </div>
+</section>
+
+{# ---- Highlights ---- #}
+<section class="highlights">
+  <div class="highlight">
+    <div class="text">
+      <h3>Your metrics are just SQL</h3>
+      <p>Everything bewitch collects lands in DuckDB, and <span class="c-text">bewitch repl</span> is a real console over your own history — tab completion, multi-line queries, dot-commands, and export to CSV, Parquet, or JSON. Ask it whatever you like.</p>
+    </div>
+    <div class="sample">
+      <div class="term glow-box">
+        <div class="term-bar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span><span class="term-title">bewitch repl</span></div>
+        <div class="term-body">
+          <div><span class="c-purple">bewitch&gt;</span> <span class="c-text">SELECT d.value AS mount,</span></div>
+          <div><span class="c-purple">    ...&gt;</span> <span class="c-text">AVG(m.used_bytes * 100.0 / m.total_bytes) AS pct</span></div>
+          <div><span class="c-purple">    ...&gt;</span> <span class="c-text">FROM disk_metrics m JOIN dimension_values d</span></div>
+          <div><span class="c-purple">    ...&gt;</span> <span class="c-text">ON d.id = m.mount_id</span></div>
+          <div><span class="c-purple">    ...&gt;</span> <span class="c-text">WHERE m.ts &gt; now() - INTERVAL '1 hour'</span></div>
+          <div><span class="c-purple">    ...&gt;</span> <span class="c-text">GROUP BY d.value;</span></div>
+          <div class="c-dim" style="margin-top:0.5rem"> mount | pct</div>
+          <div class="c-dim">-------+------</div>
+          <div class="c-text"> /     | 62.34</div>
+          <div class="c-text"> /home | 41.17</div>
+          <div class="c-dim" style="margin-top:0.25rem">(2 rows)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="highlight reverse">
+    <div class="text">
+      <h3>Alerts that go where you already look</h3>
+      <p>Route a firing alert to email (SMTP or the local mail command) or hand it to a shell command with the details in environment variables. Want it in Slack, on your phone, or as a blinking light on a shelf? Write four lines of config and it's done.</p>
+    </div>
+    <div class="sample">
+      <div class="term glow-box">
+        <div class="term-bar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span><span class="term-title">bewitch.toml</span></div>
+        <div class="term-body">
+          <div><span class="c-dim">[[alerts.email]]</span></div>
+          <div><span class="c-lavender">use_mail_cmd</span> <span class="c-dim">=</span> <span class="c-pink">true</span></div>
+          <div><span class="c-lavender">to</span> <span class="c-dim">=</span> <span class="c-pink">["ops@example.com"]</span></div>
+          <div style="margin-top:0.5rem"><span class="c-dim">[[alerts.commands]]</span></div>
+          <div><span class="c-lavender">cmd</span> <span class="c-dim">=</span> <span class="c-pink">"/usr/local/bin/my-handler"</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <div class="text">
+      <h3>Remote access, the SSH way</h3>
+      <p>Turn on the TCP listener and it speaks TLS by default with a self-signed cert. First connection shows you the fingerprint and asks once; after that it's pinned in known_hosts. Add a bearer token if you want one. No CA, no cert renewal calendar.</p>
+    </div>
+    <div class="sample">
+      <div class="term glow-box">
+        <div class="term-bar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span><span class="term-title">terminal</span></div>
+        <div class="term-body">
+          <div><span class="c-purple">$</span> <span class="c-text">bewitch -addr myserver:9119</span></div>
+          <div class="c-muted" style="margin-top:0.5rem">TLS fingerprint for myserver:9119:</div>
+          <div class="c-lavender"> sha256:a1b2c3d4e5f6...</div>
+          <div style="margin-top:0.25rem"><span class="c-muted">Trust this server?</span> <span class="c-dim">[y/N]:</span> <span class="c-pink">y</span></div>
+          <div class="c-muted" style="margin-top:0.25rem">Fingerprint saved to ~/.config/bewitch/known_hosts</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{# ---- Quick start ---- #}
+<section class="section narrow quickstart">
+  <h2>Two lines and it's watching.</h2>
+  <div class="step">
+    <p class="label">Install it</p>
+    <div class="term glow-box">
+      <div class="term-bar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span></div>
+      <div class="term-body"><div><span class="c-purple">$</span> <span class="c-text">curl -sSL https://bewitch.dev/install.sh | sh</span></div></div>
+    </div>
+  </div>
+  <div class="step">
+    <p class="label">Open the TUI</p>
+    <div class="term glow-box">
+      <div class="term-bar"><span class="term-dot r"></span><span class="term-dot y"></span><span class="term-dot g"></span></div>
+      <div class="term-body"><div><span class="c-purple">$</span> <span class="c-text">bewitch</span></div></div>
+    </div>
+  </div>
+</section>
+{% endblock body %}
+
+{% block extra_body %}<script src="{{ get_url(path='js/demo-bundle.js') }}" defer></script>{% endblock extra_body %}

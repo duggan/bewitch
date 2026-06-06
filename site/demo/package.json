@@ -1,0 +1,15 @@
+{
+  "name": "bewitch-demo-bundle",
+  "private": true,
+  "type": "module",
+  "description": "Prebuilds the homepage terminal demo (ghostty-web) into ../static/js/demo-bundle.js, which is committed. Rebuild with `npm install && npm run build` (or `make site-demo`).",
+  "scripts": {
+    "build": "esbuild index.ts --bundle --minify --format=iife --platform=browser --outfile=../static/js/demo-bundle.js"
+  },
+  "dependencies": {
+    "ghostty-web": "^0.4.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

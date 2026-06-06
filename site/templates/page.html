@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "macros.html" as nav %}
+
+{% block title %}{{ page.title }} — bewitch docs{% endblock title %}
+{% block description %}{{ page.description | default(value=config.description) }}{% endblock description %}
+
+{% block body %}
+{% set show_toc = page.toc | length >= 4 %}
+<div class="docs{% if show_toc %} has-toc{% endif %}">
+  {{ nav::docs_nav(current=page.permalink) }}
+  <article class="content">
+    <h1>{{ page.title }}</h1>
+    {{ page.content | safe }}
+
+    <nav class="prevnext">
+      <span>
+        {% if page.lower %}
+        <a href="{{ page.lower.permalink }}"><span class="lbl">← Previous</span>{{ page.lower.title }}</a>
+        {% endif %}
+      </span>
+      <span style="text-align:right">
+        {% if page.higher %}
+        <a href="{{ page.higher.permalink }}"><span class="lbl">Next →</span>{{ page.higher.title }}</a>
+        {% endif %}
+      </span>
+    </nav>
+  </article>
+  {% if show_toc %}{{ nav::page_toc(page=page) }}{% endif %}
+</div>
+{% endblock body %}
+
+{% block extra_body %}{{ nav::search_assets() }}<script src="{{ get_url(path='js/toc.js') }}"></script>{% endblock extra_body %}
