@@ -489,6 +489,7 @@ func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /metrics", s.handlePrometheus)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	mux.HandleFunc("GET /api/alerts", s.handleListAlerts)
