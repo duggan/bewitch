@@ -2,6 +2,7 @@ package alert
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -197,5 +198,35 @@ func TestRuleConstructorsAndName(t *testing.T) {
 	procThrash := NewProcessThrashingRule(base, ProcessThrashingConfig{})
 	if procThrash.Name() != "test-rule" {
 		t.Errorf("ProcessThrashingRule.Name() = %q", procThrash.Name())
+	}
+}
+
+func TestVarianceMetricSupported(t *testing.T) {
+	// Variance is memory-only; non-memory metrics must be rejected so a
+	// hand-edited rule errors loudly instead of silently running memory variance.
+	for _, m := range []string{"memory.variance", "memory.used_pct", ""} {
+		if !varianceMetricSupported(m) {
+			t.Errorf("varianceMetricSupported(%q) = false, want true", m)
+		}
+	}
+	for _, m := range []string{"cpu.aggregate", "disk.used_pct", "network.rx", "smart.reallocated"} {
+		if varianceMetricSupported(m) {
+			t.Errorf("varianceMetricSupported(%q) = true, want false", m)
+		}
+	}
+}
+
+func TestVarianceRuleRejectsNonMemoryMetric(t *testing.T) {
+	// The guard runs before any DB access, so a nil db is never dereferenced.
+	r := &VarianceRule{cfg: VarianceConfig{Metric: "cpu.aggregate", Duration: "5m", MinCount: 1}}
+	alert, err := r.Evaluate(nil)
+	if err == nil {
+		t.Fatal("expected an error for a non-memory variance metric, got nil")
+	}
+	if alert != nil {
+		t.Errorf("expected nil alert on error, got %+v", alert)
+	}
+	if !strings.Contains(err.Error(), "variance only supports memory") {
+		t.Errorf("error = %q, want it to mention memory-only", err.Error())
 	}
 }

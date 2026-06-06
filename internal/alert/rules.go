@@ -288,12 +288,33 @@ func NewVarianceRule(base AlertRuleBase, cfg VarianceConfig) *VarianceRule {
 func (r *VarianceRule) ID() int      { return r.base.ID }
 func (r *VarianceRule) Name() string { return r.base.Name }
 
+// varianceMetricSupported reports whether the variance rule can evaluate the
+// given metric. Variance is memory-only (see Evaluate); the empty string is
+// tolerated for robustness against any odd stored row.
+func varianceMetricSupported(metric string) bool {
+	switch metric {
+	case "memory.variance", "memory.used_pct", "":
+		return true
+	}
+	return false
+}
+
 func (r *VarianceRule) Evaluate(db *sql.DB) (*Alert, error) {
 	dur, err := config.ParseDuration(r.cfg.Duration)
 	if err != nil {
 		return nil, fmt.Errorf("parsing duration %q: %w", r.cfg.Duration, err)
 	}
 	cutoff := time.Now().Add(-dur)
+
+	// Variance is a memory-churn detector and the query below is memory-specific
+	// (it counts abs-delta swings in memory used %). The configured Metric is
+	// stored and round-tripped but was never read here, so a non-memory rule
+	// (only creatable by hand via the API/REPL/raw DB — the TUI always emits
+	// "memory.variance") silently ran memory variance under another metric's
+	// label. Guard it so that mistake errors loudly instead.
+	if !varianceMetricSupported(r.cfg.Metric) {
+		return nil, fmt.Errorf("unsupported variance metric %q (variance only supports memory)", r.cfg.Metric)
+	}
 
 	rows, err := db.Query(
 		"SELECT CAST(used_bytes AS DOUBLE) / NULLIF(total_bytes, 0) * 100 FROM memory_metrics WHERE ts > ? ORDER BY ts",
