@@ -13,6 +13,7 @@ var (
 	MetricTables = []string{
 		"cpu_metrics",
 		"memory_metrics",
+		"load_metrics",
 		"disk_metrics",
 		"network_metrics",
 		"ecc_metrics",

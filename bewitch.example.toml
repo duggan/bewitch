@@ -61,6 +61,9 @@ refresh_interval = "2s"
 [collectors.memory]
 # interval = "5s"
 
+[collectors.load]
+# interval = "5s"  # system load average (1/5/15 min) from /proc/loadavg
+
 [collectors.disk]
 # interval = "30s"
 # smart_interval = "5m"  # how often to read SMART data from disks (requires CAP_SYS_RAWIO)

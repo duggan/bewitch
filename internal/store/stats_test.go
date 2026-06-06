@@ -36,6 +36,7 @@ func TestStatsEmpty(t *testing.T) {
 	expectedTables := map[string]bool{
 		"cpu_metrics":         true,
 		"memory_metrics":      true,
+		"load_metrics":        true,
 		"disk_metrics":        true,
 		"network_metrics":     true,
 		"ecc_metrics":         true,

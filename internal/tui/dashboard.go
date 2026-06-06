@@ -158,6 +158,15 @@ func buildCPUPanel(dash *api.DashboardData, width int, sparkData map[string][]fl
 			fmt.Sprintf("usr:%.1f  sys:%.1f  io:%.1f", aggCore.UserPct, aggCore.SystemPct, aggCore.IOWaitPct)))
 	}
 
+	// Load average (1 / 5 / 15 min)
+	if dash.Load != nil {
+		if aggCore != nil {
+			b.WriteString("\n")
+		}
+		b.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(
+			fmt.Sprintf("load: %.2f %.2f %.2f", dash.Load.Load1, dash.Load.Load5, dash.Load.Load15)))
+	}
+
 	return b.String()
 }
 

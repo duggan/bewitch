@@ -28,6 +28,12 @@ type MemoryMetric struct {
 	SwapUsedBytes  uint64 `json:"swap_used_bytes"`
 }
 
+type LoadMetric struct {
+	Load1  float64 `json:"load1"`
+	Load5  float64 `json:"load5"`
+	Load15 float64 `json:"load15"`
+}
+
 type DiskMetric struct {
 	Mount         string  `json:"mount"`
 	Device        string  `json:"device"`
@@ -164,6 +170,7 @@ type AlertRuleMetric struct {
 type DashboardData struct {
 	CPU         []CPUCoreMetric     `json:"cpu"`
 	Memory      *MemoryMetric       `json:"memory,omitempty"`
+	Load        *LoadMetric         `json:"load,omitempty"`
 	Disks       []DiskMetric        `json:"disks"`
 	Network     []NetworkMetric     `json:"network"`
 	Temperature []TemperatureMetric `json:"temperature"`
@@ -216,6 +223,16 @@ func (s *Server) queryMemory() *MemoryMetric {
 		return nil
 	}
 	return &m
+}
+
+func (s *Server) queryLoad() *LoadMetric {
+	var l LoadMetric
+	err := s.dbFn().QueryRow("SELECT load1, load5, load15 FROM load_metrics WHERE ts = (SELECT MAX(ts) FROM load_metrics)").
+		Scan(&l.Load1, &l.Load5, &l.Load15)
+	if err != nil {
+		return nil
+	}
+	return &l
 }
 
 func (s *Server) queryDisk() []DiskMetric {
@@ -395,6 +412,18 @@ func (s *Server) handleMetricsMemory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, m)
 }
 
+func (s *Server) handleMetricsLoad(w http.ResponseWriter, r *http.Request) {
+	if load, gen := s.getCachedLoad(); load != nil {
+		serveCached(w, r, load, gen)
+		return
+	}
+	l := s.queryLoad()
+	if l == nil {
+		l = &LoadMetric{}
+	}
+	writeJSON(w, http.StatusOK, l)
+}
+
 func (s *Server) handleMetricsDisk(w http.ResponseWriter, r *http.Request) {
 	if disks, gen := s.getCachedDisk(); disks != nil {
 		serveCached(w, r, DiskResponse{Disks: disks}, gen)
@@ -447,6 +476,7 @@ func (s *Server) handleMetricsDashboard(w http.ResponseWriter, r *http.Request) 
 	dash := DashboardData{
 		CPU:         orEmpty(s.queryCPU()),
 		Memory:      s.queryMemory(),
+		Load:        s.queryLoad(),
 		Disks:       orEmpty(s.queryDisk()),
 		Network:     orEmpty(s.queryNetwork()),
 		Temperature: orEmpty(s.queryTemperature()),

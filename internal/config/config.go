@@ -20,25 +20,25 @@ type Config struct {
 }
 
 type DaemonConfig struct {
-	Mock                bool   `toml:"mock"`                  // synthetic data for macOS TUI development
+	Mock                bool   `toml:"mock"` // synthetic data for macOS TUI development
 	Socket              string `toml:"socket"`
-	Listen              string `toml:"listen"`                // optional TCP listen address, e.g. ":9119"
+	Listen              string `toml:"listen"` // optional TCP listen address, e.g. ":9119"
 	DBPath              string `toml:"db_path"`
-	LogLevel            string `toml:"log_level"`             // "debug", "info", "warn", "error"; default "info"
+	LogLevel            string `toml:"log_level"`            // "debug", "info", "warn", "error"; default "info"
 	DefaultInterval     string `toml:"default_interval"`     // e.g. "5s", "1s", "100ms"; default collection interval for all collectors
-	Retention           string `toml:"retention"`             // e.g. "30d", "720h"; empty = keep forever
-	PruneInterval       string `toml:"prune_interval"`        // e.g. "1h", "30m"; default "1h"
-	CompactionInterval  string `toml:"compaction_interval"`   // e.g. "24h", "7d"; empty = disabled
-	CheckpointThreshold string `toml:"checkpoint_threshold"`  // e.g. "16MB", "256MB"; default "16MB" (DuckDB default)
-	DBMemoryLimit       string `toml:"db_memory_limit"`       // e.g. "512MB", "1GB"; caps DuckDB working memory; empty = DuckDB default (~80% RAM)
-	CheckpointInterval  string `toml:"checkpoint_interval"`   // e.g. "5m", "1m"; forced checkpoint interval for crash safety
-	ArchiveThreshold    string `toml:"archive_threshold"`     // e.g. "7d"; archive data older than this to Parquet
-	ArchiveInterval     string `toml:"archive_interval"`      // e.g. "6h"; how often to run archive; default "6h"
-	ArchivePath         string `toml:"archive_path"`          // directory for Parquet archive files
-	TLSCert             string `toml:"tls_cert"`              // PEM certificate path; empty = auto-generate self-signed
-	TLSKey              string `toml:"tls_key"`               // PEM private key path; empty = auto-generate self-signed
-	TLSDisabled         bool   `toml:"tls_disabled"`          // set true to disable TLS on TCP listener
-	AuthToken           string `toml:"auth_token"`            // bearer token for TCP client authentication; empty = no auth
+	Retention           string `toml:"retention"`            // e.g. "30d", "720h"; empty = keep forever
+	PruneInterval       string `toml:"prune_interval"`       // e.g. "1h", "30m"; default "1h"
+	CompactionInterval  string `toml:"compaction_interval"`  // e.g. "24h", "7d"; empty = disabled
+	CheckpointThreshold string `toml:"checkpoint_threshold"` // e.g. "16MB", "256MB"; default "16MB" (DuckDB default)
+	DBMemoryLimit       string `toml:"db_memory_limit"`      // e.g. "512MB", "1GB"; caps DuckDB working memory; empty = DuckDB default (~80% RAM)
+	CheckpointInterval  string `toml:"checkpoint_interval"`  // e.g. "5m", "1m"; forced checkpoint interval for crash safety
+	ArchiveThreshold    string `toml:"archive_threshold"`    // e.g. "7d"; archive data older than this to Parquet
+	ArchiveInterval     string `toml:"archive_interval"`     // e.g. "6h"; how often to run archive; default "6h"
+	ArchivePath         string `toml:"archive_path"`         // directory for Parquet archive files
+	TLSCert             string `toml:"tls_cert"`             // PEM certificate path; empty = auto-generate self-signed
+	TLSKey              string `toml:"tls_key"`              // PEM private key path; empty = auto-generate self-signed
+	TLSDisabled         bool   `toml:"tls_disabled"`         // set true to disable TLS on TCP listener
+	AuthToken           string `toml:"auth_token"`           // bearer token for TCP client authentication; empty = no auth
 }
 
 type AlertsConfig struct {
@@ -113,6 +113,7 @@ func (c *CaptureConfig) GetCompression() string {
 type CollectorsConfig struct {
 	CPU         CPUCollectorConfig         `toml:"cpu"`
 	Memory      MemoryCollectorConfig      `toml:"memory"`
+	Load        LoadCollectorConfig        `toml:"load"`
 	Disk        DiskCollectorConfig        `toml:"disk"`
 	Network     NetworkCollectorConfig     `toml:"network"`
 	ECC         ECCCollectorConfig         `toml:"ecc"`
@@ -127,6 +128,10 @@ type CPUCollectorConfig struct {
 }
 
 type MemoryCollectorConfig struct {
+	Interval string `toml:"interval"`
+}
+
+type LoadCollectorConfig struct {
 	Interval string `toml:"interval"`
 }
 
@@ -159,6 +164,10 @@ func (c *CPUCollectorConfig) GetInterval(defaultInterval time.Duration) time.Dur
 }
 
 func (c *MemoryCollectorConfig) GetInterval(defaultInterval time.Duration) time.Duration {
+	return collectorInterval(c.Interval, defaultInterval)
+}
+
+func (c *LoadCollectorConfig) GetInterval(defaultInterval time.Duration) time.Duration {
 	return collectorInterval(c.Interval, defaultInterval)
 }
 

@@ -31,7 +31,7 @@ cmd/bewitchd/       — daemon entrypoint (collection loop, API, alerts, pruner,
 cmd/bewitch/        — TUI entrypoint (bubbletea app)
 internal/config/    — TOML config parsing
 internal/db/        — DuckDB connection, schema migrations (applied on startup)
-internal/collector/ — metric collectors (CPU, memory, disk, network, ECC, temperature, power, GPU, process)
+internal/collector/ — metric collectors (CPU, memory, load average, disk, network, ECC, temperature, power, GPU, process)
 internal/store/     — writes collected samples to DuckDB; archive.go handles Parquet export
 internal/alert/     — alert engine (threshold, predictive, variance rules; DB-stored; email/command delivery)
 internal/api/       — HTTP API over unix socket + optional TCP (status, alerts, config, history), JSON serialization

@@ -222,6 +222,8 @@ func (s *Store) writeSample(sample collector.Sample) error {
 		return s.writeCPU(sample, data)
 	case collector.MemoryData:
 		return s.writeMemory(sample, data)
+	case collector.LoadData:
+		return s.writeLoad(sample, data)
 	case collector.DiskData:
 		return s.writeDisk(sample, data)
 	case collector.NetworkData:
@@ -378,6 +380,8 @@ func (s *Store) writeSampleAppender(driverConn driver.Conn, sample collector.Sam
 		return s.writeCPUAppender(driverConn, sample, data)
 	case collector.MemoryData:
 		return s.writeMemoryAppender(driverConn, sample, data)
+	case collector.LoadData:
+		return s.writeLoadAppender(driverConn, sample, data)
 	case collector.DiskData:
 		return s.writeDiskAppender(driverConn, sample, data)
 	case collector.NetworkData:
@@ -833,6 +837,20 @@ func (s *Store) writeMemoryTx(tx *sql.Tx, sample collector.Sample, data collecto
 	return err
 }
 
+func (s *Store) writeLoad(sample collector.Sample, data collector.LoadData) error {
+	return s.withTx(func(tx *sql.Tx) error {
+		return s.writeLoadTx(tx, sample, data)
+	})
+}
+
+func (s *Store) writeLoadTx(tx *sql.Tx, sample collector.Sample, data collector.LoadData) error {
+	_, err := tx.Exec(
+		"INSERT INTO load_metrics (ts, load1, load5, load15) VALUES (?, ?, ?, ?)",
+		sample.Timestamp, data.Load1, data.Load5, data.Load15,
+	)
+	return err
+}
+
 func (s *Store) writeDisk(sample collector.Sample, data collector.DiskData) error {
 	return s.withTx(func(tx *sql.Tx) error {
 		return s.writeDiskTx(tx, sample, data)
@@ -1064,6 +1082,12 @@ func (s *Store) writeMemoryAppender(driverConn driver.Conn, sample collector.Sam
 			int64(data.BuffersBytes), int64(data.CachedBytes),
 			int64(data.SwapTotalBytes), int64(data.SwapUsedBytes),
 		)
+	})
+}
+
+func (s *Store) writeLoadAppender(driverConn driver.Conn, sample collector.Sample, data collector.LoadData) error {
+	return withAppender(driverConn, "load_metrics", func(a *duckdb.Appender) error {
+		return a.AppendRow(sample.Timestamp, data.Load1, data.Load5, data.Load15)
 	})
 }
 

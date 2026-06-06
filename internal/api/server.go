@@ -22,27 +22,27 @@ import (
 
 // Server is the daemon HTTP API server over a unix socket (and optionally TCP).
 type Server struct {
-	cfg              *config.Config
-	dbFn             func() *sql.DB
-	srv              *http.Server
-	tcpSrv           *http.Server     // separate server for TCP (with auth middleware)
-	mux              *http.ServeMux
-	listener         net.Listener
-	tcpListener      net.Listener
-	startTime        time.Time
-	compactFn        func() error        // called to trigger database compaction
-	snapshotFn       func(string, bool) error // called to create a database snapshot
-	archiveFn        func() error        // called to trigger Parquet archival
-	unarchiveFn      func() error        // called to reload Parquet data into DuckDB
-	archiveStatusFn  func() ([]ArchiveStatusItem, error)
-	archiveDirStatFn func() (*ArchiveDirStats, error)
-	statsFn          func() (*StatsCore, error)
-	version          string
-	archivePath      string
-	archiveThreshold time.Duration
-	notifiers          []alert.Notifier   // notification destinations for test endpoint
+	cfg                *config.Config
+	dbFn               func() *sql.DB
+	srv                *http.Server
+	tcpSrv             *http.Server // separate server for TCP (with auth middleware)
+	mux                *http.ServeMux
+	listener           net.Listener
+	tcpListener        net.Listener
+	startTime          time.Time
+	compactFn          func() error             // called to trigger database compaction
+	snapshotFn         func(string, bool) error // called to create a database snapshot
+	archiveFn          func() error             // called to trigger Parquet archival
+	unarchiveFn        func() error             // called to reload Parquet data into DuckDB
+	archiveStatusFn    func() ([]ArchiveStatusItem, error)
+	archiveDirStatFn   func() (*ArchiveDirStats, error)
+	statsFn            func() (*StatsCore, error)
+	version            string
+	archivePath        string
+	archiveThreshold   time.Duration
+	notifiers          []alert.Notifier  // notification destinations for test endpoint
 	collectorIntervals map[string]string // collector name → interval string (set once at startup)
-	done               chan struct{}      // closed on Shutdown to stop background goroutines
+	done               chan struct{}     // closed on Shutdown to stop background goroutines
 
 	// Live process snapshot (all processes from collector, served instead of DB query)
 	procSnapshot   *ProcessResponse
@@ -68,6 +68,7 @@ type metricsCache struct {
 
 	cpu   []CPUCoreMetric
 	mem   *MemoryMetric
+	load  *LoadMetric
 	disks []DiskMetric
 	net   []NetworkMetric
 	temps []TemperatureMetric
@@ -91,8 +92,8 @@ type ArchiveStatusItem struct {
 
 // ArchiveDirStats holds statistics about the Parquet archive directory.
 type ArchiveDirStats struct {
-	TotalFiles int64                       `json:"total_files"`
-	TotalBytes int64                       `json:"total_bytes"`
+	TotalFiles int64                        `json:"total_files"`
+	TotalBytes int64                        `json:"total_bytes"`
 	Tables     map[string]TableArchiveStats `json:"tables"`
 }
 
@@ -240,6 +241,26 @@ func (s *Server) getCachedGPU() ([]GPUMetric, uint64) {
 	return getCachedMetric(s, func(mc *metricsCache) []GPUMetric { return mc.gpus })
 }
 
+// SetLoadSnapshot updates the cached load averages served by the API.
+// Separate from SetMetricsSnapshot (whose fixed signature predates load) to
+// match the SetGPUSnapshot pattern.
+func (s *Server) SetLoadSnapshot(load *LoadMetric) {
+	s.metricsMu.Lock()
+	mc := s.metricsSnapshot
+	if mc == nil {
+		mc = &metricsCache{}
+		s.metricsSnapshot = mc
+	}
+	mc.gen++
+	mc.load = load
+	mc.dash = nil
+	s.metricsMu.Unlock()
+}
+
+func (s *Server) getCachedLoad() (*LoadMetric, uint64) {
+	return getCachedMetric(s, func(mc *metricsCache) *LoadMetric { return mc.load })
+}
+
 // SetGPUSnapshot updates the cached GPU metrics served by the API.
 // Separate from SetMetricsSnapshot to match the SetProcessSnapshot pattern.
 func (s *Server) SetGPUSnapshot(gpus []GPUMetric) {
@@ -279,6 +300,7 @@ func (s *Server) getCachedDashboard() (*DashboardData, uint64) {
 		dash := &DashboardData{
 			CPU:         mc.cpu,
 			Memory:      mc.mem,
+			Load:        mc.load,
 			Disks:       mc.disks,
 			Network:     mc.net,
 			Temperature: mc.temps,
@@ -368,7 +390,7 @@ func (s *Server) SetArchiveConfig(archivePath string, archiveThreshold time.Dura
 
 // archiveViewTables lists the metric tables that get all_* archive views.
 var archiveViewTables = []string{
-	"cpu_metrics", "memory_metrics", "disk_metrics", "network_metrics",
+	"cpu_metrics", "memory_metrics", "load_metrics", "disk_metrics", "network_metrics",
 	"ecc_metrics", "temperature_metrics", "power_metrics", "process_metrics", "gpu_metrics",
 }
 
@@ -430,7 +452,6 @@ func (s *Server) CreateArchiveViews() {
 	}
 }
 
-
 const (
 	// maxRequestBody caps POST/PUT request bodies. The largest legitimate body is
 	// an ad-hoc SQL query; 1 MiB is far more than enough and bounds the memory a
@@ -475,6 +496,7 @@ func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	mux.HandleFunc("GET /api/config", s.handleGetConfig)
 	mux.HandleFunc("GET /api/metrics/cpu", s.handleMetricsCPU)
 	mux.HandleFunc("GET /api/metrics/memory", s.handleMetricsMemory)
+	mux.HandleFunc("GET /api/metrics/load", s.handleMetricsLoad)
 	mux.HandleFunc("GET /api/metrics/disk", s.handleMetricsDisk)
 	mux.HandleFunc("GET /api/metrics/network", s.handleMetricsNetwork)
 	mux.HandleFunc("GET /api/metrics/temperature", s.handleMetricsTemperature)

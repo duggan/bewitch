@@ -88,6 +88,7 @@ func main() {
 	var (
 		cpuCollector  collector.Collector
 		memCollector  collector.Collector
+		loadCollector collector.Collector
 		diskCollector collector.Collector
 		netCollector  collector.Collector
 		procCollector collector.ProcessCollectorI
@@ -109,6 +110,7 @@ func main() {
 		}()
 		cpuCollector = collector.NewMockCPUCollector()
 		memCollector = collector.NewMockMemoryCollector()
+		loadCollector = collector.NewMockLoadCollector()
 		diskCollector = collector.NewMockDiskCollector()
 		netCollector = collector.NewMockNetworkCollector()
 		procCollector = collector.NewMockProcessCollector(cfg.Collectors.Process.GetMaxProcesses(), cfg.Collectors.Process.Pinned)
@@ -124,6 +126,11 @@ func main() {
 			log.Fatalf("initializing memory collector: %v", err)
 		}
 		memCollector = mem
+		load, err := collector.NewLoadCollector()
+		if err != nil {
+			log.Fatalf("initializing load collector: %v", err)
+		}
+		loadCollector = load
 		diskExcludes := cfg.Collectors.Disk.GetDiskExcludes()
 		disk, err := collector.NewDiskCollector(diskExcludes, cfg.Collectors.Disk.GetSMARTInterval())
 		if err != nil {
@@ -298,6 +305,7 @@ func main() {
 	scheduled := []scheduledCollector{
 		{collector: cpuCollector, interval: cfg.Collectors.CPU.GetInterval(defaultInterval)},
 		{collector: memCollector, interval: cfg.Collectors.Memory.GetInterval(defaultInterval)},
+		{collector: loadCollector, interval: cfg.Collectors.Load.GetInterval(defaultInterval)},
 		{collector: diskCollector, interval: cfg.Collectors.Disk.GetInterval(defaultInterval)},
 		{collector: netCollector, interval: cfg.Collectors.Network.GetInterval(defaultInterval)},
 		{collector: eccCollector, interval: cfg.Collectors.ECC.GetInterval(defaultInterval)},
@@ -644,14 +652,14 @@ func buildProcessSnapshot(pd *collector.ProcessData, allBasic []collector.Proces
 			continue // Already added as enriched
 		}
 		procs = append(procs, api.ProcessMetric{
-			PID:          b.PID,
-			Name:         b.Name,
-			State:        b.State,
-			CPUUserPct:   b.CPUPct,
-			RSSBytes:     b.RSSBytes,
-			NumThreads:   b.NumThreads,
-			StartTimeNs:  b.StartTime,
-			Enriched:     false,
+			PID:         b.PID,
+			Name:        b.Name,
+			State:       b.State,
+			CPUUserPct:  b.CPUPct,
+			RSSBytes:    b.RSSBytes,
+			NumThreads:  b.NumThreads,
+			StartTimeNs: b.StartTime,
+			Enriched:    false,
 		})
 	}
 
@@ -694,6 +702,8 @@ func pushSampleToCache(srv *api.Server, procCol collector.ProcessCollectorI, s c
 			SwapUsedBytes: d.SwapUsedBytes,
 		}
 		srv.SetMetricsSnapshot(nil, mem, nil, nil, nil, nil, nil)
+	case collector.LoadData:
+		srv.SetLoadSnapshot(&api.LoadMetric{Load1: d.Load1, Load5: d.Load5, Load15: d.Load15})
 	case collector.DiskData:
 		disks := make([]api.DiskMetric, len(d.Mounts))
 		for i, m := range d.Mounts {
@@ -758,7 +768,7 @@ func pushSampleToCache(srv *api.Server, procCol collector.ProcessCollectorI, s c
 		for i, g := range d.GPUs {
 			gpus[i] = api.GPUMetric{
 				Name: g.Name, Index: g.Index, Vendor: g.Vendor,
-				UtilizationPct: g.UtilizationPct,
+				UtilizationPct:  g.UtilizationPct,
 				MemoryUsedBytes: g.MemoryUsedBytes, MemoryTotalBytes: g.MemoryTotalBytes,
 				TempCelsius: g.TempCelsius, PowerWatts: g.PowerWatts,
 				FrequencyMHz: g.FrequencyMHz, FrequencyMaxMHz: g.FrequencyMaxMHz,

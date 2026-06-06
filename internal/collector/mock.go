@@ -14,7 +14,7 @@ import (
 func smoothWave(min, max, periodSec, phase float64) float64 {
 	t := float64(time.Now().UnixNano()) / 1e9
 	base := (math.Sin(t*2*math.Pi/periodSec+phase) + 1) / 2 // [0, 1]
-	noise := (rand.Float64() - 0.5) * 0.05                   // +/- 2.5%
+	noise := (rand.Float64() - 0.5) * 0.05                  // +/- 2.5%
 	val := min + (max-min)*(base+noise)
 	return math.Max(min, math.Min(max, val))
 }
@@ -58,7 +58,7 @@ func NewMockMemoryCollector() *MockMemoryCollector { return &MockMemoryCollector
 func (c *MockMemoryCollector) Name() string        { return "memory" }
 
 func (c *MockMemoryCollector) Collect() (Sample, error) {
-	const total = 32 * 1024 * 1024 * 1024   // 32 GB
+	const total = 32 * 1024 * 1024 * 1024    // 32 GB
 	const swapTotal = 8 * 1024 * 1024 * 1024 // 8 GB
 
 	usedPct := smoothWave(0.40, 0.65, 600, 0)
@@ -75,6 +75,23 @@ func (c *MockMemoryCollector) Collect() (Sample, error) {
 		CachedBytes:    cached,
 		SwapTotalBytes: swapTotal,
 		SwapUsedBytes:  swapUsed,
+	}}, nil
+}
+
+// --- Load ---
+
+type MockLoadCollector struct{}
+
+func NewMockLoadCollector() *MockLoadCollector { return &MockLoadCollector{} }
+func (c *MockLoadCollector) Name() string      { return "load" }
+
+func (c *MockLoadCollector) Collect() (Sample, error) {
+	// Simulated 8-core server: load oscillates around 2–5, with the longer
+	// windows smoother and lagging the 1-minute figure.
+	return Sample{Timestamp: time.Now(), Kind: "load", Data: LoadData{
+		Load1:  smoothWave(2.0, 5.0, 300, 0),
+		Load5:  smoothWave(2.2, 4.4, 600, 0.5),
+		Load15: smoothWave(2.5, 3.8, 900, 1.0),
 	}}, nil
 }
 
@@ -132,12 +149,12 @@ func (c *MockNetworkCollector) Collect() (Sample, error) {
 	return Sample{Timestamp: time.Now(), Kind: "network", Data: NetworkData{
 		Interfaces: []NetIfaceSample{
 			{
-				Interface: "eth0",
+				Interface:  "eth0",
 				RxBytesSec: smoothWave(1e6, 50e6, 45, 0), TxBytesSec: smoothWave(0.5e6, 20e6, 60, 0.5),
 				RxPacketsSec: smoothWave(1000, 40000, 45, 0), TxPacketsSec: smoothWave(500, 15000, 60, 0.5),
 			},
 			{
-				Interface: "wlan0",
+				Interface:  "wlan0",
 				RxBytesSec: smoothWave(0.1e6, 5e6, 80, 2.0), TxBytesSec: smoothWave(0.05e6, 2e6, 100, 2.5),
 				RxPacketsSec: smoothWave(100, 5000, 80, 2.0), TxPacketsSec: smoothWave(50, 2000, 100, 2.5),
 			},

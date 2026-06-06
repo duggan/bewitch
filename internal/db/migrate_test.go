@@ -20,6 +20,23 @@ func openTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
+// latestVersion returns the highest known migration version, so these tests
+// don't need editing every time a migration is added.
+func latestVersion(t *testing.T) int {
+	t.Helper()
+	migs, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("loadMigrations: %v", err)
+	}
+	max := 0
+	for _, m := range migs {
+		if m.Version > max {
+			max = m.Version
+		}
+	}
+	return max
+}
+
 func TestFreshDB(t *testing.T) {
 	db := openTestDB(t)
 
@@ -33,8 +50,8 @@ func TestFreshDB(t *testing.T) {
 	if err := db.QueryRow(`SELECT version, dirty FROM schema_version`).Scan(&version, &dirty); err != nil {
 		t.Fatalf("reading schema_version: %v", err)
 	}
-	if version != 5 {
-		t.Errorf("version = %d, want 5", version)
+	if want := latestVersion(t); version != want {
+		t.Errorf("version = %d, want %d", version, want)
 	}
 	if dirty {
 		t.Error("dirty = true, want false")
@@ -70,8 +87,8 @@ func TestExistingDBDetection(t *testing.T) {
 		t.Fatalf("reading schema_version: %v", err)
 	}
 	// Should be stamped at 1 (skipped initial), then ran migrations 2 and 3.
-	if version != 5 {
-		t.Errorf("version = %d, want 5", version)
+	if want := latestVersion(t); version != want {
+		t.Errorf("version = %d, want %d", version, want)
 	}
 	if dirty {
 		t.Error("dirty = true, want false")
@@ -115,8 +132,8 @@ func TestIdempotentRestart(t *testing.T) {
 	if err := db.QueryRow(`SELECT version FROM schema_version`).Scan(&version); err != nil {
 		t.Fatalf("reading version: %v", err)
 	}
-	if version != 5 {
-		t.Errorf("version = %d, want 5", version)
+	if want := latestVersion(t); version != want {
+		t.Errorf("version = %d, want %d", version, want)
 	}
 }
 
