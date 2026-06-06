@@ -34,7 +34,16 @@ jobs:
 
       - name: Build
         working-directory: site
-        run: zola build
+        # Production (push to main) builds with the absolute base_url for correct
+        # sitemap / canonical / OG tags. PR previews build root-relative so CSS,
+        # JS, images and links resolve on the *.pages.dev preview origin instead
+        # of pointing back at production bewitch.dev.
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            zola build --base-url "/"
+          else
+            zola build
+          fi
 
       - name: Stamp install scripts with VERSION
         run: |
