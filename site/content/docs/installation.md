@@ -4,6 +4,10 @@ description = "One-line installer, the Debian APT repo, or prebuilt binaries —
 weight = 10
 +++
 
+<!-- The version in the download URLs below is stamped from the repo VERSION file
+     at deploy time (see .github/workflows/deploy-site.yml and `make deploy`). The
+     literal value here is just a sensible default for local `zola serve`. -->
+
 Bewitch runs on Linux (amd64 and arm64). It uses procfs and sysfs for metric collection.
 
 ## Supported Platforms
