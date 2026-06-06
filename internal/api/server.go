@@ -431,6 +431,33 @@ func (s *Server) CreateArchiveViews() {
 }
 
 
+const (
+	// maxRequestBody caps POST/PUT request bodies. The largest legitimate body is
+	// an ad-hoc SQL query; 1 MiB is far more than enough and bounds the memory a
+	// single request can force the daemon to buffer — it runs on small hosts.
+	maxRequestBody = 1 << 20 // 1 MiB
+
+	// readHeaderTimeout bounds how long a client may take to send request headers,
+	// defeating slow-loris connections that would otherwise pin a goroutine forever.
+	readHeaderTimeout = 10 * time.Second
+	// idleTimeout closes idle keep-alive connections.
+	idleTimeout = 120 * time.Second
+	// Note: ReadTimeout/WriteTimeout are deliberately left unset. Export, snapshot,
+	// and wide history queries can legitimately run for many seconds, and a write
+	// deadline would truncate their responses.
+)
+
+// limitBody caps each request body at maxRequestBody so a large or stalled POST
+// can't force the daemon to buffer unbounded memory.
+func limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	s := &Server{
 		cfg:          cfg,
@@ -481,7 +508,11 @@ func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	mux.HandleFunc("POST /api/snapshot", s.handleSnapshot)
 
 	s.mux = mux
-	s.srv = &http.Server{Handler: mux}
+	s.srv = &http.Server{
+		Handler:           limitBody(mux),
+		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
+	}
 	go s.cleanHistoryCache()
 	return s
 }
@@ -594,7 +625,9 @@ func (s *Server) Start() error {
 
 		s.tcpListener = tcpLn
 		s.tcpSrv = &http.Server{
-			Handler: bearerAuth(s.cfg.Daemon.AuthToken, s.mux),
+			Handler:           bearerAuth(s.cfg.Daemon.AuthToken, limitBody(s.mux)),
+			ReadHeaderTimeout: readHeaderTimeout,
+			IdleTimeout:       idleTimeout,
 		}
 		if s.cfg.Daemon.AuthToken != "" {
 			log.Infof("TCP listener requires bearer token authentication")

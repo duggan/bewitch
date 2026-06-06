@@ -750,7 +750,8 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, ExportResponse{Error: "path must be absolute"})
 		return
 	}
-	if _, err := os.Stat(filepath.Dir(req.Path)); err != nil {
+	cleanPath := filepath.Clean(req.Path)
+	if _, err := os.Stat(filepath.Dir(cleanPath)); err != nil {
 		writeJSON(w, http.StatusBadRequest, ExportResponse{Error: "parent directory does not exist"})
 		return
 	}
@@ -758,7 +759,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	// Infer format from extension if not specified
 	format := strings.ToLower(req.Format)
 	if format == "" {
-		switch strings.ToLower(filepath.Ext(req.Path)) {
+		switch strings.ToLower(filepath.Ext(cleanPath)) {
 		case ".parquet":
 			format = "parquet"
 		case ".json":
@@ -767,15 +768,25 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 			format = "csv"
 		}
 	}
+	// Validate format against an allowlist: it is interpolated into the COPY
+	// options below, so an unchecked value would be an injection seam.
+	switch format {
+	case "csv", "parquet", "json":
+	default:
+		writeJSON(w, http.StatusBadRequest, ExportResponse{Error: "format must be one of: csv, parquet, json"})
+		return
+	}
 
-	// Build COPY statement
+	// Build COPY statement. req.SQL is validated read-only above; the destination
+	// path is a single-quoted literal with embedded quotes doubled (DuckDB has no
+	// parameter binding for COPY target paths, so we escape it ourselves).
 	options := fmt.Sprintf("FORMAT %s", format)
 	if format == "parquet" {
 		options += ", COMPRESSION zstd"
 	} else if format == "csv" {
 		options += ", HEADER"
 	}
-	copySQL := fmt.Sprintf("COPY (%s) TO '%s' (%s)", req.SQL, req.Path, options)
+	copySQL := fmt.Sprintf("COPY (%s) TO '%s' (%s)", req.SQL, strings.ReplaceAll(cleanPath, "'", "''"), options)
 
 	queryStart := time.Now()
 	result, err := s.dbFn().Exec(copySQL)
@@ -785,8 +796,8 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rowCount, _ := result.RowsAffected()
-	log.Debugf("export: %s rows=%d path=%s", time.Since(queryStart), rowCount, req.Path)
-	writeJSON(w, http.StatusOK, ExportResponse{RowCount: rowCount, Path: req.Path})
+	log.Debugf("export: %s rows=%d path=%s", time.Since(queryStart), rowCount, cleanPath)
+	writeJSON(w, http.StatusOK, ExportResponse{RowCount: rowCount, Path: cleanPath})
 }
 
 func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {

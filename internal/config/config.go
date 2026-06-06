@@ -443,13 +443,20 @@ func (c *DaemonConfig) ValidateTLS() error {
 	return nil
 }
 
-// ValidateAuth checks authentication configuration for consistency.
-// Returns a warning message if TCP listening is enabled without auth.
-func (c *DaemonConfig) ValidateAuth() string {
-	if c.Listen != "" && c.AuthToken == "" {
-		return "TCP listener enabled without auth_token; any client can connect"
+// ValidateAuth checks the TCP listener's authentication/encryption configuration.
+// It returns a fatal error for a plaintext TCP listener with no auth_token — any
+// host on the network could read and write the API in the clear, including the
+// destructive maintenance endpoints — and a non-fatal warning for a TLS listener
+// with no token (encrypted and fingerprint-pinned, but unauthenticated).
+func (c *DaemonConfig) ValidateAuth() (warn string, err error) {
+	if c.Listen == "" || c.AuthToken != "" {
+		return "", nil
 	}
-	return ""
+	if c.TLSDisabled {
+		return "", fmt.Errorf("refusing to start: plaintext TCP listener %q has no auth_token; "+
+			"set auth_token, or remove tls_disabled to use the auto-generated TLS certificate", c.Listen)
+	}
+	return fmt.Sprintf("TLS TCP listener %s enabled without auth_token; any client that trusts the certificate can connect", c.Listen), nil
 }
 
 // Load reads and parses a TOML config file.

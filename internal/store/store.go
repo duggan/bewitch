@@ -529,6 +529,14 @@ func (s *Store) IsJobOverdue(jobName string, interval time.Duration) (bool, erro
 	return time.Since(lastRun) >= interval, nil
 }
 
+// quoteLiteral escapes a string for safe interpolation inside a single-quoted SQL
+// literal (e.g. ATTACH '<path>'). DuckDB has no parameter binding for ATTACH/COPY
+// target paths, so embedded single quotes must be doubled to keep a caller-supplied
+// path from breaking out of the literal.
+func quoteLiteral(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
 // Compact rebuilds the database file to reclaim fragmented space. It creates
 // a fresh database with proper schema and copies data into it.
 // Note: COPY FROM DATABASE preserves internal fragmentation, so we create
@@ -543,7 +551,7 @@ func (s *Store) Compact(dbPath string) error {
 	os.Remove(tmpPath)
 
 	// Attach a fresh database
-	if _, err := s.db.Exec(fmt.Sprintf("ATTACH '%s' AS compact_db", tmpPath)); err != nil {
+	if _, err := s.db.Exec(fmt.Sprintf("ATTACH '%s' AS compact_db", quoteLiteral(tmpPath))); err != nil {
 		return fmt.Errorf("attach compact db: %w", err)
 	}
 
@@ -661,7 +669,7 @@ func (s *Store) Snapshot(snapshotPath, archivePath string, withSystemTables bool
 	// Clean up any leftover file
 	os.Remove(snapshotPath)
 
-	if _, err := s.db.Exec(fmt.Sprintf("ATTACH '%s' AS snap_db", snapshotPath)); err != nil {
+	if _, err := s.db.Exec(fmt.Sprintf("ATTACH '%s' AS snap_db", quoteLiteral(snapshotPath))); err != nil {
 		return fmt.Errorf("attach snapshot db: %w", err)
 	}
 

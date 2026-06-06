@@ -792,22 +792,29 @@ foreground = "#FFFFFF"
 
 func TestValidateAuth(t *testing.T) {
 	tests := []struct {
-		name     string
-		listen   string
-		token    string
-		wantWarn bool
+		name        string
+		listen      string
+		token       string
+		tlsDisabled bool
+		wantWarn    bool
+		wantErr     bool
 	}{
-		{"listen with token", ":9119", "secret", false},
-		{"listen without token", ":9119", "", true},
-		{"no listen without token", "", "", false},
-		{"no listen with token", "", "secret", false},
+		{"no listen", "", "", false, false, false},
+		{"no listen with token", "", "secret", false, false, false},
+		{"tls listener with token", ":9119", "secret", false, false, false},
+		{"tls listener without token", ":9119", "", false, true, false},
+		{"plaintext listener with token", ":9119", "secret", true, false, false},
+		{"plaintext listener without token", ":9119", "", true, false, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := DaemonConfig{Listen: tt.listen, AuthToken: tt.token}
-			warn := c.ValidateAuth()
+			c := DaemonConfig{Listen: tt.listen, AuthToken: tt.token, TLSDisabled: tt.tlsDisabled}
+			warn, err := c.ValidateAuth()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateAuth() err = %v, wantErr %v", err, tt.wantErr)
+			}
 			if (warn != "") != tt.wantWarn {
-				t.Errorf("ValidateAuth() = %q, wantWarn %v", warn, tt.wantWarn)
+				t.Errorf("ValidateAuth() warn = %q, wantWarn %v", warn, tt.wantWarn)
 			}
 		})
 	}

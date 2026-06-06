@@ -39,6 +39,8 @@ func TestCheckReadOnly(t *testing.T) {
 		{"select case insensitive", "select 1", false},
 		{"select with comments", "-- comment\nSELECT 1", false},
 		{"select with block comment", "/* block */ SELECT 1", false},
+		{"trailing semicolon", "SELECT 1;", false},
+		{"trailing semicolon whitespace", "SELECT * FROM test_table; ", false},
 
 		// Rejected
 		{"insert", "INSERT INTO test_table VALUES (1, 'a')", true},
@@ -54,6 +56,13 @@ func TestCheckReadOnly(t *testing.T) {
 		// Comment-based bypass attempts (the key advantage over keyword matching)
 		{"comment then insert", "-- harmless\nINSERT INTO test_table VALUES (1, 'a')", true},
 		{"cte wrapping insert", "WITH cte AS (SELECT 1) INSERT INTO test_table SELECT * FROM cte", true},
+
+		// Multi-statement bypass attempts: a destructive leading statement with a
+		// trailing SELECT used to pass (the driver reported only the last type).
+		{"destructive then select", "DELETE FROM test_table; SELECT 1", true},
+		{"drop then select", "DROP TABLE test_table; SELECT 1", true},
+		{"select then destructive", "SELECT 1; DELETE FROM test_table", true},
+		{"two selects", "SELECT 1; SELECT 2", true},
 	}
 
 	for _, tt := range tests {
@@ -66,5 +75,28 @@ func TestCheckReadOnly(t *testing.T) {
 				t.Errorf("checkReadOnly(%q) = %v, want nil", tt.sql, err)
 			}
 		})
+	}
+}
+
+// TestCheckReadOnlyDoesNotExecute is the security regression for the multi-statement
+// bypass: validating "DELETE …; SELECT 1" must reject it WITHOUT running the DELETE.
+// (The driver's PrepareContext path executes all but the last statement during the
+// check itself, so the row would vanish before the query was ever rejected.)
+func TestCheckReadOnlyDoesNotExecute(t *testing.T) {
+	db := testDB(t)
+	if _, err := db.Exec("INSERT INTO test_table VALUES (1, 'keep')"); err != nil {
+		t.Fatalf("seeding row: %v", err)
+	}
+
+	if err := checkReadOnly(db, "DELETE FROM test_table; SELECT 1"); err == nil {
+		t.Fatal("checkReadOnly accepted a multi-statement query, want rejection")
+	}
+
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM test_table").Scan(&count); err != nil {
+		t.Fatalf("counting rows: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("row count = %d after rejected DELETE, want 1 (the DELETE executed during validation)", count)
 	}
 }

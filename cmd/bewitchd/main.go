@@ -66,7 +66,9 @@ func main() {
 		log.SetLevel(level)
 	}
 
-	if warn := cfg.Daemon.ValidateAuth(); warn != "" {
+	if warn, authErr := cfg.Daemon.ValidateAuth(); authErr != nil {
+		log.Fatalf("%v", authErr)
+	} else if warn != "" {
 		log.Warn(warn)
 	}
 
