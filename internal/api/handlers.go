@@ -180,39 +180,50 @@ func (s *Server) handleListAlertRules(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Load type-specific fields from the appropriate table
+		// Load type-specific fields from the appropriate table. A missing or
+		// unreadable config row leaves the rule half-populated; log it (the rule
+		// still exists) instead of silently returning blank fields — this mirrors
+		// the engine's behavior of surfacing orphaned rules rather than skipping
+		// them silently.
+		var cfgErr error
 		switch rule.Type {
 		case "threshold":
-			db.QueryRow(`SELECT metric, operator, value, duration,
+			cfgErr = db.QueryRow(`SELECT metric, operator, value, duration,
 				COALESCE(mount, ''), COALESCE(interface_name, ''), COALESCE(sensor, '')
 				FROM alert_rule_threshold WHERE rule_id = ?`, rule.ID).Scan(
 				&rule.Metric, &rule.Operator, &rule.Value, &rule.Duration,
 				&rule.Mount, &rule.InterfaceName, &rule.Sensor)
 
 		case "predictive":
-			db.QueryRow(`SELECT metric, mount, predict_hours, threshold_pct
+			cfgErr = db.QueryRow(`SELECT metric, mount, predict_hours, threshold_pct
 				FROM alert_rule_predictive WHERE rule_id = ?`, rule.ID).Scan(
 				&rule.Metric, &rule.Mount, &rule.PredictHours, &rule.ThresholdPct)
 
 		case "variance":
-			db.QueryRow(`SELECT metric, delta_threshold, min_count, duration
+			cfgErr = db.QueryRow(`SELECT metric, delta_threshold, min_count, duration
 				FROM alert_rule_variance WHERE rule_id = ?`, rule.ID).Scan(
 				&rule.Metric, &rule.DeltaThreshold, &rule.MinCount, &rule.Duration)
 
 		case "process_down":
-			db.QueryRow(`SELECT process_name, COALESCE(process_pattern, ''),
+			cfgErr = db.QueryRow(`SELECT process_name, COALESCE(process_pattern, ''),
 				min_instances, check_duration
 				FROM alert_rule_process_down WHERE rule_id = ?`, rule.ID).Scan(
 				&rule.ProcessName, &rule.ProcessPattern, &rule.MinInstances, &rule.CheckDuration)
 
 		case "process_thrashing":
-			db.QueryRow(`SELECT process_name, COALESCE(process_pattern, ''),
+			cfgErr = db.QueryRow(`SELECT process_name, COALESCE(process_pattern, ''),
 				restart_threshold, restart_window
 				FROM alert_rule_process_thrashing WHERE rule_id = ?`, rule.ID).Scan(
 				&rule.ProcessName, &rule.ProcessPattern, &rule.RestartThreshold, &rule.RestartWindow)
 		}
+		if cfgErr != nil {
+			log.Warnf("alert-rule %d (%q, type %s): loading config: %v", rule.ID, rule.Name, rule.Type, cfgErr)
+		}
 
 		rules = append(rules, rule)
+	}
+	if err := rows.Err(); err != nil {
+		log.Warnf("alert-rules: row iteration error (results may be truncated): %v", err)
 	}
 	if rules == nil {
 		rules = []AlertRuleMetric{}

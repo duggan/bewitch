@@ -252,6 +252,9 @@ func (s *Server) handleHistoryCPU(w http.ResponseWriter, r *http.Request) {
 		ioSeries.Points = append(ioSeries.Points, TimeSeriesPoint{ns, ioAvg})
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Debugf("history/cpu: row iteration error (results may be truncated): %v", err)
+	}
 	log.Debugf("history/cpu: %s source=%s rows=%d", time.Since(queryStart), sourceLabel(source), len(userSeries.Points))
 	s.writeHistoryData(r, w, []TimeSeries{userSeries, sysSeries, ioSeries})
 }
@@ -319,6 +322,9 @@ func (s *Server) handleHistoryMemory(w http.ResponseWriter, r *http.Request) {
 		swapSeries.Points = append(swapSeries.Points, TimeSeriesPoint{ns, swap})
 	}
 
+	if err := rows.Err(); err != nil {
+		log.Debugf("history/memory: row iteration error (results may be truncated): %v", err)
+	}
 	log.Debugf("history/memory: %s source=%s rows=%d", time.Since(queryStart), sourceLabel(source), len(memSeries.Points))
 	s.writeHistoryData(r, w, []TimeSeries{memSeries, swapSeries})
 }
@@ -430,6 +436,9 @@ func (s *Server) handleDimHistory(w http.ResponseWriter, r *http.Request, spec d
 	}
 	sort.Slice(series, func(i, j int) bool { return series[i].Label < series[j].Label })
 
+	if err := rows.Err(); err != nil {
+		log.Debugf("history/%s: row iteration error (results may be truncated): %v", spec.metric, err)
+	}
 	log.Debugf("history/%s: %s source=%s rows=%d series=%d", spec.metric, time.Since(queryStart), sourceLabel(source), rowCount, len(series))
 	s.writeHistoryData(r, w, series)
 }
@@ -535,6 +544,9 @@ func (s *Server) handleHistoryNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(series, func(i, j int) bool { return series[i].Label < series[j].Label })
 
+	if err := rows.Err(); err != nil {
+		log.Debugf("history/network: row iteration error (results may be truncated): %v", err)
+	}
 	log.Debugf("history/network: %s source=%s rows=%d series=%d", time.Since(queryStart), sourceLabel(source), rowCount, len(series))
 	s.writeHistoryData(r, w, series)
 }
@@ -632,6 +644,9 @@ func (s *Server) handleHistoryProcess(w http.ResponseWriter, r *http.Request) {
 		return sumI > sumJ
 	})
 
+	if err := rows.Err(); err != nil {
+		log.Debugf("history/process: row iteration error (results may be truncated): %v", err)
+	}
 	log.Debugf("history/process: %s source=%s rows=%d series=%d", time.Since(queryStart), sourceLabel(source), rowCount, len(series))
 	s.writeHistoryData(r, w, series)
 }

@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"net/http"
 	"time"
+
+	"github.com/charmbracelet/log"
 )
 
 // Shared response types used by both API handlers and TUI client.
@@ -160,19 +162,28 @@ type AlertRuleMetric struct {
 }
 
 type DashboardData struct {
-	CPU         []CPUCoreMetric    `json:"cpu"`
-	Memory      *MemoryMetric      `json:"memory,omitempty"`
-	Disks       []DiskMetric       `json:"disks"`
-	Network     []NetworkMetric    `json:"network"`
+	CPU         []CPUCoreMetric     `json:"cpu"`
+	Memory      *MemoryMetric       `json:"memory,omitempty"`
+	Disks       []DiskMetric        `json:"disks"`
+	Network     []NetworkMetric     `json:"network"`
 	Temperature []TemperatureMetric `json:"temperature"`
-	Power       []PowerMetric      `json:"power"`
-	GPU         []GPUMetric        `json:"gpu,omitempty"`
-	Processes   *ProcessResponse   `json:"processes,omitempty"`
+	Power       []PowerMetric       `json:"power"`
+	GPU         []GPUMetric         `json:"gpu,omitempty"`
+	Processes   *ProcessResponse    `json:"processes,omitempty"`
 }
 
 // Handlers
 
 // DB query helpers — used by both individual metric handlers and the dashboard fallback.
+
+// logRowsErr logs (rather than silently swallows) an error that stopped row
+// iteration, so a truncated metric result is visible instead of looking empty.
+// Defer it before iterating; rows.Err() is valid once iteration ends.
+func logRowsErr(name string, rows *sql.Rows) {
+	if err := rows.Err(); err != nil {
+		log.Warnf("query %s: row iteration error (results may be truncated): %v", name, err)
+	}
+}
 
 func (s *Server) queryCPU() []CPUCoreMetric {
 	rows, err := s.dbFn().Query("SELECT core, user_pct, system_pct, idle_pct, iowait_pct FROM cpu_metrics WHERE ts = (SELECT MAX(ts) FROM cpu_metrics) ORDER BY core")
@@ -180,11 +191,14 @@ func (s *Server) queryCPU() []CPUCoreMetric {
 		return nil
 	}
 	defer rows.Close()
+	defer logRowsErr("cpu", rows)
 	var cores []CPUCoreMetric
 	for rows.Next() {
 		var c CPUCoreMetric
 		var userPct, sysPct, idlePct, iowaitPct sql.NullFloat64
-		rows.Scan(&c.Core, &userPct, &sysPct, &idlePct, &iowaitPct)
+		if err := rows.Scan(&c.Core, &userPct, &sysPct, &idlePct, &iowaitPct); err != nil {
+			continue
+		}
 		c.UserPct = nf(userPct)
 		c.SystemPct = nf(sysPct)
 		c.IdlePct = nf(idlePct)
@@ -215,11 +229,14 @@ func (s *Server) queryDisk() []DiskMetric {
 		return nil
 	}
 	defer rows.Close()
+	defer logRowsErr("disk", rows)
 	var disks []DiskMetric
 	for rows.Next() {
 		var d DiskMetric
 		var device sql.NullString
-		rows.Scan(&d.Mount, &device, &d.TotalBytes, &d.UsedBytes, &d.FreeBytes, &d.ReadBytesSec, &d.WriteBytesSec, &d.ReadIOPS, &d.WriteIOPS)
+		if err := rows.Scan(&d.Mount, &device, &d.TotalBytes, &d.UsedBytes, &d.FreeBytes, &d.ReadBytesSec, &d.WriteBytesSec, &d.ReadIOPS, &d.WriteIOPS); err != nil {
+			continue
+		}
 		if device.Valid {
 			d.Device = device.String
 		}
@@ -238,10 +255,13 @@ func (s *Server) queryNetwork() []NetworkMetric {
 		return nil
 	}
 	defer rows.Close()
+	defer logRowsErr("network", rows)
 	var ifaces []NetworkMetric
 	for rows.Next() {
 		var n NetworkMetric
-		rows.Scan(&n.Interface, &n.RxBytesSec, &n.TxBytesSec, &n.RxPacketsSec, &n.TxPacketsSec, &n.RxErrors, &n.TxErrors)
+		if err := rows.Scan(&n.Interface, &n.RxBytesSec, &n.TxBytesSec, &n.RxPacketsSec, &n.TxPacketsSec, &n.RxErrors, &n.TxErrors); err != nil {
+			continue
+		}
 		ifaces = append(ifaces, n)
 	}
 	return ifaces
@@ -257,10 +277,13 @@ func (s *Server) queryTemperature() []TemperatureMetric {
 		return nil
 	}
 	defer rows.Close()
+	defer logRowsErr("temperature", rows)
 	var temps []TemperatureMetric
 	for rows.Next() {
 		var t TemperatureMetric
-		rows.Scan(&t.Sensor, &t.TempCelsius)
+		if err := rows.Scan(&t.Sensor, &t.TempCelsius); err != nil {
+			continue
+		}
 		temps = append(temps, t)
 	}
 	return temps
@@ -276,10 +299,13 @@ func (s *Server) queryPower() []PowerMetric {
 		return nil
 	}
 	defer rows.Close()
+	defer logRowsErr("power", rows)
 	var zones []PowerMetric
 	for rows.Next() {
 		var p PowerMetric
-		rows.Scan(&p.Zone, &p.Watts)
+		if err := rows.Scan(&p.Zone, &p.Watts); err != nil {
+			continue
+		}
 		zones = append(zones, p)
 	}
 	return zones
@@ -297,6 +323,7 @@ func (s *Server) queryProcessDashboard() *ProcessResponse {
 		return nil
 	}
 	defer rows.Close()
+	defer logRowsErr("process-dashboard", rows)
 	var procs []ProcessMetric
 	var totalCPU float64
 	var totalRSS uint64
@@ -305,7 +332,9 @@ func (s *Server) queryProcessDashboard() *ProcessResponse {
 	for rows.Next() {
 		var p ProcessMetric
 		var state sql.NullString
-		rows.Scan(&p.PID, &p.Name, &state, &p.CPUUserPct, &p.CPUSystemPct, &p.RSSBytes)
+		if err := rows.Scan(&p.PID, &p.Name, &state, &p.CPUUserPct, &p.CPUSystemPct, &p.RSSBytes); err != nil {
+			continue
+		}
 		if state.Valid {
 			p.State = state.String
 			if p.State == "R" {
@@ -458,13 +487,16 @@ func (s *Server) handleMetricsGPU(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
+	defer logRowsErr("gpu", rows)
 
 	var result []GPUMetric
 	idx := 0
 	for rows.Next() {
 		var g GPUMetric
-		rows.Scan(&g.Name, &g.UtilizationPct, &g.MemoryUsedBytes, &g.MemoryTotalBytes,
-			&g.TempCelsius, &g.PowerWatts, &g.FrequencyMHz, &g.FrequencyMaxMHz, &g.ThrottlePct)
+		if err := rows.Scan(&g.Name, &g.UtilizationPct, &g.MemoryUsedBytes, &g.MemoryTotalBytes,
+			&g.TempCelsius, &g.PowerWatts, &g.FrequencyMHz, &g.FrequencyMaxMHz, &g.ThrottlePct); err != nil {
+			continue
+		}
 		g.Index = idx
 		idx++
 		result = append(result, g)
