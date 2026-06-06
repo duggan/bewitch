@@ -939,7 +939,6 @@ func (m *Model) switchView(v view) tea.Cmd {
 	}
 	if m.ready {
 		m.viewport.GotoTop()
-		m.viewport.SetContent(m.renderCurrentContent())
 	}
 	return cmd
 }
@@ -1929,7 +1928,22 @@ func (m *Model) updateGPUSparklines(gpus []api.GPUMetric) {
 	}
 }
 
+// Update is the bubbletea entry point. It delegates to updateModel and then
+// refreshes the viewport content exactly once per message. Previously the inner
+// handlers set content via scattered SetContent calls AND View() re-rendered the
+// whole view on every frame, so each data tick composed the dashboard and sorted
+// the full process list twice. Rendering once here removes that double work while
+// keeping every path (data ticks, resize, view switch, and interaction keys that
+// have no SetContent of their own) covered.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m, cmd := m.updateModel(msg)
+	if m.ready {
+		m.viewport.SetContent(m.renderCurrentContent())
+	}
+	return m, cmd
+}
+
+func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 	// If capture form is active, route ALL messages to it
 	if m.captureFormActive && m.captureForm != nil {
 		if msg, ok := msg.(tea.KeyMsg); ok && msg.String() == "esc" {
@@ -2626,7 +2640,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			prefetchCmds = m.prefetchAllHistoryCmds()
 		}
 		m.alertTable.SetHeight(contentHeight - 4)
-		m.viewport.SetContent(m.renderCurrentContent())
 		return m, tea.Batch(prefetchCmds...)
 	case historyResultMsg:
 		m.historyFetching[msg.forView] = false
@@ -2676,9 +2689,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.historyEnd = msg.end
 				m.regenerateHistoryChart()
 				cache.chart = m.cachedHistoryCharts[m.current]
-				if m.ready {
-					m.viewport.SetContent(m.renderCurrentContent())
-				}
 				if m.current == viewProcess && len(m.pinnedProcesses) > 0 {
 					return m, m.fetchPinnedHistoryCmd(msg.windowStart, msg.end)
 				}
@@ -2723,9 +2733,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				customRange:  isCustom,
 			}
 		}
-		if m.ready {
-			m.viewport.SetContent(m.renderCurrentContent())
-		}
 		if m.current == viewProcess && len(m.pinnedProcesses) > 0 {
 			return m, m.fetchPinnedHistoryCmd(msg.start, msg.end)
 		}
@@ -2755,9 +2762,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			rangeLabel := m.historyRangeLabel()
 			m.procPinnedChart = renderProcessHistoryChart(merged, chartWidth, ch, msg.windowStart, msg.end, m.pinnedProcesses)
 			m.procPinnedChart = renderPanel(fmt.Sprintf("Pinned Process CPU [%s]", rangeLabel), m.procPinnedChart+historyHelpInline(rangeLabel), m.width)
-			if m.ready {
-				m.viewport.SetContent(m.renderCurrentContent())
-			}
 			return m, nil
 		}
 
@@ -2780,9 +2784,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		rangeLabel := m.historyRangeLabel()
 		m.procPinnedChart = renderProcessHistoryChart(msg.series, chartWidth, ch, msg.start, msg.end, m.pinnedProcesses)
 		m.procPinnedChart = renderPanel(fmt.Sprintf("Pinned Process CPU [%s]", rangeLabel), m.procPinnedChart+historyHelpInline(rangeLabel), m.width)
-		if m.ready {
-			m.viewport.SetContent(m.renderCurrentContent())
-		}
 		return m, nil
 	case prefetchHistoryResultMsg:
 		m.historyFetching[msg.forView] = false
@@ -2819,9 +2820,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.historyEnd = msg.end
 			if cached := m.historyCache[msg.forView]; cached != nil {
 				m.cachedHistoryCharts[m.current] = cached.chart
-			}
-			if m.ready {
-				m.viewport.SetContent(m.renderCurrentContent())
 			}
 			if msg.forView == viewProcess && len(m.pinnedProcesses) > 0 {
 				return m, m.fetchPinnedHistoryCmd(msg.start, msg.end)
@@ -2876,9 +2874,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setActiveAlerts(active)
 		} else {
 			m.refreshActiveAlerts()
-		}
-		if m.ready {
-			m.viewport.SetContent(m.renderCurrentContent())
 		}
 		cmds = append(cmds, tickCmd(m.interval))
 		return m, tea.Batch(cmds...)
@@ -3060,7 +3055,6 @@ func (m Model) View() string {
 	}
 
 	if m.ready {
-		m.viewport.SetContent(m.renderCurrentContent())
 		viewportView := m.viewport.View()
 
 		// Overlay capture form as a popover
