@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
@@ -353,9 +354,15 @@ func ruleDetail(r api.AlertRuleMetric) string {
 	return r.Metric
 }
 
+// truncate shortens s to at most max runes, appending an ellipsis when cut. It
+// slices on rune boundaries so multibyte UTF-8 (process names, cmdlines) is never
+// corrupted mid-codepoint.
 func truncate(s string, max int) string {
-	if len(s) <= max {
+	if max <= 0 {
+		return ""
+	}
+	if utf8.RuneCountInString(s) <= max {
 		return s
 	}
-	return s[:max-1] + "…"
+	return string([]rune(s)[:max-1]) + "…"
 }

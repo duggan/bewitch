@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/duggan/bewitch/internal/api"
 	"golang.org/x/term"
@@ -119,12 +120,12 @@ func formatValue(v any) string {
 func computeWidths(headers []string, data [][]string, termWidth int) []int {
 	widths := make([]int, len(headers))
 	for i, h := range headers {
-		widths[i] = len(h)
+		widths[i] = utf8.RuneCountInString(h)
 	}
 	for _, row := range data {
 		for i, cell := range row {
-			if i < len(widths) && len(cell) > widths[i] {
-				widths[i] = len(cell)
+			if i < len(widths) && utf8.RuneCountInString(cell) > widths[i] {
+				widths[i] = utf8.RuneCountInString(cell)
 			}
 		}
 	}
@@ -207,8 +208,8 @@ func renderRow(buf *strings.Builder, row []string, widths []int) {
 		if i < len(row) {
 			cell = row[i]
 		}
-		if len(cell) > widths[i] {
-			cell = cell[:widths[i]-1] + "~"
+		if utf8.RuneCountInString(cell) > widths[i] {
+			cell = string([]rune(cell)[:widths[i]-1]) + "~"
 		}
 		buf.WriteString(padRight(cell, widths[i]))
 	}
@@ -216,10 +217,13 @@ func renderRow(buf *strings.Builder, row []string, widths []int) {
 }
 
 func padRight(s string, width int) string {
-	if len(s) >= width {
-		return s[:width]
+	// Count and slice in runes so multibyte UTF-8 isn't split mid-codepoint and
+	// column padding stays aligned for non-ASCII cell content.
+	n := utf8.RuneCountInString(s)
+	if n >= width {
+		return string([]rune(s)[:width])
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-n)
 }
 
 func terminalWidth() int {

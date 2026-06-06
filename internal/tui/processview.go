@@ -136,10 +136,7 @@ func renderProcessView(procs *api.ProcessResponse, width int, cachedChart string
 		cpuPct := p.CPUUserPct + p.CPUSystemPct
 		isSelected := idx == cursor
 
-		name := p.Name
-		if len(name) > nameWidth {
-			name = name[:nameWidth-1] + "…"
-		}
+		name := truncate(p.Name, nameWidth)
 
 		stateStr := p.State
 		if !isSelected {
@@ -187,10 +184,7 @@ func renderProcessView(procs *api.ProcessResponse, width int, cachedChart string
 
 		if cmdlineWidth > 0 {
 			if p.Enriched && p.Cmdline != "" {
-				cmdline := p.Cmdline
-				if len(cmdline) > cmdlineWidth {
-					cmdline = cmdline[:cmdlineWidth-1] + "…"
-				}
+				cmdline := truncate(p.Cmdline, cmdlineWidth)
 				if !isSelected {
 					row += " " + dimStyle.Render(cmdline)
 				} else {

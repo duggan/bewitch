@@ -420,10 +420,7 @@ func buildProcessPanel(dash *api.DashboardData, width int) string {
 	}
 
 	for _, p := range dash.Processes.Processes {
-		name := p.Name
-		if len(name) > nameWidth {
-			name = name[:nameWidth-1] + "…"
-		}
+		name := truncate(p.Name, nameWidth)
 		cpuPct := p.CPUUserPct + p.CPUSystemPct
 		row := fmt.Sprintf("%-*s %6.1f%% %8s", nameWidth, name, cpuPct, humanBytes(p.RSSBytes))
 
