@@ -30,6 +30,17 @@ func renderDiskView(disks []api.DiskMetric, width int, cachedChart string) strin
 		disk.WriteString(labelStyle.Render("read") + valueStyle.Render(fmt.Sprintf("%s/s  (%.0f IOPS)", humanBytes(uint64(d.ReadBytesSec)), d.ReadIOPS)) + "\n")
 		disk.WriteString(labelStyle.Render("write") + valueStyle.Render(fmt.Sprintf("%s/s  (%.0f IOPS)", humanBytes(uint64(d.WriteBytesSec)), d.WriteIOPS)))
 
+		// Inode usage — the classic "disk shows free space but writes fail"
+		// footgun. Skipped when the filesystem reports no inode total (e.g. some
+		// btrfs/zfs/tmpfs configurations use dynamic inodes).
+		if d.InodesTotal > 0 {
+			usedInodes := d.InodesTotal - d.InodesFree
+			ipct := float64(usedInodes) / float64(d.InodesTotal) * 100
+			disk.WriteString("\n")
+			disk.WriteString(labelStyle.Render("inodes") + renderBar(ipct, barWidth) +
+				valueStyle.Render(fmt.Sprintf(" %.1f%% (%s / %s)", ipct, humanCount(usedInodes), humanCount(d.InodesTotal))))
+		}
+
 		if d.SMARTAvailable {
 			disk.WriteString("\n")
 			disk.WriteString(labelStyle.Render("health") + renderSMARTHealth(d))

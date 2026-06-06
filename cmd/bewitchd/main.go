@@ -710,7 +710,8 @@ func pushSampleToCache(srv *api.Server, procCol collector.ProcessCollectorI, s c
 			disks[i] = api.DiskMetric{
 				Mount: m.Mount, Device: m.Device, Transport: m.Transport,
 				TotalBytes: m.TotalBytes, UsedBytes: m.UsedBytes,
-				FreeBytes: m.FreeBytes, ReadBytesSec: m.ReadBytesSec,
+				FreeBytes: m.FreeBytes, InodesTotal: m.InodesTotal, InodesFree: m.InodesFree,
+				ReadBytesSec:  m.ReadBytesSec,
 				WriteBytesSec: m.WriteBytesSec, ReadIOPS: m.ReadIOPS,
 				WriteIOPS: m.WriteIOPS,
 			}

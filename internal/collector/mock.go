@@ -113,6 +113,7 @@ func (c *MockDiskCollector) Collect() (Sample, error) {
 			{
 				Mount: "/", Device: "/dev/nvme0n1p2",
 				TotalBytes: rootTotal, UsedBytes: rootUsed, FreeBytes: rootTotal - rootUsed,
+				InodesTotal: 32000000, InodesFree: 28500000,
 				ReadBytesSec: smoothWave(0, 50e6, 60, 0.5), WriteBytesSec: smoothWave(0, 30e6, 45, 1.0),
 				ReadIOPS: smoothWave(0, 5000, 60, 0.5), WriteIOPS: smoothWave(0, 3000, 45, 1.0),
 				SMART: &SMARTInfo{
@@ -125,6 +126,7 @@ func (c *MockDiskCollector) Collect() (Sample, error) {
 			{
 				Mount: "/home", Device: "/dev/sda1",
 				TotalBytes: homeTotal, UsedBytes: homeUsed, FreeBytes: homeTotal - homeUsed,
+				InodesTotal: 122000000, InodesFree: 119000000,
 				ReadBytesSec: smoothWave(0, 20e6, 90, 2.0), WriteBytesSec: smoothWave(0, 10e6, 70, 2.5),
 				ReadIOPS: smoothWave(0, 2000, 90, 2.0), WriteIOPS: smoothWave(0, 1000, 70, 2.5),
 				SMART: &SMARTInfo{

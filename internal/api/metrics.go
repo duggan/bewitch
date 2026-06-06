@@ -41,6 +41,8 @@ type DiskMetric struct {
 	TotalBytes    uint64  `json:"total_bytes"`
 	UsedBytes     uint64  `json:"used_bytes"`
 	FreeBytes     uint64  `json:"free_bytes"`
+	InodesTotal   uint64  `json:"inodes_total"`
+	InodesFree    uint64  `json:"inodes_free"`
 	ReadBytesSec  float64 `json:"read_bytes_sec"`
 	WriteBytesSec float64 `json:"write_bytes_sec"`
 	ReadIOPS      float64 `json:"read_iops"`
@@ -239,7 +241,7 @@ func (s *Server) queryLoad() *LoadMetric {
 
 func (s *Server) queryDisk() []DiskMetric {
 	rows, err := s.dbFn().Query(`SELECT dm.value, dd.value, m.total_bytes, m.used_bytes, m.free_bytes,
-		m.read_bytes_sec, m.write_bytes_sec, m.read_iops, m.write_iops
+		m.read_bytes_sec, m.write_bytes_sec, m.read_iops, m.write_iops, m.inodes_total, m.inodes_free
 		FROM disk_metrics m
 		JOIN dimension_values dm ON dm.category = 'mount' AND dm.id = m.mount_id
 		LEFT JOIN dimension_values dd ON dd.category = 'device' AND dd.id = m.device_id
@@ -253,7 +255,7 @@ func (s *Server) queryDisk() []DiskMetric {
 	for rows.Next() {
 		var d DiskMetric
 		var device sql.NullString
-		if err := rows.Scan(&d.Mount, &device, &d.TotalBytes, &d.UsedBytes, &d.FreeBytes, &d.ReadBytesSec, &d.WriteBytesSec, &d.ReadIOPS, &d.WriteIOPS); err != nil {
+		if err := rows.Scan(&d.Mount, &device, &d.TotalBytes, &d.UsedBytes, &d.FreeBytes, &d.ReadBytesSec, &d.WriteBytesSec, &d.ReadIOPS, &d.WriteIOPS, &d.InodesTotal, &d.InodesFree); err != nil {
 			continue
 		}
 		if device.Valid {

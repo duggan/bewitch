@@ -858,7 +858,7 @@ func (s *Store) writeDisk(sample collector.Sample, data collector.DiskData) erro
 }
 
 func (s *Store) writeDiskTx(tx *sql.Tx, sample collector.Sample, data collector.DiskData) error {
-	stmt, err := tx.Prepare("INSERT INTO disk_metrics (ts, mount_id, device_id, total_bytes, used_bytes, free_bytes, read_bytes_sec, write_bytes_sec, read_iops, write_iops) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	stmt, err := tx.Prepare("INSERT INTO disk_metrics (ts, mount_id, device_id, total_bytes, used_bytes, free_bytes, read_bytes_sec, write_bytes_sec, read_iops, write_iops, inodes_total, inodes_free) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return fmt.Errorf("prepare: %w", err)
 	}
@@ -877,7 +877,7 @@ func (s *Store) writeDiskTx(tx *sql.Tx, sample collector.Sample, data collector.
 			}
 			deviceID = &id
 		}
-		if _, err := stmt.Exec(sample.Timestamp, mountID, deviceID, m.TotalBytes, m.UsedBytes, m.FreeBytes, m.ReadBytesSec, m.WriteBytesSec, m.ReadIOPS, m.WriteIOPS); err != nil {
+		if _, err := stmt.Exec(sample.Timestamp, mountID, deviceID, m.TotalBytes, m.UsedBytes, m.FreeBytes, m.ReadBytesSec, m.WriteBytesSec, m.ReadIOPS, m.WriteIOPS, m.InodesTotal, m.InodesFree); err != nil {
 			return fmt.Errorf("insert disk %s: %w", m.Mount, err)
 		}
 	}
@@ -1103,6 +1103,7 @@ func (s *Store) writeDiskAppender(driverConn driver.Conn, sample collector.Sampl
 				sample.Timestamp, mountID, deviceID,
 				int64(m.TotalBytes), int64(m.UsedBytes), int64(m.FreeBytes),
 				m.ReadBytesSec, m.WriteBytesSec, m.ReadIOPS, m.WriteIOPS,
+				int64(m.InodesTotal), int64(m.InodesFree),
 			); err != nil {
 				return fmt.Errorf("append disk %s: %w", m.Mount, err)
 			}

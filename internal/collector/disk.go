@@ -37,6 +37,8 @@ type DiskMountSample struct {
 	TotalBytes    uint64
 	UsedBytes     uint64
 	FreeBytes     uint64
+	InodesTotal   uint64
+	InodesFree    uint64
 	ReadBytesSec  float64
 	WriteBytesSec float64
 	ReadIOPS      float64
@@ -56,7 +58,7 @@ type DiskCollector struct {
 	smartInterval  time.Duration
 	smartCache     map[string]*SMARTInfo // keyed by physical device path
 	smartCacheTime time.Time
-	smartLoggedErr map[string]bool // suppress repeated open errors
+	smartLoggedErr map[string]bool   // suppress repeated open errors
 	useSmartctl    bool              // true if smartctl binary was found at startup
 	smartctlPath   string            // full path to smartctl binary
 	transportCache map[string]string // keyed by physical device path → "nvme", "sata", "usb", etc.
@@ -154,6 +156,8 @@ func (c *DiskCollector) Collect() (Sample, error) {
 			TotalBytes:    total,
 			UsedBytes:     used,
 			FreeBytes:     free,
+			InodesTotal:   uint64(stat.Files),
+			InodesFree:    uint64(stat.Ffree),
 			ReadBytesSec:  readBps,
 			WriteBytesSec: writeBps,
 			ReadIOPS:      readIOPS,
