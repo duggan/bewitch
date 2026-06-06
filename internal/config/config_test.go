@@ -505,10 +505,14 @@ db_path = "/tmp/test.db"
 		}
 	})
 
-	t.Run("nonexistent file returns error", func(t *testing.T) {
-		_, err := Load("/nonexistent/path.toml")
-		if err == nil {
-			t.Error("expected error for missing file")
+	t.Run("nonexistent file returns defaults", func(t *testing.T) {
+		// A missing config is non-fatal so clients can run without /etc/bewitch.toml.
+		cfg, err := Load("/nonexistent/path.toml")
+		if err != nil {
+			t.Errorf("expected no error for missing file, got %v", err)
+		}
+		if cfg == nil || cfg.Daemon.Socket == "" {
+			t.Error("expected defaults to be applied for missing file")
 		}
 	})
 
@@ -817,5 +821,27 @@ func TestValidateAuth(t *testing.T) {
 				t.Errorf("ValidateAuth() warn = %q, wantWarn %v", warn, tt.wantWarn)
 			}
 		})
+	}
+}
+
+func TestLoadMissingConfigIsNonFatal(t *testing.T) {
+	// A nonexistent path must not be fatal — clients run without /etc/bewitch.toml.
+	cfg, err := Load(filepath.Join(t.TempDir(), "does-not-exist.toml"))
+	if err != nil {
+		t.Fatalf("Load(missing) = %v, want nil (defaults)", err)
+	}
+	if cfg.Daemon.Socket == "" || cfg.Daemon.DBPath == "" {
+		t.Errorf("Load(missing) did not apply defaults: socket=%q db_path=%q", cfg.Daemon.Socket, cfg.Daemon.DBPath)
+	}
+}
+
+func TestLoadMalformedConfigErrors(t *testing.T) {
+	// A file that exists but does not parse is still an error.
+	path := filepath.Join(t.TempDir(), "bad.toml")
+	if err := os.WriteFile(path, []byte("this is = = not valid toml ["), 0o644); err != nil {
+		t.Fatalf("writing temp config: %v", err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Error("Load(malformed) = nil, want parse error")
 	}
 }

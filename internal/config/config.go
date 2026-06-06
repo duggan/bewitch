@@ -459,15 +459,23 @@ func (c *DaemonConfig) ValidateAuth() (warn string, err error) {
 	return fmt.Sprintf("TLS TCP listener %s enabled without auth_token; any client that trusts the certificate can connect", c.Listen), nil
 }
 
-// Load reads and parses a TOML config file.
+// Load reads and parses a TOML config file. A missing file is not fatal: it
+// returns a config with defaults applied, so a client invocation (e.g.
+// `bewitch -addr host:9119 -token X`) works on a machine with no
+// /etc/bewitch.toml, and the daemon can come up on defaults. A file that exists
+// but cannot be read or parsed is still an error.
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading config: %w", err)
-	}
 	var cfg Config
-	if err := toml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing config: %w", err)
+	data, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		if err := toml.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("parsing config: %w", err)
+		}
+	case os.IsNotExist(err):
+		// Proceed with defaults (applied below).
+	default:
+		return nil, fmt.Errorf("reading config: %w", err)
 	}
 	if cfg.Daemon.Socket == "" {
 		cfg.Daemon.Socket = "/run/bewitch/bewitch.sock"
