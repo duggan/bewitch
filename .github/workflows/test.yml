@@ -1,0 +1,44 @@
+name: Test
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'site/**'
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'site/**'
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # The DuckDB driver is CGO (bundled libduckdb); ubuntu-latest ships gcc.
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Unit tests
+        run: make test
+
+      - name: Integration tests
+        run: make test-integration
