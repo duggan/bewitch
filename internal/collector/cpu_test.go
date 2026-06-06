@@ -16,41 +16,51 @@ func TestComputeCPUPct(t *testing.T) {
 		wantSys   float64
 		wantIdle  float64
 		wantIO    float64
+		wantSteal float64
 	}{
 		{
 			"100% idle",
 			procfs.CPUStat{User: 0, Nice: 0, System: 0, Idle: 0, Iowait: 0, IRQ: 0, SoftIRQ: 0, Steal: 0},
 			procfs.CPUStat{User: 0, Nice: 0, System: 0, Idle: 100, Iowait: 0, IRQ: 0, SoftIRQ: 0, Steal: 0},
 			0,
-			0, 0, 100, 0,
+			0, 0, 100, 0, 0,
 		},
 		{
 			"50% user 50% idle",
 			procfs.CPUStat{User: 0, Idle: 0},
 			procfs.CPUStat{User: 50, Idle: 50},
 			0,
-			50, 0, 50, 0,
+			50, 0, 50, 0, 0,
 		},
 		{
 			"zero delta (no time elapsed)",
 			procfs.CPUStat{User: 100, Idle: 100},
 			procfs.CPUStat{User: 100, Idle: 100},
 			0,
-			0, 0, 0, 0,
+			0, 0, 0, 0, 0,
 		},
 		{
 			"mixed with IOWait",
 			procfs.CPUStat{User: 0, System: 0, Idle: 0, Iowait: 0},
 			procfs.CPUStat{User: 30, System: 20, Idle: 40, Iowait: 10},
 			1,
-			30, 20, 40, 10,
+			30, 20, 40, 10, 0,
 		},
 		{
 			"aggregate core index -1",
 			procfs.CPUStat{},
 			procfs.CPUStat{User: 25, System: 25, Idle: 50},
 			-1,
-			25, 25, 50, 0,
+			25, 25, 50, 0, 0,
+		},
+		{
+			// VPS noisy-neighbour: low user/system but high steal. 100-idle = 75%
+			// reflects the contention; user+system (15%) would have looked idle.
+			"high steal (VPS contention)",
+			procfs.CPUStat{},
+			procfs.CPUStat{User: 10, System: 5, Idle: 25, Steal: 60},
+			-1,
+			10, 5, 25, 0, 60,
 		},
 	}
 	for _, tt := range tests {
@@ -70,6 +80,9 @@ func TestComputeCPUPct(t *testing.T) {
 			}
 			if math.Abs(got.IOWaitPct-tt.wantIO) > 0.01 {
 				t.Errorf("IOWaitPct = %.2f, want %.2f", got.IOWaitPct, tt.wantIO)
+			}
+			if math.Abs(got.StealPct-tt.wantSteal) > 0.01 {
+				t.Errorf("StealPct = %.2f, want %.2f", got.StealPct, tt.wantSteal)
 			}
 		})
 	}

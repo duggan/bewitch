@@ -30,6 +30,7 @@ type CPUCoreSample struct {
 	SystemPct float64
 	IdlePct   float64
 	IOWaitPct float64
+	StealPct  float64 // hypervisor-stolen time (VPS noisy-neighbour contention); live-only
 }
 
 type CPUData struct {

@@ -121,7 +121,11 @@ func (r *ThresholdRule) Evaluate(db *sql.DB) (*Alert, error) {
 func (r *ThresholdRule) buildQuery(cutoff time.Time) (string, []any, error) {
 	switch r.cfg.Metric {
 	case "cpu.aggregate":
-		return "SELECT AVG(user_pct + system_pct) FROM cpu_metrics WHERE core = 0 AND ts > ?", []any{cutoff}, nil
+		// core = -1 is the whole-CPU aggregate (core = 0 was just physical core 0).
+		// 100 - idle counts everything non-idle — including nice/irq/softirq and,
+		// crucially, steal — so a contended VPS (high steal, low user+system) can
+		// actually trip the alert instead of looking idle.
+		return "SELECT AVG(100 - idle_pct) FROM cpu_metrics WHERE core = -1 AND ts > ?", []any{cutoff}, nil
 	case "memory.used_pct":
 		return "SELECT AVG(CAST(used_bytes AS DOUBLE) / NULLIF(total_bytes, 0) * 100) FROM memory_metrics WHERE ts > ?", []any{cutoff}, nil
 	case "disk.used_pct":

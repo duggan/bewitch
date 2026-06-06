@@ -105,7 +105,7 @@ func buildCPUPanel(dash *api.DashboardData, width int, sparkData map[string][]fl
 			continue
 		}
 		numCores++
-		pct := c.UserPct + c.SystemPct
+		pct := 100 - c.IdlePct // true utilization: counts steal/nice/irq/softirq too
 		totalPct += pct
 		if pct > maxPct {
 			maxPct = pct
@@ -141,7 +141,7 @@ func buildCPUPanel(dash *api.DashboardData, width int, sparkData map[string][]fl
 	// Usage bar
 	cpuPct := 0.0
 	if aggCore != nil {
-		cpuPct = aggCore.UserPct + aggCore.SystemPct
+		cpuPct = 100 - aggCore.IdlePct
 	}
 	barWidth := width - 24
 	if barWidth < 10 {
@@ -152,10 +152,13 @@ func buildCPUPanel(dash *api.DashboardData, width int, sparkData map[string][]fl
 	}
 	b.WriteString(labelStyle.Render("usage") + renderBar(cpuPct, barWidth) + valueStyle.Render(fmt.Sprintf(" %.1f%%", cpuPct)) + "\n")
 
-	// Breakdown
+	// Breakdown (show steal only when present — it's ~always 0 on bare metal)
 	if aggCore != nil {
-		b.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(
-			fmt.Sprintf("usr:%.1f  sys:%.1f  io:%.1f", aggCore.UserPct, aggCore.SystemPct, aggCore.IOWaitPct)))
+		breakdown := fmt.Sprintf("usr:%.1f  sys:%.1f  io:%.1f", aggCore.UserPct, aggCore.SystemPct, aggCore.IOWaitPct)
+		if aggCore.StealPct >= 0.1 {
+			breakdown += fmt.Sprintf("  steal:%.1f", aggCore.StealPct)
+		}
+		b.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(breakdown))
 	}
 
 	// Load average (1 / 5 / 15 min)

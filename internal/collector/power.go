@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-
 type PowerZoneSample struct {
 	Zone  string
 	Watts float64
@@ -20,6 +19,7 @@ type PowerData struct {
 type zonePath struct {
 	energyPath string
 	name       string
+	maxRange   int64 // max_energy_range_uj: energy_uj wraps back to 0 at this value
 }
 
 type PowerCollector struct {
@@ -50,9 +50,11 @@ func (c *PowerCollector) discoverZones() {
 		if name == "" {
 			name = filepath.Base(dir)
 		}
+		maxRange, _ := strconv.ParseInt(readString(filepath.Join(dir, "max_energy_range_uj")), 10, 64)
 		c.zones = append(c.zones, zonePath{
 			energyPath: p,
 			name:       name,
+			maxRange:   maxRange,
 		})
 	}
 
@@ -70,9 +72,11 @@ func (c *PowerCollector) discoverZones() {
 		if parentName != "" {
 			name = parentName + "/" + name
 		}
+		maxRange, _ := strconv.ParseInt(readString(filepath.Join(dir, "max_energy_range_uj")), 10, 64)
 		c.zones = append(c.zones, zonePath{
 			energyPath: p,
 			name:       name,
+			maxRange:   maxRange,
 		})
 	}
 
@@ -112,8 +116,17 @@ func (c *PowerCollector) Collect() (Sample, error) {
 				}
 				delta := curVal - prevVal
 				if delta < 0 {
-					// Counter wrapped
-					continue
+					// energy_uj is a fixed-width counter that wraps back to 0 at
+					// max_energy_range_uj (~262 J on many package/core domains —
+					// every few seconds at tens of watts). Recover the real delta
+					// across the wrap instead of dropping the sample, which made
+					// high-draw zones vanish from the chart exactly under load.
+					if z.maxRange > 0 {
+						delta += z.maxRange
+					}
+					if delta < 0 {
+						continue // no wrap range, or skew beyond one wrap — can't trust it
+					}
 				}
 				watts := float64(delta) / dt / 1e6
 				zones = append(zones, PowerZoneSample{

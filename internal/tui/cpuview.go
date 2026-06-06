@@ -26,7 +26,7 @@ func renderCPUView(cores []api.CPUCoreMetric, width int, cachedChart string) str
 			continue // skip aggregate
 		}
 		numCores++
-		pct := c.UserPct + c.SystemPct
+		pct := 100 - c.IdlePct // true utilization: counts steal/nice/irq/softirq too
 		totalPct += pct
 		if pct > maxPct {
 			maxPct = pct
@@ -41,7 +41,7 @@ func renderCPUView(cores []api.CPUCoreMetric, width int, cachedChart string) str
 	// Core list
 	var coreList strings.Builder
 	for _, c := range cores {
-		usedPct := c.UserPct + c.SystemPct
+		usedPct := 100 - c.IdlePct // true utilization (counts steal/nice/irq/softirq)
 		label := fmt.Sprintf("core %d", c.Core)
 		lStyle := labelStyle
 		if c.Core == -1 {
@@ -54,6 +54,9 @@ func renderCPUView(cores []api.CPUCoreMetric, width int, cachedChart string) str
 		detail := fmt.Sprintf(" %.1f%%", usedPct)
 		if width >= 90 {
 			detail = fmt.Sprintf(" %.1f%% (usr:%.1f sys:%.1f io:%.1f)", usedPct, c.UserPct, c.SystemPct, c.IOWaitPct)
+			if c.StealPct >= 0.1 {
+				detail = fmt.Sprintf(" %.1f%% (usr:%.1f sys:%.1f io:%.1f steal:%.1f)", usedPct, c.UserPct, c.SystemPct, c.IOWaitPct, c.StealPct)
+			}
 		}
 		coreList.WriteString(
 			lStyle.Render(label) +
@@ -72,4 +75,3 @@ func renderCPUView(cores []api.CPUCoreMetric, width int, cachedChart string) str
 
 	return b.String()
 }
-

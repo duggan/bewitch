@@ -693,7 +693,7 @@ func pushSampleToCache(srv *api.Server, procCol collector.ProcessCollectorI, s c
 			cpu[i] = api.CPUCoreMetric{
 				Core: c.Core, UserPct: c.UserPct,
 				SystemPct: c.SystemPct, IdlePct: c.IdlePct,
-				IOWaitPct: c.IOWaitPct,
+				IOWaitPct: c.IOWaitPct, StealPct: c.StealPct,
 			}
 		}
 		srv.SetMetricsSnapshot(cpu, nil, nil, nil, nil, nil, nil)

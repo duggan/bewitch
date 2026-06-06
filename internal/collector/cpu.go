@@ -87,6 +87,7 @@ func computeCPUPct(prev, cur procfs.CPUStat, coreIdx int) CPUCoreSample {
 		SystemPct: (cur.System - prev.System) / delta * 100,
 		IdlePct:   (cur.Idle - prev.Idle) / delta * 100,
 		IOWaitPct: (cur.Iowait - prev.Iowait) / delta * 100,
+		StealPct:  (cur.Steal - prev.Steal) / delta * 100,
 	}
 }
 

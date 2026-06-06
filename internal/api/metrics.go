@@ -16,6 +16,7 @@ type CPUCoreMetric struct {
 	SystemPct float64 `json:"system_pct"`
 	IdlePct   float64 `json:"idle_pct"`
 	IOWaitPct float64 `json:"iowait_pct"`
+	StealPct  float64 `json:"steal_pct"`
 }
 
 type MemoryMetric struct {

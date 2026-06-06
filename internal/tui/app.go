@@ -1362,7 +1362,7 @@ func (m *Model) updateDashSparklines(dash *api.DashboardData) {
 	cpuPct := 0.0
 	for _, c := range dash.CPU {
 		if c.Core == -1 {
-			cpuPct = c.UserPct + c.SystemPct
+			cpuPct = 100 - c.IdlePct // true utilization (counts steal/nice/irq/softirq)
 			break
 		}
 	}
