@@ -1,5 +1,7 @@
 bin/
 data/
+# Exception: the site needs its generated API schema committed for the Zola build.
+!site/data/
 dist/
 site/public/apt/
 site/public/gpg
