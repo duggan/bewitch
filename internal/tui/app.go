@@ -2889,7 +2889,7 @@ func (m *Model) captureViewContent() string {
 	content := m.renderCurrentContent()
 	var gutter string
 	if m.statusData != nil {
-		gutter = "\n" + renderStatusBar(buildStatusBar(m.statusData, m.current, m.lastDataChange[m.current], m.activeAlerts, m.activeAlertSeverity), m.width, m.activeAlertSeverity)
+		gutter = "\n" + renderStatusBar(buildStatusBar(m.statusData, m.current, m.lastDataChange[m.current], m.activeAlerts, m.activeAlertSeverity, time.Time{}), m.width, m.activeAlertSeverity)
 	}
 	return header + content + gutter
 }
@@ -3039,14 +3039,16 @@ func (m *Model) CaptureAllViews(dir string) (imgW, imgH int, files []string, err
 func (m Model) View() string {
 	header := renderTabBar(m.current, m.width, m.visibleTabs)
 
+	unreachableSince := m.client.UnreachableSince()
 	var gutter string
 	if m.captureFlash != "" && time.Now().Before(m.captureFlashUntil) {
 		flash := lipgloss.NewStyle().Foreground(colorGreen).Render(m.captureFlash)
 		gutter = lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(flash)
-	} else if m.statusData != nil || m.activeAlerts > 0 {
-		// Render the gutter when we have collector info to show, or whenever there are
-		// active alerts to surface (even if the status fetch failed at startup).
-		gutter = renderStatusBar(buildStatusBar(m.statusData, m.current, m.lastDataChange[m.current], m.activeAlerts, m.activeAlertSeverity), m.width, m.activeAlertSeverity)
+	} else if m.statusData != nil || m.activeAlerts > 0 || !unreachableSince.IsZero() {
+		// Render the gutter when we have collector info to show, when there are
+		// active alerts to surface (even if the status fetch failed at startup),
+		// or when the daemon is unreachable so a mid-session disconnect is visible.
+		gutter = renderStatusBar(buildStatusBar(m.statusData, m.current, m.lastDataChange[m.current], m.activeAlerts, m.activeAlertSeverity, unreachableSince), m.width, m.activeAlertSeverity)
 	}
 
 	var debugPanel string

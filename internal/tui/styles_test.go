@@ -39,7 +39,7 @@ func TestHumanBits(t *testing.T) {
 	}{
 		{"zero", 0, "0bps"},
 		{"sub-kilo", 100, "800bps"},
-		{"1 Kbps", 125, "1.0Kbps"},      // 125 * 8 = 1000
+		{"1 Kbps", 125, "1.0Kbps"},       // 125 * 8 = 1000
 		{"1 Mbps", 125000, "1.0Mbps"},    // 125000 * 8 = 1000000
 		{"1 Gbps", 125000000, "1.0Gbps"}, // 125000000 * 8 = 1e9
 		{"10 Mbps", 1250000, "10.0Mbps"},
@@ -121,14 +121,14 @@ func TestBuildStatusBar(t *testing.T) {
 	recent := time.Now() // fresh data, no staleness
 
 	t.Run("single collector view", func(t *testing.T) {
-		got := buildStatusBar(status, viewCPU, recent, 0, "")
+		got := buildStatusBar(status, viewCPU, recent, 0, "", time.Time{})
 		if got != "Collection interval: 1s" {
 			t.Errorf("got %q", got)
 		}
 	})
 
 	t.Run("multi collector view", func(t *testing.T) {
-		got := buildStatusBar(status, viewDashboard, recent, 0, "")
+		got := buildStatusBar(status, viewDashboard, recent, 0, "", time.Time{})
 		if !strings.HasPrefix(got, "Collection intervals:") {
 			t.Errorf("expected 'Collection intervals:' prefix, got %q", got)
 		}
@@ -138,14 +138,14 @@ func TestBuildStatusBar(t *testing.T) {
 	})
 
 	t.Run("missing status data", func(t *testing.T) {
-		got := buildStatusBar(map[string]any{}, viewCPU, recent, 0, "")
+		got := buildStatusBar(map[string]any{}, viewCPU, recent, 0, "", time.Time{})
 		if got != "" {
 			t.Errorf("expected empty, got %q", got)
 		}
 	})
 
 	t.Run("unknown view", func(t *testing.T) {
-		got := buildStatusBar(status, view(99), recent, 0, "")
+		got := buildStatusBar(status, view(99), recent, 0, "", time.Time{})
 		if got != "" {
 			t.Errorf("expected empty for unknown view, got %q", got)
 		}
@@ -153,28 +153,28 @@ func TestBuildStatusBar(t *testing.T) {
 
 	t.Run("stale data", func(t *testing.T) {
 		stale := time.Now().Add(-10 * time.Second) // CPU interval is 1s, 3× = 3s, 10s > 3s
-		got := buildStatusBar(status, viewCPU, stale, 0, "")
+		got := buildStatusBar(status, viewCPU, stale, 0, "", time.Time{})
 		if !strings.Contains(got, "stale") {
 			t.Errorf("expected staleness indicator, got %q", got)
 		}
 	})
 
 	t.Run("fresh data no staleness", func(t *testing.T) {
-		got := buildStatusBar(status, viewCPU, recent, 0, "")
+		got := buildStatusBar(status, viewCPU, recent, 0, "", time.Time{})
 		if strings.Contains(got, "stale") {
 			t.Errorf("unexpected staleness indicator in %q", got)
 		}
 	})
 
 	t.Run("zero time no staleness", func(t *testing.T) {
-		got := buildStatusBar(status, viewCPU, time.Time{}, 0, "")
+		got := buildStatusBar(status, viewCPU, time.Time{}, 0, "", time.Time{})
 		if strings.Contains(got, "stale") {
 			t.Errorf("zero time should not show staleness, got %q", got)
 		}
 	})
 
 	t.Run("active alerts prepended", func(t *testing.T) {
-		got := buildStatusBar(status, viewCPU, recent, 2, "warning")
+		got := buildStatusBar(status, viewCPU, recent, 2, "warning", time.Time{})
 		if !strings.HasPrefix(got, "⚠ 2 active alerts · ") {
 			t.Errorf("expected alert indicator prefix, got %q", got)
 		}
@@ -184,7 +184,7 @@ func TestBuildStatusBar(t *testing.T) {
 	})
 
 	t.Run("single active alert singular", func(t *testing.T) {
-		got := buildStatusBar(status, viewCPU, recent, 1, "critical")
+		got := buildStatusBar(status, viewCPU, recent, 1, "critical", time.Time{})
 		if !strings.HasPrefix(got, "⚠ 1 active alert ·") {
 			t.Errorf("expected singular alert text, got %q", got)
 		}
@@ -194,14 +194,14 @@ func TestBuildStatusBar(t *testing.T) {
 	})
 
 	t.Run("alerts shown on view without collectors", func(t *testing.T) {
-		got := buildStatusBar(status, viewAlerts, recent, 3, "warning")
+		got := buildStatusBar(status, viewAlerts, recent, 3, "warning", time.Time{})
 		if got != "⚠ 3 active alerts" {
 			t.Errorf("expected bare alert indicator, got %q", got)
 		}
 	})
 
 	t.Run("no alerts no indicator", func(t *testing.T) {
-		got := buildStatusBar(status, viewCPU, recent, 0, "")
+		got := buildStatusBar(status, viewCPU, recent, 0, "", time.Time{})
 		if strings.Contains(got, "active alert") {
 			t.Errorf("unexpected alert indicator in %q", got)
 		}
@@ -249,4 +249,29 @@ func TestXLabelFormatter(t *testing.T) {
 			t.Errorf("got %q, want 03/15", got)
 		}
 	})
+}
+
+func TestBuildStatusBarUnreachable(t *testing.T) {
+	status := map[string]any{
+		"collector_intervals": map[string]string{"cpu": "1s"},
+	}
+	recent := time.Now()
+
+	// A non-zero unreachableSince surfaces the indicator regardless of -debug.
+	got := buildStatusBar(status, viewCPU, recent, 0, "", time.Now().Add(-12*time.Second))
+	if !strings.Contains(got, "daemon unreachable") {
+		t.Errorf("expected 'daemon unreachable' indicator, got %q", got)
+	}
+
+	// Zero time means reachable: no indicator.
+	got = buildStatusBar(status, viewCPU, recent, 0, "", time.Time{})
+	if strings.Contains(got, "unreachable") {
+		t.Errorf("did not expect unreachable indicator when reachable, got %q", got)
+	}
+
+	// It shows even on a view with no collector text (e.g. Alerts).
+	got = buildStatusBar(map[string]any{}, viewAlerts, time.Time{}, 0, "", time.Now().Add(-3*time.Second))
+	if !strings.Contains(got, "daemon unreachable") {
+		t.Errorf("expected unreachable indicator on Alerts view, got %q", got)
+	}
 }

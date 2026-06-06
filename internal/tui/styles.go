@@ -16,7 +16,7 @@ type palette struct {
 	Pink, Purple, Magenta, Lavender, DeepPurple lipgloss.CompleteColor
 	Muted, Text, DarkPurple, Orange, Red, Green lipgloss.CompleteColor
 	DarkBg, Dim, Dimmer, DebugBdr, DebugText    lipgloss.CompleteColor
-	GradientStart, GradientEnd                   string // raw hex for progress bar
+	GradientStart, GradientEnd                  string // raw hex for progress bar
 }
 
 // Default palette — warm pink/purple, tuned for P3 displays (Terminal.app).
@@ -243,14 +243,14 @@ var tabInfo = map[view]struct {
 	name      string
 	shortName string
 }{
-	viewDashboard:   {"Dashboard", "Dash"},
-	viewCPU:         {"CPU", "CPU"},
-	viewMemory:      {"Memory", "Mem"},
-	viewDisk:        {"Disk", "Disk"},
-	viewNetwork:     {"Network", "Net"},
-	viewHardware:    {"Hardware", "HW"},
-	viewProcess:     {"Procs", "Proc"},
-	viewAlerts:      {"Alerts", "Alert"},
+	viewDashboard: {"Dashboard", "Dash"},
+	viewCPU:       {"CPU", "CPU"},
+	viewMemory:    {"Memory", "Mem"},
+	viewDisk:      {"Disk", "Disk"},
+	viewNetwork:   {"Network", "Net"},
+	viewHardware:  {"Hardware", "HW"},
+	viewProcess:   {"Procs", "Proc"},
+	viewAlerts:    {"Alerts", "Alert"},
 }
 
 func renderTabBar(active view, width int, visibleTabs []view) string {
@@ -367,13 +367,13 @@ var humanBytes = format.Bytes
 
 // collectorsForView returns the collector names relevant to each tab view.
 var collectorsForView = map[view][]string{
-	viewDashboard:   {"cpu", "memory", "disk", "network", "ecc", "temperature", "power", "process"},
-	viewCPU:         {"cpu"},
-	viewMemory:      {"memory", "ecc"},
-	viewDisk:        {"disk"},
-	viewNetwork:     {"network"},
-	viewHardware:    {"temperature", "power", "ecc"},
-	viewProcess:     {"process"},
+	viewDashboard: {"cpu", "memory", "disk", "network", "ecc", "temperature", "power", "process"},
+	viewCPU:       {"cpu"},
+	viewMemory:    {"memory", "ecc"},
+	viewDisk:      {"disk"},
+	viewNetwork:   {"network"},
+	viewHardware:  {"temperature", "power", "ecc"},
+	viewProcess:   {"process"},
 }
 
 var collectorDisplayNames = map[string]string{
@@ -381,7 +381,7 @@ var collectorDisplayNames = map[string]string{
 	"ecc": "ECC", "temperature": "Temperature", "power": "Power", "process": "Process",
 }
 
-func buildStatusBar(status map[string]any, current view, lastChange time.Time, activeAlerts int, severity string) string {
+func buildStatusBar(status map[string]any, current view, lastChange time.Time, activeAlerts int, severity string, unreachableSince time.Time) string {
 	// Build the collection-interval text (may be empty for views without collectors,
 	// e.g. the Alerts view, or when the daemon reported no intervals).
 	var text string
@@ -432,6 +432,18 @@ func buildStatusBar(status map[string]any, current view, lastChange time.Time, a
 			plural = "s"
 		}
 		indicator := fmt.Sprintf("⚠ %d active alert%s", activeAlerts, plural)
+		if text == "" {
+			text = indicator
+		} else {
+			text = indicator + " · " + text
+		}
+	}
+
+	// Daemon-unreachable takes top priority and is shown on every view: a
+	// mid-session disconnect would otherwise be invisible (data just stops
+	// updating). Surfaced regardless of the -debug console.
+	if !unreachableSince.IsZero() {
+		indicator := fmt.Sprintf("⚠ daemon unreachable (%ds)", int(time.Since(unreachableSince).Seconds()))
 		if text == "" {
 			text = indicator
 		} else {

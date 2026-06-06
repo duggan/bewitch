@@ -27,6 +27,9 @@ type mockClient struct {
 	hist   []api.TimeSeries
 	status map[string]any
 
+	// Simulated daemon reachability (zero = reachable).
+	unreachableSince time.Time
+
 	// Track SetPreference calls
 	prefSets []struct{ key, value string }
 
@@ -148,6 +151,8 @@ func (m *mockClient) SetPreference(key, value string) error {
 }
 
 func (m *mockClient) Compact() error { return nil }
+
+func (m *mockClient) UnreachableSince() time.Time { return m.unreachableSince }
 
 func (m *mockClient) TestNotifications(_ TestNotificationAlert) ([]alert.NotifyResult, error) {
 	return nil, nil

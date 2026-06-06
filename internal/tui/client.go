@@ -49,6 +49,10 @@ type daemonClient interface {
 	SetPreference(key, value string) error
 	Compact() error
 	TestNotifications(a TestNotificationAlert) ([]alert.NotifyResult, error)
+	// UnreachableSince reports when the daemon first stopped responding to GETs
+	// (zero time = the most recent GET reached it). Used to surface a
+	// "daemon unreachable" indicator in the status bar.
+	UnreachableSince() time.Time
 }
 
 // DaemonClient communicates with bewitchd over the unix socket or TCP API.
@@ -57,6 +61,36 @@ type DaemonClient struct {
 	baseURL string // "http://bewitch" for unix, "http://host:port" for TCP
 	etagsMu sync.Mutex
 	etags   map[string]string // path → last ETag value for change detection
+
+	connMu           sync.Mutex
+	unreachableSince time.Time // zero once a GET reaches the daemon again
+}
+
+// noteUnreachable records a transport failure (connection refused, timeout, TLS
+// failure) — the daemon couldn't be reached. The first failure's time is kept
+// across a run of failures so the status bar can show "unreachable for Xs".
+func (c *DaemonClient) noteUnreachable() {
+	c.connMu.Lock()
+	if c.unreachableSince.IsZero() {
+		c.unreachableSince = time.Now()
+	}
+	c.connMu.Unlock()
+}
+
+// noteReachable clears the unreachable marker; any HTTP response (200/304/even a
+// non-2xx status) means the daemon is up and talking.
+func (c *DaemonClient) noteReachable() {
+	c.connMu.Lock()
+	c.unreachableSince = time.Time{}
+	c.connMu.Unlock()
+}
+
+// UnreachableSince reports when the daemon first stopped responding to GETs, or
+// the zero time if the most recent GET reached it.
+func (c *DaemonClient) UnreachableSince() time.Time {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+	return c.unreachableSince
 }
 
 // NewDaemonClient creates a client that connects via unix socket.
@@ -96,10 +130,10 @@ func (c *DaemonClient) GetStatus() (map[string]any, error) {
 		return nil, err
 	}
 	result := map[string]any{
-		"status":               resp.Status,
-		"uptime_sec":           resp.UptimeSec,
-		"default_interval":     resp.DefaultInterval,
-		"collector_intervals":  resp.CollectorIntervals,
+		"status":              resp.Status,
+		"uptime_sec":          resp.UptimeSec,
+		"default_interval":    resp.DefaultInterval,
+		"collector_intervals": resp.CollectorIntervals,
 	}
 	return result, nil
 }
@@ -470,8 +504,10 @@ func (c *DaemonClient) getJSON(path string, v any) error {
 	c.etagsMu.Unlock()
 	resp, err := c.http.Do(req)
 	if err != nil {
+		c.noteUnreachable()
 		return err
 	}
+	c.noteReachable()
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotModified {
 		return ErrNotModified
