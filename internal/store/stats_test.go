@@ -44,6 +44,7 @@ func TestStatsEmpty(t *testing.T) {
 		"power_metrics":       true,
 		"process_metrics":     true,
 		"gpu_metrics":         true,
+		"smart_metrics":       true,
 	}
 	for _, ts := range stats.Tables {
 		if !expectedTables[ts.Name] {
@@ -176,4 +177,3 @@ func TestStatsPopulated(t *testing.T) {
 		t.Errorf("AlertsFiredUnacked = %d, want 2", stats.AlertsFiredUnacked)
 	}
 }
-

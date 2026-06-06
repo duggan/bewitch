@@ -391,7 +391,7 @@ func (s *Server) SetArchiveConfig(archivePath string, archiveThreshold time.Dura
 // archiveViewTables lists the metric tables that get all_* archive views.
 var archiveViewTables = []string{
 	"cpu_metrics", "memory_metrics", "load_metrics", "disk_metrics", "network_metrics",
-	"ecc_metrics", "temperature_metrics", "power_metrics", "process_metrics", "gpu_metrics",
+	"ecc_metrics", "temperature_metrics", "power_metrics", "process_metrics", "gpu_metrics", "smart_metrics",
 }
 
 // CreateArchiveViews creates or replaces all_* views that union each metric

@@ -46,8 +46,18 @@ type DiskMountSample struct {
 	SMART         *SMARTInfo // nil if unavailable
 }
 
+// SMARTDevice pairs a physical device with its SMART snapshot, for persistence.
+type SMARTDevice struct {
+	Device string
+	Info   SMARTInfo
+}
+
 type DiskData struct {
 	Mounts []DiskMountSample
+	// SMART holds per-physical-device snapshots, populated only on cycles where
+	// the SMART cache was refreshed (every smart_interval) so persistence happens
+	// at that slow cadence rather than on every disk-collection tick.
+	SMART []SMARTDevice
 }
 
 type DiskCollector struct {
@@ -121,9 +131,11 @@ func (c *DiskCollector) Collect() (Sample, error) {
 		return Sample{}, fmt.Errorf("reading mounts: %w", err)
 	}
 
-	// Refresh SMART cache if stale
+	// Refresh SMART cache if stale; persist a snapshot only on refresh cycles.
+	smartRefreshed := false
 	if c.smartInterval > 0 && (time.Since(c.smartCacheTime) > c.smartInterval || len(c.smartCache) == 0) {
 		c.refreshSMARTCache(mounts)
+		smartRefreshed = true
 	}
 
 	samples := make([]DiskMountSample, 0, len(mounts))
@@ -175,10 +187,19 @@ func (c *DiskCollector) Collect() (Sample, error) {
 	c.prevIO = curIO
 	c.prevTime = now
 
+	var smartDevices []SMARTDevice
+	if smartRefreshed {
+		for dev, info := range c.smartCache {
+			if info != nil && info.Available {
+				smartDevices = append(smartDevices, SMARTDevice{Device: dev, Info: *info})
+			}
+		}
+	}
+
 	return Sample{
 		Timestamp: now,
 		Kind:      "disk",
-		Data:      DiskData{Mounts: samples},
+		Data:      DiskData{Mounts: samples, SMART: smartDevices},
 	}, nil
 }
 

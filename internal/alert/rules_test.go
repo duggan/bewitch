@@ -132,6 +132,11 @@ func TestThresholdRuleBuildQuery(t *testing.T) {
 		{"network.rx", 2},
 		{"network.tx", 2},
 		{"temperature.sensor", 2},
+		{"smart.reallocated", 1},
+		{"smart.pending", 1},
+		{"smart.uncorrectable", 1},
+		{"smart.percent_used", 1},
+		{"smart.unhealthy", 1},
 	}
 
 	for _, tt := range validMetrics {

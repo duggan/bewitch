@@ -17,6 +17,7 @@ func TestArchiveViewTables(t *testing.T) {
 		"power_metrics":       true,
 		"process_metrics":     true,
 		"gpu_metrics":         true,
+		"smart_metrics":       true,
 	}
 	if len(archiveViewTables) != len(expected) {
 		t.Fatalf("archiveViewTables has %d entries, want %d", len(archiveViewTables), len(expected))

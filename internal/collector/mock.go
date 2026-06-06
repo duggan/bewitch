@@ -137,6 +137,18 @@ func (c *MockDiskCollector) Collect() (Sample, error) {
 				},
 			},
 		},
+		SMART: []SMARTDevice{
+			{Device: "/dev/nvme0n1", Info: SMARTInfo{
+				Available: true, Healthy: true,
+				Temperature: 42, PowerOnHours: 12345, PowerCycles: 150,
+				AvailableSpare: 98, PercentUsed: 2,
+			}},
+			{Device: "/dev/sda", Info: SMARTInfo{
+				Available: true, Healthy: true,
+				Temperature: 35, PowerOnHours: 28000, PowerCycles: 450,
+				ReallocatedSectors: 3, ReadErrorRate: 200,
+			}},
+		},
 	}}, nil
 }
 

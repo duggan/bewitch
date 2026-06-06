@@ -919,6 +919,33 @@ func (s *Store) writeDiskTx(tx *sql.Tx, sample collector.Sample, data collector.
 			return fmt.Errorf("insert disk %s: %w", m.Mount, err)
 		}
 	}
+	return s.writeSMARTTx(tx, sample, data.SMART)
+}
+
+// writeSMARTTx persists per-physical-device SMART snapshots. data.SMART is only
+// populated on smart-cache-refresh cycles, so this writes at the smart_interval
+// cadence rather than every disk tick. The device name is denormalized (few
+// physical devices, so a dimension lookup isn't worth it).
+func (s *Store) writeSMARTTx(tx *sql.Tx, sample collector.Sample, devices []collector.SMARTDevice) error {
+	if len(devices) == 0 {
+		return nil
+	}
+	stmt, err := tx.Prepare(`INSERT INTO smart_metrics
+		(ts, device, healthy, temperature, power_on_hours, power_cycles, reallocated_sectors, pending_sectors, uncorrectable_errs, read_error_rate, available_spare, percent_used)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("prepare smart: %w", err)
+	}
+	defer stmt.Close()
+	for _, d := range devices {
+		si := d.Info
+		if _, err := stmt.Exec(sample.Timestamp, d.Device, si.Healthy,
+			si.Temperature, si.PowerOnHours, si.PowerCycles,
+			si.ReallocatedSectors, si.PendingSectors, si.UncorrectableErrs, si.ReadErrorRate,
+			int16(si.AvailableSpare), int16(si.PercentUsed)); err != nil {
+			return fmt.Errorf("insert smart %s: %w", d.Device, err)
+		}
+	}
 	return nil
 }
 
@@ -1130,7 +1157,7 @@ func (s *Store) writeLoadAppender(driverConn driver.Conn, sample collector.Sampl
 }
 
 func (s *Store) writeDiskAppender(driverConn driver.Conn, sample collector.Sample, data collector.DiskData) error {
-	return withAppender(driverConn, "disk_metrics", func(a *duckdb.Appender) error {
+	err := withAppender(driverConn, "disk_metrics", func(a *duckdb.Appender) error {
 		for _, m := range data.Mounts {
 			mountID := s.getCachedDimensionID("mount", m.Mount)
 			var deviceID any = nil
@@ -1144,6 +1171,30 @@ func (s *Store) writeDiskAppender(driverConn driver.Conn, sample collector.Sampl
 				int64(m.InodesTotal), int64(m.InodesFree),
 			); err != nil {
 				return fmt.Errorf("append disk %s: %w", m.Mount, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return s.writeSMARTAppender(driverConn, sample, data.SMART)
+}
+
+func (s *Store) writeSMARTAppender(driverConn driver.Conn, sample collector.Sample, devices []collector.SMARTDevice) error {
+	if len(devices) == 0 {
+		return nil
+	}
+	return withAppender(driverConn, "smart_metrics", func(a *duckdb.Appender) error {
+		for _, d := range devices {
+			si := d.Info
+			if err := a.AppendRow(
+				sample.Timestamp, d.Device, si.Healthy,
+				int64(si.Temperature), int64(si.PowerOnHours), int64(si.PowerCycles),
+				int64(si.ReallocatedSectors), int64(si.PendingSectors), int64(si.UncorrectableErrs), int64(si.ReadErrorRate),
+				int16(si.AvailableSpare), int16(si.PercentUsed),
+			); err != nil {
+				return fmt.Errorf("append smart %s: %w", d.Device, err)
 			}
 		}
 		return nil

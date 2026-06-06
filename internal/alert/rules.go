@@ -163,6 +163,21 @@ func (r *ThresholdRule) buildQuery(cutoff time.Time) (string, []any, error) {
 			FROM gpu_metrics m
 			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
 			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, nil
+	// SMART metrics aggregate across all physical devices (the worst value over the
+	// window) so a failing drive trips the alert without a per-device scope — fire
+	// e.g. smart.reallocated > 0 or smart.percent_used > 90.
+	case "smart.reallocated":
+		return "SELECT MAX(reallocated_sectors) FROM smart_metrics WHERE ts > ?", []any{cutoff}, nil
+	case "smart.pending":
+		return "SELECT MAX(pending_sectors) FROM smart_metrics WHERE ts > ?", []any{cutoff}, nil
+	case "smart.uncorrectable":
+		return "SELECT MAX(uncorrectable_errs) FROM smart_metrics WHERE ts > ?", []any{cutoff}, nil
+	case "smart.percent_used":
+		return "SELECT MAX(percent_used) FROM smart_metrics WHERE ts > ?", []any{cutoff}, nil
+	case "smart.unhealthy":
+		// Count of unhealthy snapshots in the window; > 0 means a drive reported a
+		// SMART health failure (the "your disk is dying" signal).
+		return "SELECT COUNT(*) FROM smart_metrics WHERE healthy = false AND ts > ?", []any{cutoff}, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported threshold metric: %s", r.cfg.Metric)
 	}
