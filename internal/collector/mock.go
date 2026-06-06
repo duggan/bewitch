@@ -152,11 +152,13 @@ func (c *MockNetworkCollector) Collect() (Sample, error) {
 				Interface:  "eth0",
 				RxBytesSec: smoothWave(1e6, 50e6, 45, 0), TxBytesSec: smoothWave(0.5e6, 20e6, 60, 0.5),
 				RxPacketsSec: smoothWave(1000, 40000, 45, 0), TxPacketsSec: smoothWave(500, 15000, 60, 0.5),
+				RxDropped: 12, TxDropped: 0,
 			},
 			{
 				Interface:  "wlan0",
 				RxBytesSec: smoothWave(0.1e6, 5e6, 80, 2.0), TxBytesSec: smoothWave(0.05e6, 2e6, 100, 2.5),
 				RxPacketsSec: smoothWave(100, 5000, 80, 2.0), TxPacketsSec: smoothWave(50, 2000, 100, 2.5),
+				RxDropped: 4, TxDropped: 1,
 			},
 		},
 	}}, nil

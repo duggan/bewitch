@@ -72,9 +72,20 @@ func TestFreshDB(t *testing.T) {
 func TestExistingDBDetection(t *testing.T) {
 	db := openTestDB(t)
 
-	// Simulate a pre-migration database by creating cpu_metrics directly.
-	if _, err := db.Exec(`CREATE TABLE cpu_metrics (ts TIMESTAMP NOT NULL, core TINYINT NOT NULL)`); err != nil {
-		t.Fatalf("creating cpu_metrics: %v", err)
+	// Simulate a database created before schema_version tracking existed: it
+	// already has the full initial (v1) schema but no schema_version table.
+	// (Applying the real initial schema, rather than a lone cpu_metrics table,
+	// is what lets later ALTER-TABLE migrations find the tables they modify.)
+	migs, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("loadMigrations: %v", err)
+	}
+	for _, m := range migs {
+		if m.Version == 1 {
+			if _, err := db.Exec(m.SQL); err != nil {
+				t.Fatalf("applying initial schema: %v", err)
+			}
+		}
 	}
 
 	if err := runMigrations(db); err != nil {

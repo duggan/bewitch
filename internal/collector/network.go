@@ -10,12 +10,14 @@ import (
 
 type NetIfaceSample struct {
 	Interface    string
-	RxBytesSec  float64
-	TxBytesSec  float64
+	RxBytesSec   float64
+	TxBytesSec   float64
 	RxPacketsSec float64
 	TxPacketsSec float64
 	RxErrors     uint64
 	TxErrors     uint64
+	RxDropped    uint64
+	TxDropped    uint64
 }
 
 type NetworkData struct {
@@ -69,12 +71,14 @@ func (c *NetworkCollector) Collect() (Sample, error) {
 		}
 		ifaces = append(ifaces, NetIfaceSample{
 			Interface:    name,
-			RxBytesSec:  float64(cur.RxBytes-prev.RxBytes) / dt,
-			TxBytesSec:  float64(cur.TxBytes-prev.TxBytes) / dt,
+			RxBytesSec:   float64(cur.RxBytes-prev.RxBytes) / dt,
+			TxBytesSec:   float64(cur.TxBytes-prev.TxBytes) / dt,
 			RxPacketsSec: float64(cur.RxPackets-prev.RxPackets) / dt,
 			TxPacketsSec: float64(cur.TxPackets-prev.TxPackets) / dt,
 			RxErrors:     cur.RxErrors,
 			TxErrors:     cur.TxErrors,
+			RxDropped:    cur.RxDropped,
+			TxDropped:    cur.TxDropped,
 		})
 	}
 

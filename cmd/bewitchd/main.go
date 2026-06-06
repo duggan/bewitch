@@ -738,7 +738,7 @@ func pushSampleToCache(srv *api.Server, procCol collector.ProcessCollectorI, s c
 				Interface: n.Interface, RxBytesSec: n.RxBytesSec,
 				TxBytesSec: n.TxBytesSec, RxPacketsSec: n.RxPacketsSec,
 				TxPacketsSec: n.TxPacketsSec, RxErrors: n.RxErrors,
-				TxErrors: n.TxErrors,
+				TxErrors: n.TxErrors, RxDropped: n.RxDropped, TxDropped: n.TxDropped,
 			}
 		}
 		srv.SetMetricsSnapshot(nil, nil, nil, net, nil, nil, nil)

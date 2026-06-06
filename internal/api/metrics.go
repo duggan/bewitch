@@ -69,6 +69,8 @@ type NetworkMetric struct {
 	TxPacketsSec float64 `json:"tx_packets_sec"`
 	RxErrors     uint64  `json:"rx_errors"`
 	TxErrors     uint64  `json:"tx_errors"`
+	RxDropped    uint64  `json:"rx_dropped"`
+	TxDropped    uint64  `json:"tx_dropped"`
 }
 
 type TemperatureMetric struct {
@@ -263,7 +265,7 @@ func (s *Server) queryDisk() []DiskMetric {
 }
 
 func (s *Server) queryNetwork() []NetworkMetric {
-	rows, err := s.dbFn().Query(`SELECT d.value, m.rx_bytes_sec, m.tx_bytes_sec, m.rx_packets_sec, m.tx_packets_sec, m.rx_errors, m.tx_errors
+	rows, err := s.dbFn().Query(`SELECT d.value, m.rx_bytes_sec, m.tx_bytes_sec, m.rx_packets_sec, m.tx_packets_sec, m.rx_errors, m.tx_errors, m.rx_dropped, m.tx_dropped
 		FROM network_metrics m
 		JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id
 		WHERE m.ts = (SELECT MAX(ts) FROM network_metrics)
@@ -276,7 +278,7 @@ func (s *Server) queryNetwork() []NetworkMetric {
 	var ifaces []NetworkMetric
 	for rows.Next() {
 		var n NetworkMetric
-		if err := rows.Scan(&n.Interface, &n.RxBytesSec, &n.TxBytesSec, &n.RxPacketsSec, &n.TxPacketsSec, &n.RxErrors, &n.TxErrors); err != nil {
+		if err := rows.Scan(&n.Interface, &n.RxBytesSec, &n.TxBytesSec, &n.RxPacketsSec, &n.TxPacketsSec, &n.RxErrors, &n.TxErrors, &n.RxDropped, &n.TxDropped); err != nil {
 			continue
 		}
 		ifaces = append(ifaces, n)

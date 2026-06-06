@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -101,10 +102,20 @@ func renderNetView(ifaces []api.NetworkMetric, width int, cachedChart string, sp
 			txRate = humanBytes(uint64(n.TxBytesSec)) + "/s"
 		}
 
-		// Interface name with colored arrows indicating rx/tx chart colors
+		// Interface name with colored arrows indicating rx/tx chart colors.
+		// Errors and dropped packets (both lifetime counters) flag a problem
+		// interface; surface the counts inline so a saturated/dropping NIC is
+		// visible, not just hard errors.
 		nameStr := n.Interface
-		if n.RxErrors > 0 || n.TxErrors > 0 {
-			nameStr = alertWarnStyle.Render(nameStr)
+		if n.RxErrors > 0 || n.TxErrors > 0 || n.RxDropped > 0 || n.TxDropped > 0 {
+			var notes []string
+			if n.RxErrors+n.TxErrors > 0 {
+				notes = append(notes, fmt.Sprintf("err %d", n.RxErrors+n.TxErrors))
+			}
+			if n.RxDropped+n.TxDropped > 0 {
+				notes = append(notes, fmt.Sprintf("drop %d", n.RxDropped+n.TxDropped))
+			}
+			nameStr = alertWarnStyle.Render(nameStr + " (" + strings.Join(notes, " ") + ")")
 		} else {
 			nameStr = lipgloss.NewStyle().Foreground(colorMagenta).Render(nameStr)
 		}
@@ -124,7 +135,7 @@ func renderNetView(ifaces []api.NetworkMetric, width int, cachedChart string, sp
 		if idle {
 			rxCol = dimStyle.Render("↓ " + rxSparkStr + "  " + rxRate)
 			txCol = dimStyle.Render("↑ " + txSparkStr + "  " + txRate)
-			if n.RxErrors == 0 && n.TxErrors == 0 {
+			if n.RxErrors == 0 && n.TxErrors == 0 && n.RxDropped == 0 && n.TxDropped == 0 {
 				nameStr = dimStyle.Render(n.Interface)
 			}
 		}

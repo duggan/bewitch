@@ -891,7 +891,7 @@ func (s *Store) writeNetwork(sample collector.Sample, data collector.NetworkData
 }
 
 func (s *Store) writeNetworkTx(tx *sql.Tx, sample collector.Sample, data collector.NetworkData) error {
-	stmt, err := tx.Prepare("INSERT INTO network_metrics (ts, interface_id, rx_bytes_sec, tx_bytes_sec, rx_packets_sec, tx_packets_sec, rx_errors, tx_errors) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+	stmt, err := tx.Prepare("INSERT INTO network_metrics (ts, interface_id, rx_bytes_sec, tx_bytes_sec, rx_packets_sec, tx_packets_sec, rx_errors, tx_errors, rx_dropped, tx_dropped) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return fmt.Errorf("prepare: %w", err)
 	}
@@ -902,7 +902,7 @@ func (s *Store) writeNetworkTx(tx *sql.Tx, sample collector.Sample, data collect
 		if err != nil {
 			return fmt.Errorf("get interface id: %w", err)
 		}
-		if _, err := stmt.Exec(sample.Timestamp, ifaceID, iface.RxBytesSec, iface.TxBytesSec, iface.RxPacketsSec, iface.TxPacketsSec, iface.RxErrors, iface.TxErrors); err != nil {
+		if _, err := stmt.Exec(sample.Timestamp, ifaceID, iface.RxBytesSec, iface.TxBytesSec, iface.RxPacketsSec, iface.TxPacketsSec, iface.RxErrors, iface.TxErrors, iface.RxDropped, iface.TxDropped); err != nil {
 			return fmt.Errorf("insert network %s: %w", iface.Interface, err)
 		}
 	}
@@ -1119,6 +1119,7 @@ func (s *Store) writeNetworkAppender(driverConn driver.Conn, sample collector.Sa
 				sample.Timestamp, ifaceID,
 				iface.RxBytesSec, iface.TxBytesSec, iface.RxPacketsSec, iface.TxPacketsSec,
 				int64(iface.RxErrors), int64(iface.TxErrors),
+				int64(iface.RxDropped), int64(iface.TxDropped),
 			); err != nil {
 				return fmt.Errorf("append network %s: %w", iface.Interface, err)
 			}
