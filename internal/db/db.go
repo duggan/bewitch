@@ -12,6 +12,10 @@ import (
 	"github.com/duckdb/duckdb-go/v2"
 )
 
+// PreCompactSuffix is appended to the DB path for the backup that store
+// compaction creates while swapping in a freshly compacted file.
+const PreCompactSuffix = ".pre-compact"
+
 // Open opens a DuckDB database at the given path and runs migrations.
 // It creates the parent directory if it does not exist.
 // checkpointThreshold configures wal_autocheckpoint (e.g. "16MB", "256MB");
@@ -23,35 +27,16 @@ func Open(path string, checkpointThreshold string, memoryLimit string) (*sql.DB,
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, fmt.Errorf("creating data directory: %w", err)
 	}
+	// Recover from a compaction that was interrupted mid-swap before we open the
+	// path — otherwise a missing main file would silently become an empty DB.
+	recoverInterruptedCompaction(path)
 	db, err := sql.Open("duckdb", path)
 	if err != nil {
 		return nil, fmt.Errorf("opening duckdb: %w", err)
 	}
-	// Allow multiple connections for concurrent API access during batch writes.
-	// DuckDB handles internal locking; single-writer is enforced at transaction level.
-	db.SetMaxOpenConns(4)
-	if checkpointThreshold != "" {
-		if _, err := db.Exec(fmt.Sprintf("SET wal_autocheckpoint = '%s'", checkpointThreshold)); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("setting wal_autocheckpoint: %w", err)
-		}
-	}
-	if memoryLimit != "" {
-		if _, err := db.Exec(fmt.Sprintf("SET memory_limit = '%s'", memoryLimit)); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("setting memory_limit: %w", err)
-		}
-		// Spill to disk (next to the DB file) when a query exceeds memory_limit,
-		// rather than failing or being OOM-killed.
-		tempDir := filepath.Join(filepath.Dir(path), "duckdb_tmp")
-		if err := os.MkdirAll(tempDir, 0755); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("creating temp directory: %w", err)
-		}
-		if _, err := db.Exec(fmt.Sprintf("SET temp_directory = '%s'", tempDir)); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("setting temp_directory: %w", err)
-		}
+	if err := applyConnSettings(db, path, checkpointThreshold, memoryLimit); err != nil {
+		db.Close()
+		return nil, err
 	}
 	if err := runMigrations(db); err != nil {
 		db.Close()
@@ -64,13 +49,83 @@ func Open(path string, checkpointThreshold string, memoryLimit string) (*sql.DB,
 		db.Close()
 		return nil, fmt.Errorf("checkpointing after migrations: %w", err)
 	}
+	return db, nil
+}
+
+// Reopen opens an already-migrated database and applies the same runtime
+// settings as Open, without re-running migrations. Store compaction uses this
+// after swapping in the compacted file so the memory_limit / temp_directory /
+// checkpoint / parquet-cache settings survive — they are per-instance in DuckDB
+// and would otherwise reset to defaults (notably an ~80%-RAM memory_limit) on
+// the fresh connection pool.
+func Reopen(path string, checkpointThreshold string, memoryLimit string) (*sql.DB, error) {
+	db, err := sql.Open("duckdb", path)
+	if err != nil {
+		return nil, fmt.Errorf("reopening duckdb: %w", err)
+	}
+	if err := applyConnSettings(db, path, checkpointThreshold, memoryLimit); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+// applyConnSettings configures the connection pool and the runtime PRAGMAs.
+// Shared by Open and Reopen so a compaction reopen doesn't silently drop them.
+func applyConnSettings(db *sql.DB, path string, checkpointThreshold string, memoryLimit string) error {
+	// Allow multiple connections for concurrent API access during batch writes.
+	// DuckDB handles internal locking; single-writer is enforced at transaction level.
+	db.SetMaxOpenConns(4)
+	if checkpointThreshold != "" {
+		if _, err := db.Exec(fmt.Sprintf("SET wal_autocheckpoint = '%s'", checkpointThreshold)); err != nil {
+			return fmt.Errorf("setting wal_autocheckpoint: %w", err)
+		}
+	}
+	if memoryLimit != "" {
+		if _, err := db.Exec(fmt.Sprintf("SET memory_limit = '%s'", memoryLimit)); err != nil {
+			return fmt.Errorf("setting memory_limit: %w", err)
+		}
+		// Spill to disk (next to the DB file) when a query exceeds memory_limit,
+		// rather than failing or being OOM-killed.
+		tempDir := filepath.Join(filepath.Dir(path), "duckdb_tmp")
+		if err := os.MkdirAll(tempDir, 0755); err != nil {
+			return fmt.Errorf("creating temp directory: %w", err)
+		}
+		if _, err := db.Exec(fmt.Sprintf("SET temp_directory = '%s'", tempDir)); err != nil {
+			return fmt.Errorf("setting temp_directory: %w", err)
+		}
+	}
 	// Cache Parquet file metadata in memory so repeated queries against
 	// archived Parquet files skip metadata I/O.
 	if _, err := db.Exec("SET parquet_metadata_cache = true"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("enabling parquet metadata cache: %w", err)
+		return fmt.Errorf("enabling parquet metadata cache: %w", err)
 	}
-	return db, nil
+	return nil
+}
+
+// recoverInterruptedCompaction restores a database left half-swapped by a
+// compaction that was interrupted (crash/SIGKILL) between renaming the original
+// aside (path -> path+PreCompactSuffix) and renaming the compacted file into
+// place. Without this, a missing main file would cause DuckDB to create an empty
+// database on open and the data would appear lost.
+func recoverInterruptedCompaction(path string) {
+	backup := path + PreCompactSuffix
+	if _, err := os.Stat(backup); err != nil {
+		return // no interrupted compaction
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		// The compacted file was never moved into place; restore the original.
+		log.Printf("recovering interrupted compaction: restoring %s from %s", path, backup)
+		if err := os.Rename(backup, path); err != nil {
+			log.Printf("WARNING: failed to restore %s from %s: %v", path, backup, err)
+		}
+		return
+	}
+	// The new (compacted) database is already in place; drop the stale backup.
+	log.Printf("removing leftover compaction backup %s", backup)
+	if err := os.Remove(backup); err != nil {
+		log.Printf("WARNING: failed to remove stale backup %s: %v", backup, err)
+	}
 }
 
 // migrateAlertRules migrates alert rules from old denormalized schema to new normalized schema.

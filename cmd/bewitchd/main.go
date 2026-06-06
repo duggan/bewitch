@@ -82,6 +82,9 @@ func main() {
 	log.Infof("DuckDB memory limit: %s", cfg.Daemon.DBMemoryLimitValue())
 
 	st := store.New(database)
+	// Re-apply the same DuckDB settings when a compaction reopens the database
+	// (they reset to defaults on the fresh connection pool otherwise).
+	st.SetCompactionReopenOptions(cfg.Daemon.CheckpointThreshold, cfg.Daemon.DBMemoryLimitValue())
 	defer st.DB().Close()
 
 	// Initialize collectors

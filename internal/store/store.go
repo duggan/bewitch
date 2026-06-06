@@ -33,6 +33,12 @@ type Store struct {
 	paused     bool
 	opMu       sync.Mutex // prevents concurrent maintenance/compaction
 
+	// DuckDB settings re-applied when compaction reopens the database (they are
+	// per-instance and reset to defaults on a fresh connection pool). Set via
+	// SetCompactionReopenOptions; empty (the test default) reopens with no PRAGMAs.
+	reopenCheckpointThreshold string
+	reopenMemoryLimit         string
+
 	// Dimension ID caches (category -> value -> id)
 	dimCache   map[string]map[string]int16
 	dimCacheMu sync.RWMutex
@@ -544,6 +550,26 @@ func quoteLiteral(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
 }
 
+// SetCompactionReopenOptions records the DuckDB settings to re-apply when a
+// compaction reopens the database after swapping in the compacted file, so
+// memory_limit / temp_directory / checkpoint settings survive the reopen.
+func (s *Store) SetCompactionReopenOptions(checkpointThreshold, memoryLimit string) {
+	s.reopenCheckpointThreshold = checkpointThreshold
+	s.reopenMemoryLimit = memoryLimit
+}
+
+// reopenLocked reopens s.db from path with the recorded settings. The caller
+// must hold s.mu. Used on compaction-swap error paths so the store is left with
+// a working handle after the original file is restored.
+func (s *Store) reopenLocked(path string) {
+	newDB, err := db.Reopen(path, s.reopenCheckpointThreshold, s.reopenMemoryLimit)
+	if err != nil {
+		log.Errorf("reopen after failed compaction swap: %v", err)
+		return
+	}
+	s.db = newDB
+}
+
 // Compact rebuilds the database file to reclaim fragmented space. It creates
 // a fresh database with proper schema and copies data into it.
 // Note: COPY FROM DATABASE preserves internal fragmentation, so we create
@@ -615,35 +641,47 @@ func (s *Store) Compact(dbPath string) error {
 		log.Infof("original db size: %d bytes (%.1f MB)", info.Size(), float64(info.Size())/(1024*1024))
 	}
 
-	// Close the current connection, swap files, reopen
+	// Swap the database file under s.mu so a reader in DB() observes either the
+	// fully-old or the fully-new *sql.DB — never a half-swapped pointer (the
+	// reassign previously raced DB()'s read) — and no reader can grab the old
+	// handle mid-swap. Close() waits for in-flight queries, so they complete
+	// before the rename rather than failing on a closed pool.
+	s.mu.Lock()
 	s.db.Close()
 
-	// Preserve the original as a backup until swap succeeds
-	backupPath := dbPath + ".pre-compact"
+	// Preserve the original as a backup until swap succeeds. db.Open recovers
+	// from this backup on startup if the process dies before the swap completes.
+	backupPath := dbPath + db.PreCompactSuffix
 	if err := os.Rename(dbPath, backupPath); err != nil {
+		s.reopenLocked(dbPath) // dbPath untouched; reopen so the store stays usable
+		s.mu.Unlock()
 		return fmt.Errorf("backup original: %w", err)
 	}
 
 	if err := os.Rename(tmpPath, dbPath); err != nil {
-		// Try to restore the backup
-		os.Rename(backupPath, dbPath)
+		os.Rename(backupPath, dbPath) // restore original
+		s.reopenLocked(dbPath)
+		s.mu.Unlock()
 		return fmt.Errorf("swap compact db: %w", err)
 	}
 
 	// Also move any WAL file that might exist
 	os.Remove(dbPath + ".wal")
 
-	// Reopen the database
-	newDB, err := sql.Open("duckdb", dbPath)
+	// Reopen the database, re-applying the runtime settings (memory_limit etc.)
+	// that a fresh DuckDB connection pool would otherwise reset to defaults.
+	newDB, err := db.Reopen(dbPath, s.reopenCheckpointThreshold, s.reopenMemoryLimit)
 	if err != nil {
-		// Restore backup
-		os.Rename(backupPath, dbPath)
+		os.Rename(backupPath, dbPath) // restore original
+		s.reopenLocked(dbPath)
+		s.mu.Unlock()
 		return fmt.Errorf("reopen after compact: %w", err)
 	}
-	newDB.SetMaxOpenConns(4)
 	s.db = newDB
+	s.mu.Unlock()
 
-	// Reload caches for the new connection
+	// Reload caches for the new connection (no concurrent writer to s.db here:
+	// the async writer is paused and opMu blocks another compaction).
 	s.loadDimensionCache()
 	s.procInfoCacheMu.Lock()
 	s.loadProcessInfoCache()
