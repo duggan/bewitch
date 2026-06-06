@@ -1,4 +1,4 @@
-.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install demo-frames docgen site site-serve site-demo
+.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install demo-frames docgen site site-serve site-demo og
 
 VERSION := $(shell cat VERSION)
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
@@ -84,13 +84,23 @@ site-serve:
 site-demo:
 	cd site/demo && npm install --no-audit --no-fund && npm run build
 
+# Regenerate the social/OG card (site/static/og.png). Needs rsvg-convert.
+og:
+	python3 scripts/gen-og.py
+
 deploy: docgen
+	@V=$$(cat VERSION) && \
+	sed -i.bak \
+	    -e "s|bewitch-[0-9][0-9.]*-linux|bewitch-$$V-linux|g" \
+	    -e "s|bewitch_[0-9][0-9.]*-1_|bewitch_$$V-1_|g" \
+	    site/content/docs/installation.md
 	cd site && zola build
 	@V=$$(cat VERSION) && \
 	sed 's/^VERSION="[^"]*"/VERSION="'"$$V"'"/' site/static/install.sh > site/dist/install.sh && \
 	sed -e 's/^VERSION="[^"]*"/VERSION="'"$$V"'"/' \
 	    -e 's/BEWITCH_CHANNEL:-stable/BEWITCH_CHANNEL:-dev/' \
 	    site/static/install.sh > site/dist/install-dev.sh
+	@mv site/content/docs/installation.md.bak site/content/docs/installation.md
 	cd site && wrangler pages deploy dist --project-name=bewitch --commit-dirty=true
 
 release: stamp-install deb-docker apt-upload apt-repo deploy

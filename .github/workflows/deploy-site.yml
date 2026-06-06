@@ -32,6 +32,17 @@ jobs:
           sudo mv zola /usr/local/bin/
           zola --version
 
+      - name: Stamp docs version from VERSION
+        # The installation docs pin version-specific download URLs. Zola can't
+        # interpolate inside code blocks, so substitute the current VERSION into
+        # the source before building (mirrors the old Vite __BEWITCH_VERSION__).
+        run: |
+          V=$(cat VERSION)
+          sed -i \
+            -e "s|bewitch-[0-9][0-9.]*-linux|bewitch-${V}-linux|g" \
+            -e "s|bewitch_[0-9][0-9.]*-1_|bewitch_${V}-1_|g" \
+            site/content/docs/installation.md
+
       - name: Build
         working-directory: site
         # Production (push to main) builds with the absolute base_url for correct
