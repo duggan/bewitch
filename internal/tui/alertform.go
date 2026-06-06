@@ -35,6 +35,7 @@ type alertFormState struct {
 	mount        string
 	ifaceName    string
 	sensor       string
+	smartMetric  string // for smart category: smart.reallocated, smart.percent_used, ...
 	direction    string // rx, tx (for network)
 	predictHours string // for predictive
 	thresholdPct string // for predictive
@@ -81,6 +82,7 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 					huh.NewOption("Network", "network"),
 					huh.NewOption("Temperature", "temperature"),
 					huh.NewOption("GPU", "gpu"),
+					huh.NewOption("Disk health (SMART)", "smart"),
 					huh.NewOption("Process", "process"),
 				).
 				Value(&state.category),
@@ -120,6 +122,10 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 					case "gpu":
 						return []huh.Option[string]{
 							huh.NewOption("Sustained GPU utilization", "threshold"),
+						}
+					case "smart":
+						return []huh.Option[string]{
+							huh.NewOption("SMART attribute over threshold", "threshold"),
 						}
 					case "process":
 						return []huh.Option[string]{
@@ -210,6 +216,22 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 				Validate(validateNotEmpty),
 		).WithHideFunc(func() bool {
 			return !(state.category == "gpu")
+		}),
+		// SMART attribute (aggregated across all disks)
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("SMART Attribute").
+				Description("Worst value across all disks trips the alert").
+				Options(
+					huh.NewOption("Reallocated sectors", "smart.reallocated"),
+					huh.NewOption("Pending sectors", "smart.pending"),
+					huh.NewOption("Uncorrectable errors", "smart.uncorrectable"),
+					huh.NewOption("NVMe wear (% used)", "smart.percent_used"),
+					huh.NewOption("Health failures (count)", "smart.unhealthy"),
+				).
+				Value(&state.smartMetric),
+		).WithHideFunc(func() bool {
+			return !(state.category == "smart")
 		}),
 		// Variance parameters (memory only)
 		huh.NewGroup(
@@ -353,6 +375,8 @@ func thresholdDesc(state *alertFormState) string {
 		return "Temperature in °C"
 	case "gpu":
 		return "GPU utilization percentage (0-100)"
+	case "smart":
+		return "Threshold for the chosen SMART attribute (e.g. 0 sectors, 90 %)"
 	}
 	return ""
 }
@@ -406,6 +430,8 @@ func (s *alertFormState) toAlertRuleMetric() api.AlertRuleMetric {
 		case "gpu":
 			rule.Metric = "gpu.utilization"
 			rule.Sensor = s.sensor
+		case "smart":
+			rule.Metric = s.smartMetric
 		}
 	case "variance":
 		rule.Metric = "memory.variance"
@@ -486,6 +512,9 @@ func fromAlertRuleMetric(rule api.AlertRuleMetric) *alertFormState {
 			if strings.HasPrefix(rule.Metric, "gpu.") {
 				s.category = "gpu"
 				s.sensor = rule.Sensor
+			} else if strings.HasPrefix(rule.Metric, "smart.") {
+				s.category = "smart"
+				s.smartMetric = rule.Metric
 			}
 		}
 	case "variance":

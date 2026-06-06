@@ -57,6 +57,8 @@ func TestFormRoundTrip(t *testing.T) {
 			ProcessName: "nginx", ProcessPattern: "*/nginx*", MinInstances: 2, CheckDuration: "30s"},
 		{ID: 11, Name: "worker_thrash", Type: "process_thrashing", Severity: "warning", Enabled: true,
 			ProcessName: "worker", RestartThreshold: 5, RestartWindow: "5m"},
+		{ID: 12, Name: "smart_realloc", Type: "threshold", Severity: "critical", Enabled: true,
+			Metric: "smart.reallocated", Operator: ">", Value: 0, Duration: "10m"},
 	}
 
 	for _, in := range cases {
@@ -108,6 +110,8 @@ func TestFromAlertRuleMetricCategory(t *testing.T) {
 		{"network.tx", "threshold", "network", "tx"},
 		{"temperature.sensor", "threshold", "temperature", ""},
 		{"gpu.utilization", "threshold", "gpu", ""},
+		{"smart.reallocated", "threshold", "smart", ""},
+		{"smart.unhealthy", "threshold", "smart", ""},
 		{"memory.variance", "variance", "memory", ""},
 		{"disk.used_pct", "predictive", "disk", ""},
 	}
