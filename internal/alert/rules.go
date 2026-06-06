@@ -66,6 +66,9 @@ type Alert struct {
 	RuleName string `json:"rule_name"`
 	Severity string `json:"severity"`
 	Message  string `json:"message"`
+	// Resolved marks a recovery/all-clear notification (the condition cleared).
+	// Not persisted; it only shapes how notifiers render the message.
+	Resolved bool `json:"-"`
 }
 
 // Rule evaluates whether an alert condition is met.

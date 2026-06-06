@@ -42,7 +42,7 @@ evaluation_interval = "10s"
 # starttls = true                 # default true; set false for implicit TLS (port 465)
 
 # [[alerts.commands]]
-# cmd = "/usr/local/bin/alert-handler"  # receives BEWITCH_RULE, BEWITCH_SEVERITY, BEWITCH_MESSAGE, BEWITCH_TIMESTAMP env vars
+# cmd = "/usr/local/bin/alert-handler"  # receives BEWITCH_RULE, BEWITCH_SEVERITY, BEWITCH_MESSAGE, BEWITCH_STATUS (firing|resolved), BEWITCH_TIMESTAMP env vars
 
 [tui]
 refresh_interval = "2s"

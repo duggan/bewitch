@@ -32,11 +32,18 @@ func (n *EmailNotifier) Send(a *Alert) NotifyResult {
 		Dest:   strings.Join(n.cfg.To, ", "),
 	}
 
-	subject := fmt.Sprintf("[bewitch] %s: %s", a.Severity, a.RuleName)
-	body := fmt.Sprintf("%s\n\nRule: %s\nSeverity: %s\nTime: %s\n",
+	statusPrefix := ""
+	statusLine := "FIRING"
+	if a.Resolved {
+		statusPrefix = "RESOLVED "
+		statusLine = "RESOLVED"
+	}
+	subject := fmt.Sprintf("[bewitch] %s%s: %s", statusPrefix, a.Severity, a.RuleName)
+	body := fmt.Sprintf("%s\n\nRule: %s\nSeverity: %s\nStatus: %s\nTime: %s\n",
 		a.Message,
 		a.RuleName,
 		a.Severity,
+		statusLine,
 		time.Now().UTC().Format(time.RFC3339),
 	)
 

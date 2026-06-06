@@ -112,9 +112,11 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 	ackFilter := r.URL.Query().Get("ack")
-	query := "SELECT id, ts, rule_name, severity, message, acknowledged FROM alerts ORDER BY ts DESC LIMIT 100"
+	query := "SELECT id, ts, rule_name, severity, message, acknowledged, resolved_at IS NOT NULL FROM alerts ORDER BY ts DESC LIMIT 100"
 	if ackFilter == "false" {
-		query = "SELECT id, ts, rule_name, severity, message, acknowledged FROM alerts WHERE acknowledged = false ORDER BY ts DESC LIMIT 100"
+		// "Active" alerts are unacknowledged AND still firing — a resolved alert
+		// is no longer active even if it was never acked.
+		query = "SELECT id, ts, rule_name, severity, message, acknowledged, resolved_at IS NOT NULL FROM alerts WHERE acknowledged = false AND resolved_at IS NULL ORDER BY ts DESC LIMIT 100"
 	}
 
 	queryStart := time.Now()
@@ -128,7 +130,7 @@ func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 	var alerts []AlertMetric
 	for rows.Next() {
 		var a AlertMetric
-		if err := rows.Scan(&a.ID, &a.Timestamp, &a.RuleName, &a.Severity, &a.Message, &a.Acknowledged); err != nil {
+		if err := rows.Scan(&a.ID, &a.Timestamp, &a.RuleName, &a.Severity, &a.Message, &a.Acknowledged, &a.Resolved); err != nil {
 			continue
 		}
 		alerts = append(alerts, a)

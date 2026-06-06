@@ -2,6 +2,7 @@ package alert
 
 import (
 	"database/sql"
+	"fmt"
 	"sync"
 	"time"
 
@@ -9,6 +10,10 @@ import (
 
 	"github.com/duggan/bewitch/internal/config"
 )
+
+// collectionStalledRule is the reserved rule_name for the built-in dead-man's-
+// switch alert that fires when metric collection has silently stopped.
+const collectionStalledRule = "collection-stalled"
 
 // Engine periodically evaluates alert rules.
 type Engine struct {
@@ -247,35 +252,90 @@ func (e *Engine) evaluate() {
 			log.Errorf("alert rule %s error: %v", rule.Name(), err)
 			continue
 		}
-		if alert == nil {
-			continue
-		}
+		e.applyAlertState(db, rule.Name(), alert)
+	}
 
-		// Check if we recently fired this same alert (debounce: don't re-fire within the evaluation interval)
-		var count int
-		db.QueryRow(
-			"SELECT COUNT(*) FROM alerts WHERE rule_name = ? AND ts > ? AND acknowledged = false",
-			alert.RuleName, time.Now().Add(-e.interval*3),
-		).Scan(&count)
-		if count > 0 {
-			continue
-		}
+	// Built-in dead-man's-switch: fire when metric collection has silently stopped.
+	e.applyAlertState(db, collectionStalledRule, e.collectionStalled(db))
+}
 
-		// Insert alert
-		_, err = db.Exec(
+// applyAlertState drives one rule's (or the dead-man's-switch's) firing
+// lifecycle. An alert is "active" while its row has resolved_at IS NULL. It
+// fires on the rising edge (breaching with no active alert) and resolves on the
+// falling edge (no longer breaching with an active alert), emitting a recovery
+// notification. Keying the debounce on the active row rather than acknowledgement
+// has two effects vs the old logic: a persistent condition fires exactly once
+// until it clears, and acking a still-breaching alert no longer spawns a
+// duplicate next cycle. alert is nil when the rule is not currently breaching.
+func (e *Engine) applyAlertState(db *sql.DB, ruleName string, alert *Alert) {
+	var activeID int
+	var activeSeverity string
+	hasActive := db.QueryRow(
+		"SELECT id, severity FROM alerts WHERE rule_name = ? AND resolved_at IS NULL ORDER BY ts DESC LIMIT 1",
+		ruleName,
+	).Scan(&activeID, &activeSeverity) == nil
+
+	switch {
+	case alert != nil && !hasActive:
+		// Rising edge: fire.
+		if _, err := db.Exec(
 			"INSERT INTO alerts (ts, rule_name, severity, message) VALUES (?, ?, ?, ?)",
 			time.Now(), alert.RuleName, alert.Severity, alert.Message,
-		)
-		if err != nil {
+		); err != nil {
 			log.Errorf("inserting alert: %v", err)
-			continue
+			return
 		}
-
 		log.Warnf("ALERT [%s] %s: %s", alert.Severity, alert.RuleName, alert.Message)
-
-		// Fire notifications
 		if len(e.notifiers) > 0 {
 			sendNotifications(e.notifiers, alert)
 		}
+	case alert == nil && hasActive:
+		// Falling edge: resolve and emit an all-clear.
+		if _, err := db.Exec("UPDATE alerts SET resolved_at = ? WHERE id = ?", time.Now(), activeID); err != nil {
+			log.Errorf("resolving alert %s: %v", ruleName, err)
+			return
+		}
+		log.Infof("RESOLVED %s", ruleName)
+		if len(e.notifiers) > 0 {
+			sendNotifications(e.notifiers, &Alert{
+				RuleName: ruleName,
+				Severity: activeSeverity,
+				Message:  "condition cleared",
+				Resolved: true,
+			})
+		}
+	}
+	// breaching && active: still firing, suppress. !breaching && !active: nothing to do.
+}
+
+// collectionStalled returns a non-nil Alert when metric collection appears to
+// have silently stopped — the newest cpu_metrics sample (CPU is always-on and
+// high-frequency) is older than the dead-man threshold. It returns nil when
+// collection is healthy or when there is no data yet, so it never false-fires at
+// startup. (A fully dead daemon can't fire this since the engine dies with it;
+// this catches in-process stalls — a collector wedged in backoff, a stuck writer
+// goroutine, or dropped write batches under pressure.)
+func (e *Engine) collectionStalled(db *sql.DB) *Alert {
+	threshold := 12 * e.interval
+	if threshold < 2*time.Minute {
+		threshold = 2 * time.Minute
+	}
+	cutoff := time.Now().Add(-threshold)
+	var count, stale int
+	// stale=1 when there is data but the newest sample predates the cutoff. The
+	// comparison runs in SQL (bound param vs stored ts) to avoid Go/DB timezone
+	// skew, matching how the rest of the engine compares timestamps.
+	if err := db.QueryRow(
+		"SELECT count(*), COALESCE(max(ts) < ?, false)::INT FROM cpu_metrics", cutoff,
+	).Scan(&count, &stale); err != nil {
+		return nil
+	}
+	if count == 0 || stale == 0 {
+		return nil
+	}
+	return &Alert{
+		RuleName: collectionStalledRule,
+		Severity: "critical",
+		Message:  fmt.Sprintf("metric collection has stalled: no new cpu samples in over %s", threshold.Round(time.Second)),
 	}
 }

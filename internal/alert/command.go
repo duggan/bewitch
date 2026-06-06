@@ -38,10 +38,15 @@ func (n *CommandNotifier) Send(a *Alert) NotifyResult {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	status := "firing"
+	if a.Resolved {
+		status = "resolved"
+	}
 	cmd.Env = append(os.Environ(),
 		"BEWITCH_RULE="+a.RuleName,
 		"BEWITCH_SEVERITY="+a.Severity,
 		"BEWITCH_MESSAGE="+a.Message,
+		"BEWITCH_STATUS="+status,
 		"BEWITCH_TIMESTAMP="+time.Now().UTC().Format(time.RFC3339),
 	)
 

@@ -140,6 +140,7 @@ type AlertMetric struct {
 	Severity     string    `json:"severity"`
 	Message      string    `json:"message"`
 	Acknowledged bool      `json:"acknowledged"`
+	Resolved     bool      `json:"resolved"`
 }
 
 type AlertRuleMetric struct {
