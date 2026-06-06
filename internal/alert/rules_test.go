@@ -150,7 +150,7 @@ func TestThresholdRuleBuildQuery(t *testing.T) {
 					Sensor:        "coretemp",
 				},
 			}
-			query, args, err := r.buildQuery(cutoff)
+			query, args, agg, err := r.buildQuery(cutoff)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -160,12 +160,24 @@ func TestThresholdRuleBuildQuery(t *testing.T) {
 			if len(args) != tt.wantArgs {
 				t.Errorf("args count = %d, want %d", len(args), tt.wantArgs)
 			}
+			// Aggregate label must match the actual SQL aggregate so the fired
+			// message is truthful: SMART branches use MAX/COUNT, others AVG.
+			wantAgg := "avg"
+			switch tt.metric {
+			case "smart.reallocated", "smart.pending", "smart.uncorrectable", "smart.percent_used":
+				wantAgg = "max"
+			case "smart.unhealthy":
+				wantAgg = "count"
+			}
+			if agg != wantAgg {
+				t.Errorf("agg label = %q, want %q", agg, wantAgg)
+			}
 		})
 	}
 
 	t.Run("unknown metric returns error", func(t *testing.T) {
 		r := &ThresholdRule{cfg: ThresholdConfig{Metric: "unknown.metric"}}
-		_, _, err := r.buildQuery(cutoff)
+		_, _, _, err := r.buildQuery(cutoff)
 		if err == nil {
 			t.Error("expected error for unknown metric")
 		}

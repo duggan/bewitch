@@ -215,6 +215,36 @@ func (e *Engine) Notifiers() []Notifier {
 	return e.notifiers
 }
 
+// ProcessPins returns the process-name / pattern targets of all loaded
+// process_down and process_thrashing rules. The process collector unions these
+// into its pin set every cycle so rule targets are always force-enriched (and
+// thus written to process_info / process_metrics) regardless of top-N ranking —
+// without this, a crash-looping or non-busy target rarely cracks top-N, so the
+// process rules would see no data and silently never fire. Reflects whatever
+// ReloadRules last loaded, so rule edits propagate within one engine interval.
+func (e *Engine) ProcessPins() []string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	var pins []string
+	for _, r := range e.rules {
+		switch pr := r.(type) {
+		case *ProcessDownRule:
+			if pr.cfg.ProcessPattern != "" {
+				pins = append(pins, pr.cfg.ProcessPattern)
+			} else if pr.cfg.ProcessName != "" {
+				pins = append(pins, pr.cfg.ProcessName)
+			}
+		case *ProcessThrashingRule:
+			if pr.cfg.ProcessPattern != "" {
+				pins = append(pins, pr.cfg.ProcessPattern)
+			} else if pr.cfg.ProcessName != "" {
+				pins = append(pins, pr.cfg.ProcessName)
+			}
+		}
+	}
+	return pins
+}
+
 // Start begins the alert evaluation loop in the background.
 func (e *Engine) Start() {
 	go e.run()

@@ -43,7 +43,7 @@ type ProcessData struct {
 // This is exported for the API to serve a full process list without DB overhead.
 type ProcessBasicInfo struct {
 	PID        int32
-	Name       string  // stat.Comm
+	Name       string // stat.Comm
 	State      string
 	CPUPct     float64 // user + system
 	RSSBytes   uint64
@@ -65,25 +65,25 @@ type cachedCmdline struct {
 
 // procBasic holds minimal data from /proc/[pid]/stat for fast first-pass sorting.
 type procBasic struct {
-	proc      procfs.Proc
-	stat      procfs.ProcStat
-	cpuUser   float64
-	cpuSys    float64
-	rss       uint64 // from stat.RSS * page size
-	state     string
-	score     float64 // sorting score
+	proc    procfs.Proc
+	stat    procfs.ProcStat
+	cpuUser float64
+	cpuSys  float64
+	rss     uint64 // from stat.RSS * page size
+	state   string
+	score   float64 // sorting score
 }
 
 // ProcessCollector collects process metrics via /proc.
 type ProcessCollector struct {
 	fs           procfs.FS
-	prev         map[int]procTimes    // PID -> previous CPU times
+	prev         map[int]procTimes     // PID -> previous CPU times
 	cmdlineCache map[int]cachedCmdline // PID -> cached cmdline
 	prevTime     time.Time
 	maxProcs     int
-	bootTime     uint64 // system boot time in seconds since epoch
-	clockTick    int64  // system clock ticks per second
-	pageSize     int64  // system page size in bytes
+	bootTime     uint64          // system boot time in seconds since epoch
+	clockTick    int64           // system clock ticks per second
+	pageSize     int64           // system page size in bytes
 	samples      []ProcessSample // reusable slice
 	basics       []procBasic     // reusable slice for first pass
 
@@ -416,13 +416,6 @@ func matchesPinnedPattern(comm string, patterns []string) bool {
 		}
 	}
 	return false
-}
-
-// Username returns the username for a UID, or the UID as string if lookup fails.
-func Username(uid uint32) string {
-	// Try to read from /etc/passwd - simplified lookup
-	// In production, consider using os/user package
-	return fmt.Sprintf("%d", uid)
 }
 
 // Ensure ProcessCollector implements Collector

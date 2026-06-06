@@ -98,7 +98,7 @@ func (r *ThresholdRule) Evaluate(db *sql.DB) (*Alert, error) {
 	}
 	cutoff := time.Now().Add(-dur)
 
-	query, args, err := r.buildQuery(cutoff)
+	query, args, agg, err := r.buildQuery(cutoff)
 	if err != nil {
 		return nil, err
 	}
@@ -112,74 +112,82 @@ func (r *ThresholdRule) Evaluate(db *sql.DB) (*Alert, error) {
 		return &Alert{
 			RuleName: r.base.Name,
 			Severity: r.base.Severity,
-			Message:  fmt.Sprintf("%s %.1f %s %.1f for %s", r.cfg.Metric, avg.Float64, r.cfg.Operator, r.cfg.Value, r.cfg.Duration),
+			// "agg" (avg/max/count) names what was actually computed, and "over"
+			// (not "for") makes clear the comparison is across the window, not a
+			// value sustained for its whole length — a 30s spike on an idle box
+			// averages below threshold and won't fire, and the text no longer
+			// implies otherwise. A per-rule avg/max/min choice is a future follow-up.
+			Message: fmt.Sprintf("%s %s %.1f %s %.1f over %s", r.cfg.Metric, agg, avg.Float64, r.cfg.Operator, r.cfg.Value, r.cfg.Duration),
 		}, nil
 	}
 	return nil, nil
 }
 
-func (r *ThresholdRule) buildQuery(cutoff time.Time) (string, []any, error) {
+// buildQuery returns the SQL, its bind args, and a label naming the aggregate it
+// computes ("avg", "max", or "count") so the fired-alert message can be truthful
+// about what the compared number represents.
+func (r *ThresholdRule) buildQuery(cutoff time.Time) (string, []any, string, error) {
 	switch r.cfg.Metric {
 	case "cpu.aggregate":
 		// core = -1 is the whole-CPU aggregate (core = 0 was just physical core 0).
 		// 100 - idle counts everything non-idle — including nice/irq/softirq and,
 		// crucially, steal — so a contended VPS (high steal, low user+system) can
 		// actually trip the alert instead of looking idle.
-		return "SELECT AVG(100 - idle_pct) FROM cpu_metrics WHERE core = -1 AND ts > ?", []any{cutoff}, nil
+		return "SELECT AVG(100 - idle_pct) FROM cpu_metrics WHERE core = -1 AND ts > ?", []any{cutoff}, "avg", nil
 	case "memory.used_pct":
-		return "SELECT AVG(CAST(used_bytes AS DOUBLE) / NULLIF(total_bytes, 0) * 100) FROM memory_metrics WHERE ts > ?", []any{cutoff}, nil
+		return "SELECT AVG(CAST(used_bytes AS DOUBLE) / NULLIF(total_bytes, 0) * 100) FROM memory_metrics WHERE ts > ?", []any{cutoff}, "avg", nil
 	case "disk.used_pct":
 		return `SELECT AVG(CAST(m.used_bytes AS DOUBLE) / NULLIF(m.total_bytes, 0) * 100)
 			FROM disk_metrics m
 			JOIN dimension_values d ON d.category = 'mount' AND d.id = m.mount_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Mount, cutoff}, nil
+			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Mount, cutoff}, "avg", nil
 	case "network.rx":
 		return `SELECT AVG(m.rx_bytes_sec)
 			FROM network_metrics m
 			JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.InterfaceName, cutoff}, nil
+			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.InterfaceName, cutoff}, "avg", nil
 	case "network.tx":
 		return `SELECT AVG(m.tx_bytes_sec)
 			FROM network_metrics m
 			JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.InterfaceName, cutoff}, nil
+			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.InterfaceName, cutoff}, "avg", nil
 	case "temperature.sensor":
 		return `SELECT AVG(m.temp_celsius)
 			FROM temperature_metrics m
 			JOIN dimension_values d ON d.category = 'sensor' AND d.id = m.sensor_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, nil
+			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, "avg", nil
 	case "gpu.utilization":
 		return `SELECT AVG(m.utilization_pct)
 			FROM gpu_metrics m
 			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, nil
+			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, "avg", nil
 	case "gpu.temperature":
 		return `SELECT AVG(m.temp_celsius)
 			FROM gpu_metrics m
 			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, nil
+			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, "avg", nil
 	case "gpu.power":
 		return `SELECT AVG(m.power_watts)
 			FROM gpu_metrics m
 			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, nil
+			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, "avg", nil
 	// SMART metrics aggregate across all physical devices (the worst value over the
 	// window) so a failing drive trips the alert without a per-device scope — fire
 	// e.g. smart.reallocated > 0 or smart.percent_used > 90.
 	case "smart.reallocated":
-		return "SELECT MAX(reallocated_sectors) FROM smart_metrics WHERE ts > ?", []any{cutoff}, nil
+		return "SELECT MAX(reallocated_sectors) FROM smart_metrics WHERE ts > ?", []any{cutoff}, "max", nil
 	case "smart.pending":
-		return "SELECT MAX(pending_sectors) FROM smart_metrics WHERE ts > ?", []any{cutoff}, nil
+		return "SELECT MAX(pending_sectors) FROM smart_metrics WHERE ts > ?", []any{cutoff}, "max", nil
 	case "smart.uncorrectable":
-		return "SELECT MAX(uncorrectable_errs) FROM smart_metrics WHERE ts > ?", []any{cutoff}, nil
+		return "SELECT MAX(uncorrectable_errs) FROM smart_metrics WHERE ts > ?", []any{cutoff}, "max", nil
 	case "smart.percent_used":
-		return "SELECT MAX(percent_used) FROM smart_metrics WHERE ts > ?", []any{cutoff}, nil
+		return "SELECT MAX(percent_used) FROM smart_metrics WHERE ts > ?", []any{cutoff}, "max", nil
 	case "smart.unhealthy":
 		// Count of unhealthy snapshots in the window; > 0 means a drive reported a
 		// SMART health failure (the "your disk is dying" signal).
-		return "SELECT COUNT(*) FROM smart_metrics WHERE healthy = false AND ts > ?", []any{cutoff}, nil
+		return "SELECT COUNT(*) FROM smart_metrics WHERE healthy = false AND ts > ?", []any{cutoff}, "count", nil
 	default:
-		return "", nil, fmt.Errorf("unsupported threshold metric: %s", r.cfg.Metric)
+		return "", nil, "", fmt.Errorf("unsupported threshold metric: %s", r.cfg.Metric)
 	}
 }
 
@@ -241,9 +249,26 @@ func (r *PredictiveRule) Evaluate(db *sql.DB) (*Alert, error) {
 		return nil, nil
 	}
 
+	// Already-breached path (covers both blind spots that made this rule go silent
+	// exactly when the disk was most at risk): a disk already at/over the target
+	// crossed it in the past, so the future-crossing math below gives hoursUntil<=0
+	// and never fires; and a disk pinned flat-at-99% has slope<=0 and hits the
+	// "not increasing" early-return. The query already ORDER BY m.ts, so the last
+	// sample is the latest value. The message is intentionally distinct from the
+	// "predicted to reach" wording, but the engine debounce keys on rule_name (not
+	// message text) so a rule hovering at the boundary won't double-fire.
+	current := ys[len(ys)-1]
+	if current >= r.cfg.ThresholdPct {
+		return &Alert{
+			RuleName: r.base.Name,
+			Severity: r.base.Severity,
+			Message:  fmt.Sprintf("%s on %s already at %.0f%% (target %.0f%%)", r.cfg.Metric, r.cfg.Mount, current, r.cfg.ThresholdPct),
+		}, nil
+	}
+
 	slope, intercept := linearRegression(xs, ys)
 	if slope <= 0 {
-		// Not increasing, no concern
+		// Not increasing and not yet at the target — no concern.
 		return nil, nil
 	}
 
@@ -371,54 +396,88 @@ func (r *ProcessDownRule) ID() int      { return r.base.ID }
 func (r *ProcessDownRule) Name() string { return r.base.Name }
 
 func (r *ProcessDownRule) Evaluate(db *sql.DB) (*Alert, error) {
-	// Count active instances of the process in the latest metrics snapshot
-	var query string
-	var args []any
-
+	// Match predicate: exact comm name, or a cmdline glob.
+	matchClause, matchArg := "pi.name = ?", any(r.cfg.ProcessName)
 	if r.cfg.ProcessPattern != "" {
-		// Match by cmdline pattern (convert glob to SQL LIKE)
-		pattern := globToSQL(r.cfg.ProcessPattern)
-		query = `WITH latest AS (
-				SELECT MAX(ts) as ts FROM process_metrics
-			)
-			SELECT COUNT(DISTINCT (pm.pid, pm.start_time))
-			FROM process_info pi
-			JOIN process_metrics pm ON pm.pid = pi.pid AND pm.start_time = pi.start_time
-			CROSS JOIN latest l
-			WHERE pi.cmdline LIKE ?
-			  AND pm.ts = l.ts`
-		args = []any{pattern}
-	} else {
-		// Match by exact process name
-		query = `WITH latest AS (
-				SELECT MAX(ts) as ts FROM process_metrics
-			)
-			SELECT COUNT(DISTINCT (pm.pid, pm.start_time))
-			FROM process_info pi
-			JOIN process_metrics pm ON pm.pid = pi.pid AND pm.start_time = pi.start_time
-			CROSS JOIN latest l
-			WHERE pi.name = ?
-			  AND pm.ts = l.ts`
-		args = []any{r.cfg.ProcessName}
+		matchClause, matchArg = "pi.cmdline LIKE ?", any(globToSQL(r.cfg.ProcessPattern))
 	}
 
-	var count int
-	if err := db.QueryRow(query, args...).Scan(&count); err != nil {
+	dur, derr := config.ParseDuration(r.cfg.CheckDuration)
+	if derr != nil || dur <= 0 {
+		// Back-compat: no/invalid check_duration → single newest-snapshot check.
+		query := fmt.Sprintf(`WITH latest AS (
+				SELECT MAX(ts) AS ts FROM process_metrics
+			)
+			SELECT COUNT(DISTINCT (pm.pid, pm.start_time))
+			FROM process_info pi
+			JOIN process_metrics pm ON pm.pid = pi.pid AND pm.start_time = pi.start_time
+			CROSS JOIN latest l
+			WHERE %s AND pm.ts = l.ts`, matchClause)
+		var count int
+		if err := db.QueryRow(query, matchArg).Scan(&count); err != nil {
+			return nil, fmt.Errorf("querying process count: %w", err)
+		}
+		return r.alertIfDown(count), nil
+	}
+
+	// CheckDuration set: require sustained absence across the whole window rather
+	// than firing on a single snapshot. Count instances per distinct snapshot ts,
+	// then take the MAX — a single healthy snapshot anywhere in the window clears
+	// the alert, so one missed tick or a brief restart (which gets a fresh
+	// start_time and reappears within a tick or two) no longer false-fires "down".
+	// The LEFT JOINs are load-bearing: a snapshot where the process was entirely
+	// absent must still contribute cnt=0, and the match predicate sits in the ON
+	// clause so non-matching rows count as 0 rather than dropping the whole
+	// snapshot (an INNER JOIN would silently inflate the peak). snaps==0 guards
+	// startup — never fire before any process data has been written.
+	cutoff := time.Now().Add(-dur)
+	// cnt counts matching instances per snapshot, not the snapshot's whole process
+	// set: pm is joined only on ts (so it carries every process present at that ts),
+	// and the name/cmdline predicate lives in the pi LEFT JOIN's ON clause — so pi.*
+	// is non-null only for matching instances. The CASE makes the count NULL-safe:
+	// counting the bare struct (pi.pid, pi.start_time) would count the all-NULL
+	// no-match row as a distinct value (a DuckDB struct of NULLs is itself non-null),
+	// so a genuinely-absent snapshot would wrongly read as cnt=1. Returning NULL when
+	// pi didn't match makes COUNT(DISTINCT ...) ignore it, yielding cnt=0. The LEFT
+	// JOINs keep the snapshot row alive so an all-absent window still contributes 0.
+	query := fmt.Sprintf(`WITH window_snaps AS (
+			SELECT DISTINCT ts FROM process_metrics WHERE ts >= ?
+		),
+		per_snap AS (
+			SELECT ws.ts,
+				COUNT(DISTINCT CASE WHEN pi.pid IS NOT NULL THEN (pi.pid, pi.start_time) END) AS cnt
+			FROM window_snaps ws
+			LEFT JOIN process_metrics pm ON pm.ts = ws.ts
+			LEFT JOIN process_info pi ON pi.pid = pm.pid AND pi.start_time = pm.start_time AND %s
+			GROUP BY ws.ts
+		)
+		SELECT COUNT(*) AS snaps, COALESCE(MAX(cnt), 0) AS peak FROM per_snap`, matchClause)
+
+	var snaps, peak int
+	if err := db.QueryRow(query, cutoff, matchArg).Scan(&snaps, &peak); err != nil {
 		return nil, fmt.Errorf("querying process count: %w", err)
 	}
-
-	if count < r.cfg.MinInstances {
-		name := r.cfg.ProcessName
-		if r.cfg.ProcessPattern != "" {
-			name = r.cfg.ProcessPattern
-		}
-		return &Alert{
-			RuleName: r.base.Name,
-			Severity: r.base.Severity,
-			Message:  fmt.Sprintf("process '%s' is down: %d of %d expected instances running", name, count, r.cfg.MinInstances),
-		}, nil
+	if snaps == 0 {
+		return nil, nil
 	}
-	return nil, nil
+	return r.alertIfDown(peak), nil
+}
+
+// alertIfDown returns a down alert when the instance count is below the rule's
+// minimum, or nil otherwise. Shared by the single-snapshot and windowed paths.
+func (r *ProcessDownRule) alertIfDown(count int) *Alert {
+	if count >= r.cfg.MinInstances {
+		return nil
+	}
+	name := r.cfg.ProcessName
+	if r.cfg.ProcessPattern != "" {
+		name = r.cfg.ProcessPattern
+	}
+	return &Alert{
+		RuleName: r.base.Name,
+		Severity: r.base.Severity,
+		Message:  fmt.Sprintf("process '%s' is down: %d of %d expected instances running", name, count, r.cfg.MinInstances),
+	}
 }
 
 // ProcessThrashingRule fires when a process restarts too frequently.

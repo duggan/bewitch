@@ -156,14 +156,26 @@ func main() {
 		procCollector = proc
 	}
 
-	// Set up runtime pins callback (reads TUI-pinned processes from preferences DB)
+	// alertEngine is constructed further down, but the runtime-pins closure below
+	// captures it by reference. The closure runs once per collection cycle, well
+	// after the engine is built, so the nil guard only covers the brief startup
+	// window before construction.
+	var alertEngine *alert.Engine
+
+	// Set up runtime pins callback: the union of TUI-pinned processes (preferences
+	// DB) and the targets of any process_down / process_thrashing alert rules, so
+	// those rules' processes are always force-enriched into process_info /
+	// process_metrics regardless of top-N ranking — otherwise a non-busy or
+	// crash-looping target rarely cracks top-N and the rule silently sees no data.
 	procCollector.SetRuntimePinsFunc(func() []string {
-		var value string
-		if err := database.QueryRow("SELECT value FROM preferences WHERE key = 'pinned_processes'").Scan(&value); err != nil || value == "" {
-			return nil
-		}
 		var pins []string
-		json.Unmarshal([]byte(value), &pins)
+		var value string
+		if err := database.QueryRow("SELECT value FROM preferences WHERE key = 'pinned_processes'").Scan(&value); err == nil && value != "" {
+			json.Unmarshal([]byte(value), &pins)
+		}
+		if alertEngine != nil {
+			pins = append(pins, alertEngine.ProcessPins()...)
+		}
 		return pins
 	})
 
@@ -283,8 +295,8 @@ func main() {
 		}
 	}()
 
-	// Start alert engine
-	alertEngine := alert.NewEngine(st.DB, &cfg.Alerts)
+	// Start alert engine (declared earlier so the runtime-pins closure can reference it)
+	alertEngine = alert.NewEngine(st.DB, &cfg.Alerts)
 	apiServer.SetNotifiers(alertEngine.Notifiers())
 	alertEngine.Start()
 

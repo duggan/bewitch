@@ -99,11 +99,11 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 					switch state.category {
 					case "cpu":
 						return []huh.Option[string]{
-							huh.NewOption("Sustained usage over threshold", "threshold"),
+							huh.NewOption("Average usage over threshold", "threshold"),
 						}
 					case "memory":
 						return []huh.Option[string]{
-							huh.NewOption("Sustained usage over threshold", "threshold"),
+							huh.NewOption("Average usage over threshold", "threshold"),
 							huh.NewOption("Variance / thrashing detection", "variance"),
 						}
 					case "disk":
@@ -113,15 +113,15 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 						}
 					case "network":
 						return []huh.Option[string]{
-							huh.NewOption("Sustained throughput", "threshold"),
+							huh.NewOption("Average throughput over threshold", "threshold"),
 						}
 					case "temperature":
 						return []huh.Option[string]{
-							huh.NewOption("Sustained high temperature", "threshold"),
+							huh.NewOption("Average temperature over threshold", "threshold"),
 						}
 					case "gpu":
 						return []huh.Option[string]{
-							huh.NewOption("Sustained GPU utilization", "threshold"),
+							huh.NewOption("Average GPU utilization over threshold", "threshold"),
 						}
 					case "smart":
 						return []huh.Option[string]{

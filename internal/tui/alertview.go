@@ -135,7 +135,9 @@ func renderRuleDetail(r api.AlertRuleMetric, width int) string {
 
 	switch r.Type {
 	case "threshold":
-		row("condition", fmt.Sprintf("%s %s for %s", r.Operator, ftoa(r.Value), r.Duration))
+		// "over" (across the window), not "for" (sustained for its whole length):
+		// the engine compares the windowed average/max, mirroring the fired-alert text.
+		row("condition", fmt.Sprintf("%s %s over %s", r.Operator, ftoa(r.Value), r.Duration))
 		switch {
 		case r.Mount != "":
 			row("mount", r.Mount)
