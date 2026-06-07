@@ -9,8 +9,8 @@ import (
 
 // NotifyResult holds the outcome of sending a single notification.
 type NotifyResult struct {
-	Method     string        `json:"method"`               // "email", "command"
-	Dest       string        `json:"dest"`                 // email address, command path
+	Method     string        `json:"method"`                // "email", "command"
+	Dest       string        `json:"dest"`                  // email address, command path
 	StatusCode int           `json:"status_code,omitempty"` // HTTP status or 0 for non-HTTP
 	Latency    time.Duration `json:"latency_ns"`
 	Error      string        `json:"error,omitempty"`
@@ -35,13 +35,14 @@ type Notifier interface {
 var notifySem = make(chan struct{}, 8)
 
 // sendNotifications sends the alert to all notifiers asynchronously (fire-and-forget).
-func sendNotifications(notifiers []Notifier, a *Alert) {
-	for _, n := range notifiers {
+func (e *Engine) sendNotifications(a *Alert) {
+	for _, n := range e.notifiers {
 		go func(notifier Notifier) {
 			notifySem <- struct{}{}
 			defer func() { <-notifySem }()
 			r := notifier.Send(a)
 			if r.Error != "" {
+				e.notifyFailures.Add(1)
 				log.Errorf("%s: %s", notifier.Name(), r.Error)
 			}
 		}(n)

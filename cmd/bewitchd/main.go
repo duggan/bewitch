@@ -557,9 +557,14 @@ func main() {
 				fails[k] = v
 			}
 		}
+		var notifyFailures uint64
+		if alertEngine != nil { // nil only during the brief startup window before the engine is built
+			notifyFailures = alertEngine.NotifyFailures()
+		}
 		return api.SelfStats{
 			DroppedWriteBatches:  droppedBatches.Load(),
 			PauseDroppedSamples:  st.PauseDroppedSamplesTotal(),
+			NotifyFailures:       notifyFailures,
 			ProcInfoCacheEntries: st.ProcInfoCacheLen(),
 			WriteQueueDepth:      len(writeCh),
 			WriteQueueCap:        cap(writeCh),

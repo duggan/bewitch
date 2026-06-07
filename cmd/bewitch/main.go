@@ -451,6 +451,7 @@ func printStats(w *os.File, s *api.StatsResponse) {
 		fmt.Fprintf(w, "  Proc-info cache: %s entries\n", commas(int64(sm.ProcInfoCacheEntries)))
 		fmt.Fprintf(w, "  Dropped write batches: %d\n", sm.DroppedWriteBatches)
 		fmt.Fprintf(w, "  Pause-buffer drops: %d\n", sm.PauseDroppedSamples)
+		fmt.Fprintf(w, "  Notification failures: %d\n", sm.NotifyFailures)
 		// Only call out collectors actually in backoff; healthy ones are noise.
 		var backoff []string
 		names := make([]string, 0, len(sm.CollectorFails))

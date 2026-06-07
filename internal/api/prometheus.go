@@ -154,6 +154,8 @@ func (s *Server) handlePrometheus(w http.ResponseWriter, r *http.Request) {
 		p.counter("bewitch_self_dropped_write_batches_total", float64(ss.DroppedWriteBatches))
 		p.helpTyped("bewitch_self_pause_dropped_samples_total", "Samples dropped from the pause buffer when it hit its cap during maintenance", "counter")
 		p.counter("bewitch_self_pause_dropped_samples_total", float64(ss.PauseDroppedSamples))
+		p.helpTyped("bewitch_self_notify_failures_total", "Live alert notification deliveries that returned an error", "counter")
+		p.counter("bewitch_self_notify_failures_total", float64(ss.NotifyFailures))
 		p.help("bewitch_self_proc_info_cache_entries", "Entries in the process-info dedup cache (a documented RSS-growth source)")
 		p.gauge("bewitch_self_proc_info_cache_entries", float64(ss.ProcInfoCacheEntries))
 		p.help("bewitch_self_write_queue_depth", "Metric batches buffered awaiting the DB writer")

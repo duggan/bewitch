@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -23,7 +24,16 @@ type Engine struct {
 	interval  time.Duration
 	stop      chan struct{}
 	mu        sync.RWMutex
+
+	// notifyFailures counts live notification deliveries that returned an error
+	// (a failing webhook/SMTP), so "alerts aren't getting out" is observable rather
+	// than only logged. The manual test endpoint (SendTestNotifications) does not
+	// count toward it.
+	notifyFailures atomic.Uint64
 }
+
+// NotifyFailures returns the lifetime count of failed live notification deliveries.
+func (e *Engine) NotifyFailures() uint64 { return e.notifyFailures.Load() }
 
 func NewEngine(dbFn func() *sql.DB, cfg *config.AlertsConfig) *Engine {
 	interval := 10 * time.Second
@@ -325,7 +335,7 @@ func (e *Engine) applyAlertState(db *sql.DB, ruleName string, alert *Alert) {
 		}
 		log.Warnf("ALERT [%s] %s: %s", alert.Severity, alert.RuleName, alert.Message)
 		if len(e.notifiers) > 0 {
-			sendNotifications(e.notifiers, alert)
+			e.sendNotifications(alert)
 		}
 	case alert == nil && hasActive:
 		// Falling edge: resolve and emit an all-clear.
@@ -335,7 +345,7 @@ func (e *Engine) applyAlertState(db *sql.DB, ruleName string, alert *Alert) {
 		}
 		log.Infof("RESOLVED %s", ruleName)
 		if len(e.notifiers) > 0 {
-			sendNotifications(e.notifiers, &Alert{
+			e.sendNotifications(&Alert{
 				RuleName: ruleName,
 				Severity: activeSeverity,
 				Message:  "condition cleared",
