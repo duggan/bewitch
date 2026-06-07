@@ -409,7 +409,7 @@ func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 				Value(&state.processPattern),
 			huh.NewInput().
 				Title("Restart Threshold").
-				Description("Alert after this many restarts").
+				Description("Alert after this many restarts (loops faster than the collector interval may be missed)").
 				Placeholder("5").
 				Value(&state.restartThreshold).
 				Validate(validateInt),

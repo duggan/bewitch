@@ -536,6 +536,15 @@ func (r *ProcessThrashingRule) Evaluate(db *sql.DB) (*Alert, error) {
 	}
 	cutoff := time.Now().Add(-dur)
 
+	// Sampling-rate limitation (inherent, not a bug): a restart is observed only if
+	// the process exists during at least one collection tick, so a crash-loop whose
+	// lifetime is shorter than the process-collector interval (e.g. respawns every
+	// 200ms with a 5s interval) can be born-and-die between samples and never be
+	// counted. Auto-pinning rule targets (Engine.ProcessPins) removes the top-N gate
+	// but not this tick-rate gate; observing such loops would need event-based
+	// detection (e.g. the netlink proc connector), out of scope here. A shorter
+	// [collectors.process] interval narrows but cannot close the gap.
+
 	// Count distinct (pid, start_time) pairs where first_seen is within the window
 	// Each new start_time for the same process name = a restart
 	var query string
