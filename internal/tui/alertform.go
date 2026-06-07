@@ -37,6 +37,7 @@ type alertFormState struct {
 	ifaceName    string
 	sensor       string
 	smartMetric  string // for smart category: smart.reallocated, smart.percent_used, ...
+	cpuMetric    string // for cpu category: cpu.aggregate (default) or cpu.steal
 	direction    string // rx, tx (for network)
 	predictHours string // for predictive
 	thresholdPct string // for predictive
@@ -167,6 +168,19 @@ func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 	}
 
 	groups = append(groups,
+		// CPU metric: overall utilization vs hypervisor steal. Asked before the
+		// threshold value so its description can reflect the choice.
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("CPU Metric").
+				Options(
+					huh.NewOption("Overall usage (100 − idle)", "cpu.aggregate"),
+					huh.NewOption("Steal — hypervisor contention", "cpu.steal"),
+				).
+				Value(&state.cpuMetric),
+		).WithHideFunc(func() bool {
+			return state.category != "cpu"
+		}),
 		// SMART attribute (aggregated across all disks). Asked BEFORE the threshold
 		// value so that field's description/placeholder can reflect the chosen
 		// attribute (a raw sector count wants "0", NVMe wear wants "0-100 %").
@@ -417,12 +431,15 @@ func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 // before, in the reordered group). hashstructure dereferences the pointers, so
 // the funcs re-run whenever either string changes.
 func thresholdBindings(state *alertFormState) []any {
-	return []any{&state.category, &state.smartMetric}
+	return []any{&state.category, &state.smartMetric, &state.cpuMetric}
 }
 
 func thresholdDesc(state *alertFormState) string {
 	switch state.category {
 	case "cpu":
+		if state.cpuMetric == "cpu.steal" {
+			return "CPU steal percentage (0-100); hypervisor contention"
+		}
 		return "CPU usage percentage (0-100)"
 	case "memory":
 		return "Memory usage percentage (0-100)"
@@ -510,7 +527,10 @@ func (s *alertFormState) toAlertRuleMetric() api.AlertRuleMetric {
 		}
 		switch s.category {
 		case "cpu":
-			rule.Metric = "cpu.aggregate"
+			rule.Metric = s.cpuMetric
+			if rule.Metric == "" {
+				rule.Metric = "cpu.aggregate"
+			}
 		case "memory":
 			rule.Metric = "memory.used_pct"
 		case "disk":
@@ -593,8 +613,9 @@ func fromAlertRuleMetric(rule api.AlertRuleMetric) *alertFormState {
 			s.aggregate = "avg" // old rules created before the aggregate column
 		}
 		switch rule.Metric {
-		case "cpu.aggregate":
+		case "cpu.aggregate", "cpu.steal":
 			s.category = "cpu"
+			s.cpuMetric = rule.Metric
 		case "memory.used_pct":
 			s.category = "memory"
 		case "disk.used_pct":

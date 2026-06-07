@@ -76,6 +76,8 @@ func TestFormRoundTrip(t *testing.T) {
 	cases := []api.AlertRuleMetric{
 		{ID: 1, Name: "cpu_hot", Type: "threshold", Severity: "warning", Enabled: true,
 			Metric: "cpu.aggregate", Operator: ">", Value: 90, Duration: "5m"},
+		{ID: 13, Name: "cpu_steal", Type: "threshold", Severity: "warning", Enabled: true,
+			Metric: "cpu.steal", Operator: ">", Value: 20, Duration: "5m"},
 		{ID: 2, Name: "disk_40", Type: "threshold", Severity: "warning", Enabled: true,
 			Metric: "disk.used_pct", Operator: ">", Value: 40.5, Duration: "1m", Mount: "/"},
 		{ID: 3, Name: "net_rx", Type: "threshold", Severity: "critical", Enabled: false,
@@ -226,6 +228,7 @@ func TestFromAlertRuleMetricCategory(t *testing.T) {
 		wantCat, wantDir string
 	}{
 		{"cpu.aggregate", "threshold", "cpu", ""},
+		{"cpu.steal", "threshold", "cpu", ""},
 		{"disk.used_pct", "threshold", "disk", ""},
 		{"network.rx", "threshold", "network", "rx"},
 		{"network.tx", "threshold", "network", "tx"},

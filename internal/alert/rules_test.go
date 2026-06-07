@@ -128,6 +128,7 @@ func TestThresholdRuleBuildQuery(t *testing.T) {
 		wantArgs int
 	}{
 		{"cpu.aggregate", 1},
+		{"cpu.steal", 1},
 		{"memory.used_pct", 1},
 		{"disk.used_pct", 2},
 		{"network.rx", 2},
@@ -195,6 +196,7 @@ func TestThresholdAggregateChoice(t *testing.T) {
 		{"cpu avg", "cpu.aggregate", "avg", "avg", "AVG("},
 		{"cpu max", "cpu.aggregate", "max", "max", "MAX("},
 		{"cpu min", "cpu.aggregate", "min", "min", "MIN("},
+		{"cpu.steal max", "cpu.steal", "max", "max", "MAX("},
 		{"cpu empty defaults avg", "cpu.aggregate", "", "avg", "AVG("},
 		{"cpu unknown defaults avg", "cpu.aggregate", "bogus", "avg", "AVG("},
 		{"memory min", "memory.used_pct", "min", "min", "MIN("},

@@ -884,14 +884,14 @@ func (s *Store) writeCPU(sample collector.Sample, data collector.CPUData) error 
 }
 
 func (s *Store) writeCPUTx(tx *sql.Tx, sample collector.Sample, data collector.CPUData) error {
-	stmt, err := tx.Prepare("INSERT INTO cpu_metrics (ts, core, user_pct, system_pct, idle_pct, iowait_pct) VALUES (?, ?, ?, ?, ?, ?)")
+	stmt, err := tx.Prepare("INSERT INTO cpu_metrics (ts, core, user_pct, system_pct, idle_pct, iowait_pct, steal_pct) VALUES (?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return fmt.Errorf("prepare: %w", err)
 	}
 	defer stmt.Close()
 
 	for _, core := range data.Cores {
-		if _, err := stmt.Exec(sample.Timestamp, core.Core, core.UserPct, core.SystemPct, core.IdlePct, core.IOWaitPct); err != nil {
+		if _, err := stmt.Exec(sample.Timestamp, core.Core, core.UserPct, core.SystemPct, core.IdlePct, core.IOWaitPct, core.StealPct); err != nil {
 			return fmt.Errorf("insert cpu core %d: %w", core.Core, err)
 		}
 	}
@@ -1168,7 +1168,7 @@ func withAppender(conn driver.Conn, table string, fn func(*duckdb.Appender) erro
 func (s *Store) writeCPUAppender(driverConn driver.Conn, sample collector.Sample, data collector.CPUData) error {
 	return withAppender(driverConn, "cpu_metrics", func(a *duckdb.Appender) error {
 		for _, core := range data.Cores {
-			if err := a.AppendRow(sample.Timestamp, int8(core.Core), core.UserPct, core.SystemPct, core.IdlePct, core.IOWaitPct); err != nil {
+			if err := a.AppendRow(sample.Timestamp, int8(core.Core), core.UserPct, core.SystemPct, core.IdlePct, core.IOWaitPct, core.StealPct); err != nil {
 				return fmt.Errorf("append cpu core %d: %w", core.Core, err)
 			}
 		}

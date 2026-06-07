@@ -156,6 +156,13 @@ func (r *ThresholdRule) buildQuery(cutoff time.Time) (string, []any, string, err
 		// crucially, steal — so a contended VPS (high steal, low user+system) can
 		// actually trip the alert instead of looking idle.
 		return fmt.Sprintf("SELECT %s(100 - idle_pct) FROM cpu_metrics WHERE core = -1 AND ts > ?", fn), []any{cutoff}, agg, nil
+	case "cpu.steal":
+		// Hypervisor-stolen time on the whole-CPU aggregate row — alert on VPS
+		// noisy-neighbour contention directly (e.g. cpu.steal > 20), distinct from
+		// overall utilization. steal_pct is nullable (rows predating migration 000012
+		// are NULL); the aggregate ignores NULLs, so a pre-migration-only window
+		// returns NULL and doesn't fire.
+		return fmt.Sprintf("SELECT %s(steal_pct) FROM cpu_metrics WHERE core = -1 AND ts > ?", fn), []any{cutoff}, agg, nil
 	case "memory.used_pct":
 		return fmt.Sprintf("SELECT %s(CAST(used_bytes AS DOUBLE) / NULLIF(total_bytes, 0) * 100) FROM memory_metrics WHERE ts > ?", fn), []any{cutoff}, agg, nil
 	case "disk.used_pct":
