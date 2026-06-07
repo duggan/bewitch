@@ -193,6 +193,16 @@ func TestViewFooterAlwaysVisible(t *testing.T) {
 		}
 	})
 
+	t.Run("cpu shows the range help footer", func(t *testing.T) {
+		m := build(viewCPU)
+		out := m.View()
+		for _, want := range []string{":range", ":pick dates"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("CPU range footer missing %q from View()", want)
+			}
+		}
+	})
+
 	t.Run("network", func(t *testing.T) {
 		m := build(viewNetwork)
 		m.refreshNetData()

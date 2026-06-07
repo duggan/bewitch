@@ -577,13 +577,13 @@ func (m *Model) renderHistoryCacheEntry(v view) {
 		entry.chart = renderPanel(fmt.Sprintf("Process CPU History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
 	case viewCPU:
 		entry.chart = renderPercentChart(entry.series, chartWidth, ch, entry.start, entry.end)
-		entry.chart = renderPanel(fmt.Sprintf("CPU History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
+		entry.chart = renderPanel(fmt.Sprintf("CPU History [%s]", rangeLabel), entry.chart, m.width)
 	case viewMemory:
 		entry.chart = renderPercentChart(entry.series, chartWidth, ch, entry.start, entry.end)
-		entry.chart = renderPanel(fmt.Sprintf("Memory History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
+		entry.chart = renderPanel(fmt.Sprintf("Memory History [%s]", rangeLabel), entry.chart, m.width)
 	case viewDisk:
 		entry.chart = renderPercentChart(entry.series, chartWidth, ch, entry.start, entry.end)
-		entry.chart = renderPanel(fmt.Sprintf("Disk History [%s]", rangeLabel), entry.chart+historyHelpInline(rangeLabel), m.width)
+		entry.chart = renderPanel(fmt.Sprintf("Disk History [%s]", rangeLabel), entry.chart, m.width)
 	case viewNetwork:
 		netFiltered := entry.series
 		if m.netSelected != nil {
@@ -717,13 +717,13 @@ func (m *Model) regenerateHistoryChart() {
 		return
 	case viewCPU:
 		m.cachedHistoryCharts[m.current] = renderPercentChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd)
-		m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("CPU History [%s]", rangeLabel), m.cachedHistoryCharts[m.current]+historyHelpInline(rangeLabel), m.width)
+		m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("CPU History [%s]", rangeLabel), m.cachedHistoryCharts[m.current], m.width)
 	case viewMemory:
 		m.cachedHistoryCharts[m.current] = renderPercentChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd)
-		m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("Memory History [%s]", rangeLabel), m.cachedHistoryCharts[m.current]+historyHelpInline(rangeLabel), m.width)
+		m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("Memory History [%s]", rangeLabel), m.cachedHistoryCharts[m.current], m.width)
 	case viewDisk:
 		m.cachedHistoryCharts[m.current] = renderPercentChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd)
-		m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("Disk History [%s]", rangeLabel), m.cachedHistoryCharts[m.current]+historyHelpInline(rangeLabel), m.width)
+		m.cachedHistoryCharts[m.current] = renderPanel(fmt.Sprintf("Disk History [%s]", rangeLabel), m.cachedHistoryCharts[m.current], m.width)
 	case viewNetwork:
 		// Filter to only selected interfaces
 		var netFiltered []api.TimeSeries
@@ -2955,6 +2955,11 @@ func (m Model) viewFooter() string {
 	}
 	var line string
 	switch m.current {
+	case viewCPU, viewMemory, viewDisk:
+		// These views' only control is the history-range cycling; pin it to the
+		// footer (rather than inside the chart panel, where it scrolled off) so it's
+		// always visible. The range is also shown in the chart's panel title.
+		line = normalHelpStyle.Render(fmt.Sprintf("< >:range [%s]  r:pick dates", m.historyRangeLabel()))
 	case viewAlerts:
 		line = renderAlertFooter(m.alertFocus, m.alertConfirmDelete, m.alertConfirmName, m.alertFormErr)
 	case viewProcess:
