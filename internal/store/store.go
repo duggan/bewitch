@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -156,6 +158,29 @@ func (s *Store) PauseDroppedSamplesTotal() uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bufDroppedTotal
+}
+
+// PinnedProcessPrefs returns the TUI-managed pinned-process glob patterns stored
+// in the preferences table (the pinned_processes JSON array), or nil if unset. The
+// error is returned rather than swallowed so a malformed preference is logged
+// instead of silently disabling all preference pins.
+func (s *Store) PinnedProcessPrefs() ([]string, error) {
+	var value string
+	err := s.DB().QueryRow("SELECT value FROM preferences WHERE key = 'pinned_processes'").Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if value == "" {
+		return nil, nil
+	}
+	var pins []string
+	if err := json.Unmarshal([]byte(value), &pins); err != nil {
+		return nil, fmt.Errorf("parsing pinned_processes preference %q: %w", value, err)
+	}
+	return pins, nil
 }
 
 // getDimensionID returns the ID for a dimension value, creating it if needed

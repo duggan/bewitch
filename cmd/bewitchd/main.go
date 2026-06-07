@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -167,12 +166,31 @@ func main() {
 	// those rules' processes are always force-enriched into process_info /
 	// process_metrics regardless of top-N ranking — otherwise a non-busy or
 	// crash-looping target rarely cracks top-N and the rule silently sees no data.
+	//
+	// The preference read is cached behind a short TTL: this closure runs every
+	// process-collection cycle (configurable down to 100ms), but the pinned set
+	// changes only on a TUI toggle, so re-reading the DB every tick is wasted work
+	// on the collection path. Alert-rule pins are an in-memory read (no cache).
+	var (
+		pinPrefsMu      sync.Mutex
+		pinPrefsCache   []string
+		pinPrefsExpires time.Time
+	)
+	const pinPrefsCacheTTL = 3 * time.Second
 	procCollector.SetRuntimePinsFunc(func() []string {
-		var pins []string
-		var value string
-		if err := database.QueryRow("SELECT value FROM preferences WHERE key = 'pinned_processes'").Scan(&value); err == nil && value != "" {
-			json.Unmarshal([]byte(value), &pins)
+		now := time.Now()
+		pinPrefsMu.Lock()
+		if now.After(pinPrefsExpires) {
+			prefs, err := st.PinnedProcessPrefs()
+			if err != nil {
+				log.Warnf("reading pinned_processes preference: %v", err)
+			}
+			pinPrefsCache = prefs
+			pinPrefsExpires = now.Add(pinPrefsCacheTTL)
 		}
+		pins := append([]string(nil), pinPrefsCache...)
+		pinPrefsMu.Unlock()
+
 		if alertEngine != nil {
 			pins = append(pins, alertEngine.ProcessPins()...)
 		}
