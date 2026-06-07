@@ -16,6 +16,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
@@ -164,11 +165,12 @@ type Model struct {
 	notifySending      bool
 	// Process view state
 	procSortBy             procSortField
-	procCursor             int
+	procTable              table.Model          // bounded, internally-scrolling process table; cursor is the selection source of truth
+	procSearchInput        textinput.Model      // '/' search box (filters by name/cmdline)
 	procData               *api.ProcessResponse // cached process data, refreshed on tick
-	procSearchActive       bool                 // true when search input is active
+	procSearchActive       bool                 // true when the search box is focused
 	procSearchQuery        string               // current search filter text
-	procFilteredLen        int                  // cached count of filtered results for cursor bounds
+	procFilteredLen        int                  // cached count of filtered results
 	pinnedProcesses        map[string]bool      // process names pinned via TUI (stored in preferences)
 	procPinnedOnly         bool                 // table filter: show only pinned processes
 	procChartPinned        bool                 // chart mode: false=top CPU, true=pinned
@@ -230,19 +232,19 @@ func NewModel(client daemonClient, interval time.Duration, historyRanges []confi
 		table.WithFocused(true),
 		table.WithHeight(10),
 	)
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(colorDeepPurple).
-		BorderBottom(true).
-		Bold(true).
-		Foreground(colorPurple)
-	s.Selected = s.Selected.
-		Foreground(colorDarkBg).
-		Background(colorPink).
-		Bold(true)
-	s.Cell = s.Cell.Foreground(colorText)
-	t.SetStyles(s)
+	t.SetStyles(metricTableStyles())
+
+	// Process table: columns/rows are (re)built per render in renderProcessView; the
+	// cursor here is the selection source of truth. Focused so navigation keys apply.
+	procTable := table.New(table.WithFocused(true), table.WithHeight(10))
+	procTable.SetStyles(procTableStyles())
+
+	// Process search box: '/' focuses it; its value is the name/cmdline filter.
+	procSearch := textinput.New()
+	procSearch.Prompt = "/"
+	procSearch.PromptStyle = lipgloss.NewStyle().Foreground(colorPink)
+	procSearch.Placeholder = "filter by name or cmdline"
+	procSearch.CharLimit = 64
 
 	// Default to last range or index 3, whichever is smaller
 	defaultIdx := 3
@@ -262,6 +264,8 @@ func NewModel(client daemonClient, interval time.Duration, historyRanges []confi
 		historyRanges:       historyRanges,
 		historyRange:        defaultIdx,
 		alertTable:          t,
+		procTable:           procTable,
+		procSearchInput:     procSearch,
 		debug:               dbg,
 		captureSettings:     captureSettings,
 		lastDataChange:      make(map[view]time.Time),
@@ -318,6 +322,85 @@ func viewName(v view) string {
 	return "?"
 }
 
+// metricTableStyles returns the shared bubbles/table styling for the alerts and process
+// tables: deep-purple header rule, purple header text, and the hot-pink selected row.
+func metricTableStyles() table.Styles {
+	s := table.DefaultStyles()
+	s.Header = s.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(colorDeepPurple).
+		BorderBottom(true).
+		Bold(true).
+		Foreground(colorPurple)
+	s.Selected = s.Selected.
+		Foreground(colorDarkBg).
+		Background(colorPink).
+		Bold(true)
+	s.Cell = s.Cell.Foreground(colorText)
+	return s
+}
+
+// procTableStyles is metricTableStyles without the default per-cell horizontal padding:
+// the process table bakes its own column alignment and one-column gaps into the cell
+// strings (alignCell), so the extra Padding(0,1) DefaultStyles adds would push the wide
+// multi-column row past the panel and wrap it.
+func procTableStyles() table.Styles {
+	s := metricTableStyles()
+	s.Header = s.Header.Padding(0, 0)
+	s.Cell = s.Cell.Padding(0, 0)
+	return s
+}
+
+// setProcTableHeight sets a fallback process-table height (used before the first chart
+// renders) and the search box width. The authoritative height is set per-frame by
+// sizeProcTableForLayout, which measures the actual chart. The fallback budgets the
+// chart panel (ch+4), the chart-mode tabs (3 lines), the detail strip (1), and the table
+// panel's own title + borders (3) — ch+11 of non-table chrome.
+func (m *Model) setProcTableHeight(contentHeight int) {
+	ch := chartHeightForTerminal(m.height)
+	h := contentHeight - ch - 11
+	if h < 4 {
+		h = 4
+	}
+	m.procTable.SetHeight(h)
+	if w := m.width - 4; w > 0 {
+		m.procSearchInput.Width = w
+	}
+}
+
+// sizeProcTableForLayout sets the process table's height so the detail strip, chart-mode
+// tabs, and history chart all stay on screen below it, and reports whether the chart
+// fits. It measures the actual rendered widgets (chart == "" before the first one loads)
+// so the budget can't drift. On a terminal too short for both a usable table and the
+// chart, it returns false: the caller drops the chart and the table takes the space
+// (the table is the more important half). Called per-frame from renderCurrentContent.
+func (m *Model) sizeProcTableForLayout(chart string) (showChart bool) {
+	avail := m.viewport.Height
+	if m.procSearchActive {
+		avail-- // the search box takes one line above the table
+	}
+	// The table panel costs h+4 rendered lines (pink title + two borders + the table
+	// view's own trailing line); the detail strip is one line. The tabs+chart block is
+	// measured together (renderChartModeTabs's trailing newline is absorbed by the chart
+	// that follows it, so measuring them concatenated avoids an off-by-one).
+	const tablePanelChrome = 4
+	const minRows = 5 // header (2) + a few data rows — below this the table is useless
+	if chart != "" {
+		below := 1 + lipgloss.Height(renderChartModeTabs(m.procChartPinned, m.width)+chart)
+		if h := avail - tablePanelChrome - below; h >= minRows {
+			m.procTable.SetHeight(h)
+			return true
+		}
+	}
+	// No chart, or no room for both: the table takes everything but the detail strip.
+	h := avail - tablePanelChrome - 1
+	if h < 4 {
+		h = 4
+	}
+	m.procTable.SetHeight(h)
+	return false
+}
+
 // recalcViewport adjusts viewport height when debug panel size changes.
 func (m *Model) recalcViewport() {
 	if !m.ready {
@@ -338,6 +421,7 @@ func (m *Model) recalcViewport() {
 		contentHeight = 1
 	}
 	m.viewport.Height = contentHeight
+	m.setProcTableHeight(contentHeight)
 }
 
 func tickCmd(d time.Duration) tea.Cmd {
@@ -1517,14 +1601,11 @@ func (m *Model) selectedProcess() (api.ProcessMetric, bool) {
 	if m.procData == nil || len(m.procData.Processes) == 0 {
 		return api.ProcessMetric{}, false
 	}
-	enriched, nonEnriched := orderedProcessList(m.procData.Processes, m.procSearchQuery, m.pinnedProcesses, m.procPinnedOnly, m.procSortBy)
-	// Combine in the same order as the render: enriched first, then non-enriched
-	combined := append(enriched, nonEnriched...)
-	if len(combined) == 0 {
-		return api.ProcessMetric{}, false
-	}
-	if m.procCursor < len(combined) {
-		return combined[m.procCursor], true
+	// Same order the table rows are built in, so procTable.Cursor() indexes it directly.
+	combined := orderedCombined(m.procData.Processes, m.procSearchQuery, m.pinnedProcesses, m.procPinnedOnly, m.procSortBy)
+	idx := m.procTable.Cursor()
+	if idx >= 0 && idx < len(combined) {
+		return combined[idx], true
 	}
 	return api.ProcessMetric{}, false
 }
@@ -2079,35 +2160,33 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 		// Fall through for non-key messages (ticks, window resize, etc.)
 	}
 
-	// Process search mode: capture typing but allow navigation
+	// Process search mode: route typing to the textinput, keep arrows driving the table,
+	// and let non-key messages (ticks, resizes) fall through so live data keeps refreshing.
 	if m.procSearchActive && m.current == viewProcess {
-		if msg, ok := msg.(tea.KeyMsg); ok {
-			switch msg.String() {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			switch km.String() {
 			case "esc":
 				m.procSearchActive = false
+				m.procSearchInput.Blur()
+				m.procSearchInput.SetValue("")
 				m.procSearchQuery = ""
-				m.procCursor = 0
+				m.procTable.SetCursor(0)
 				return m, nil
 			case "enter":
+				// Keep the filter active, just leave edit mode.
 				m.procSearchActive = false
-				// Keep filter active, exit input mode
+				m.procSearchInput.Blur()
 				return m, nil
-			case "backspace":
-				if len(m.procSearchQuery) > 0 {
-					m.procSearchQuery = m.procSearchQuery[:len(m.procSearchQuery)-1]
-					m.procCursor = 0
-				}
-				return m, nil
-			case "up", "down":
-				// Let arrow keys fall through to process view handler for navigation
-			default:
-				// Single printable character
-				if len(msg.String()) == 1 && msg.String() >= " " {
-					m.procSearchQuery += msg.String()
-					m.procCursor = 0
-				}
-				return m, nil
+			case "up", "down", "pgup", "pgdown", "home", "end":
+				var cmd tea.Cmd
+				m.procTable, cmd = m.procTable.Update(km)
+				return m, cmd
 			}
+			var cmd tea.Cmd
+			m.procSearchInput, cmd = m.procSearchInput.Update(km)
+			m.procSearchQuery = m.procSearchInput.Value()
+			m.procTable.SetCursor(0)
+			return m, cmd
 		}
 	}
 
@@ -2320,28 +2399,32 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			}
 		}
-		// Process view: j/k navigate, c/m/p/t/f change sort
+		// Process view: arrows/page keys drive the bounded table (internal scroll);
+		// letter keys change sort / filter / pin.
 		if m.current == viewProcess {
 			switch msg.String() {
-			case "pgup", "pgdown", "ctrl+u", "ctrl+d", "home", "end":
+			case "up", "down", "pgup", "pgdown", "home", "end", "ctrl+u", "ctrl+d", "j", "k":
 				var cmd tea.Cmd
-				m.viewport, cmd = m.viewport.Update(msg)
+				m.procTable, cmd = m.procTable.Update(msg)
 				return m, cmd
 			}
 			switch msg.String() {
 			case "/":
 				m.procSearchActive = true
-				return m, nil
+				m.procSearchInput.SetValue(m.procSearchQuery)
+				m.procSearchInput.CursorEnd()
+				return m, m.procSearchInput.Focus()
 			case "esc":
-				// Clear filter when not in search input mode
+				// Clear the filter when not in the search box.
 				if m.procSearchQuery != "" {
 					m.procSearchQuery = ""
-					m.procCursor = 0
+					m.procSearchInput.SetValue("")
+					m.procTable.SetCursor(0)
 				}
 				return m, nil
 			case "P":
 				m.procPinnedOnly = !m.procPinnedOnly
-				m.procCursor = 0
+				m.procTable.SetCursor(0)
 				return m, nil
 			case "tab":
 				if len(m.pinnedProcesses) > 0 {
@@ -2354,22 +2437,6 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 						start, end := m.historyTimeRange()
 						return m, m.fetchPinnedHistoryCmd(start, end)
 					}
-				}
-				return m, nil
-			case "down":
-				maxIdx := m.procFilteredLen - 1
-				if maxIdx < 0 {
-					maxIdx = 0
-				}
-				m.procCursor++
-				if m.procCursor > maxIdx {
-					m.procCursor = maxIdx
-				}
-				return m, nil
-			case "up":
-				m.procCursor--
-				if m.procCursor < 0 {
-					m.procCursor = 0
 				}
 				return m, nil
 			case "c":
@@ -2674,6 +2741,7 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 			prefetchCmds = m.prefetchAllHistoryCmds()
 		}
 		m.alertTable.SetHeight(contentHeight - 4)
+		m.setProcTableHeight(contentHeight)
 		return m, tea.Batch(prefetchCmds...)
 	case historyResultMsg:
 		m.historyFetching[msg.forView] = false
@@ -3038,7 +3106,10 @@ func (m *Model) renderCurrentContent() string {
 			m.d("render: using=%s pinnedLen=%d topCPULen=%d",
 				which, len(m.procPinnedChart), len(m.cachedHistoryCharts[m.current]))
 		}
-		c, fl := renderProcessView(m.procData, m.width, chart, m.procSortBy, m.procCursor, m.procSearchActive, m.procSearchQuery, m.pinnedProcesses, m.procPinnedOnly, m.procChartPinned)
+		if !m.sizeProcTableForLayout(chart) {
+			chart = "" // terminal too short for both — drop the chart, table takes the space
+		}
+		c, fl := renderProcessView(m.procData, m.width, &m.procTable, m.procSearchInput, chart, m.procSortBy, m.procSearchActive, m.procSearchQuery, m.pinnedProcesses, m.procPinnedOnly, m.procChartPinned)
 		m.procFilteredLen = fl
 		return c
 	case viewAlerts:
@@ -3048,11 +3119,30 @@ func (m *Model) renderCurrentContent() string {
 	}
 }
 
-// SetSize sets the terminal dimensions for the model and updates visible tabs.
+// SetSize sets the terminal dimensions for the model and updates visible tabs. Used by
+// the headless screenshot-capture path (the interactive TUI sizes via WindowSizeMsg). It
+// also sizes the viewport and process table the way the resize handler does, so the
+// bounded process table lays out correctly when rendered without a live event loop.
 func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.height = h
 	m.updateVisibleTabs()
+
+	gutterHeight := 0
+	if m.statusData != nil {
+		gutterHeight = 1
+	}
+	debugHeight := 0
+	if m.debug != nil {
+		debugHeight = m.debug.Height()
+	}
+	contentHeight := h - 3 - gutterHeight - debugHeight - 2 // tab bar (3) + gutter + debug + help (2)
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+	m.viewport.Width = w
+	m.viewport.Height = contentHeight
+	m.setProcTableHeight(contentHeight)
 }
 
 // captureFileName maps views to website-compatible filenames.

@@ -5,9 +5,12 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/duggan/bewitch/internal/api"
 
+	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -64,217 +67,322 @@ func orderedProcessList(procs []api.ProcessMetric, searchQuery string, pinnedMap
 	return
 }
 
-func renderProcessView(procs *api.ProcessResponse, width int, cachedChart string, sortBy procSortField, cursor int, searchActive bool, searchQuery string, pinnedMap map[string]bool, pinnedOnly bool, chartPinned bool) (string, int) {
-	var b strings.Builder
+// orderedCombined returns the displayed processes in render order (enriched first, then
+// non-enriched) — the single source of truth that the table rows and the cursor index
+// (procTable.Cursor()) both map onto.
+func orderedCombined(procs []api.ProcessMetric, searchQuery string, pinnedMap map[string]bool, pinnedOnly bool, sortBy procSortField) []api.ProcessMetric {
+	enriched, nonEnriched := orderedProcessList(procs, searchQuery, pinnedMap, pinnedOnly, sortBy)
+	combined := make([]api.ProcessMetric, 0, len(enriched)+len(nonEnriched))
+	combined = append(combined, enriched...)
+	combined = append(combined, nonEnriched...)
+	return combined
+}
 
+// renderProcessView lays out the "Split Deck": a height-capped, internally-scrolling
+// process table (bubbles/table, sized in setProcTableHeight) over an always-visible
+// history chart, with a one-line detail strip for the selected row in between. The table
+// pointer carries scroll/cursor state across frames; this function only (re)builds its
+// columns and rows from the cached process snapshot, so it stays render-pure.
+//
+// Returns the rendered content and the number of displayed rows (for cursor bookkeeping).
+func renderProcessView(procs *api.ProcessResponse, width int, procTable *table.Model, searchInput textinput.Model, cachedChart string, sortBy procSortField, searchActive bool, searchQuery string, pinnedMap map[string]bool, pinnedOnly bool, chartPinned bool) (string, int) {
 	if procs == nil {
 		return renderPanel("Processes", dimStyle.Render("loading..."), width), 0
 	}
 
-	// Search input or filter indicator
+	combined := orderedCombined(procs.Processes, searchQuery, pinnedMap, pinnedOnly, sortBy)
+
+	// Rebuild columns (width-tiered, with a ▼ on the active sort) and rows from the
+	// cached snapshot. bubbles/table keeps the cursor across SetRows (clamping if the
+	// filtered set shrank), so navigation state survives ticks and filter changes.
+	cols := processColumns(width, sortBy)
+	procTable.SetColumns(toTableColumns(cols))
+	rows := make([]table.Row, len(combined))
+	for i, p := range combined {
+		rows[i] = buildProcessRow(p, cols, pinnedMap)
+	}
+	procTable.SetRows(rows)
+
+	var b strings.Builder
+
+	// Search box (active) or a filter indicator (filter set but not editing).
 	if searchActive {
-		searchBox := fmt.Sprintf("/%s█", searchQuery)
-		b.WriteString(lipgloss.NewStyle().Foreground(colorPink).Render(searchBox) + "\n")
+		b.WriteString(searchInput.View() + "\n")
 	} else if searchQuery != "" {
-		// Show filter indicator when not in input mode but filter is active
-		filterIndicator := fmt.Sprintf("filter: %s", searchQuery)
-		b.WriteString(lipgloss.NewStyle().Foreground(colorPink).Render(filterIndicator) + "  " +
-			lipgloss.NewStyle().Foreground(colorDeepPurple).Render("(/:edit  esc:clear)") + "\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(colorPink).Render("filter: "+searchQuery) + "  " +
+			dimStyle.Render("(/:edit  esc:clear)") + "\n")
 	}
 
-	// Filter, sort, and split into enriched (above fold) and non-enriched (below fold)
-	enriched, nonEnriched := orderedProcessList(procs.Processes, searchQuery, pinnedMap, pinnedOnly, sortBy)
-	totalFiltered := len(enriched) + len(nonEnriched)
+	b.WriteString(renderPanel(processPanelTitle(procs, sortBy, len(combined), pinnedOnly, searchQuery), procTable.View(), width))
 
-	// Summary line (show filter count if searching)
-	baseSummary := fmt.Sprintf("%d total │ %d active │ %d running │ CPU: %.1f%% │ Mem: %s",
-		procs.TotalProcs, procs.ActiveProcs, procs.RunningProcs, procs.TotalCPUPct, humanBytes(procs.TotalRSSBytes))
-	summaryLine := summaryStyle.Render(baseSummary)
-	activeFilterStyle := lipgloss.NewStyle().Foreground(colorPink).Bold(true)
-	if pinnedOnly {
-		summaryLine += summaryStyle.Render(" │ ") + activeFilterStyle.Render(fmt.Sprintf("pinned (%d)", totalFiltered))
-	}
-	if searchQuery != "" {
-		summaryLine += summaryStyle.Render(" │ ") + activeFilterStyle.Render(fmt.Sprintf("%d matches", totalFiltered))
-	}
-	b.WriteString(summaryLine + "\n\n")
+	// Detail strip: the columns that don't fit (and the full cmdline) for the cursor row.
+	b.WriteString("\n" + renderProcessDetailStrip(combined, procTable.Cursor(), width))
 
-	// Build process table
-	var table strings.Builder
-
-	// Header
-	sortIndicator := func(field procSortField) string {
-		if sortBy == field {
-			return "▼"
-		}
-		return ""
-	}
-
-	// Adaptive column widths based on terminal width. The NET R/W column only appears
-	// on wide terminals (the table is already busy); the 'w' sort still works at any
-	// width and the data is always collected, so narrow terminals just don't show it.
-	nameWidth := 16
-	cmdlineWidth := 0
-	showNet := width >= 120
-	if width >= 120 {
-		nameWidth = 20
-		cmdlineWidth = 24 // trimmed from 30 to make room for the NET column
-	} else if width >= 100 {
-		nameWidth = 18
-		cmdlineWidth = 20
-	}
-
-	header := fmt.Sprintf("   %-6s %-*s", "PID", nameWidth, "NAME"+sortIndicator(procSortName))
-	header += fmt.Sprintf(" %7s", "CPU%"+sortIndicator(procSortCPU))
-	header += fmt.Sprintf(" %8s", "MEM"+sortIndicator(procSortMem))
-	header += " STATE"
-	header += fmt.Sprintf(" %4s", "THR"+sortIndicator(procSortThreads))
-	header += fmt.Sprintf(" %5s", "FDs"+sortIndicator(procSortFDs))
-	header += fmt.Sprintf(" %11s", "DISK R/W"+sortIndicator(procSortDiskIO))
-	if showNet {
-		header += fmt.Sprintf(" %11s", "NET R/W"+sortIndicator(procSortNet))
-	}
-	header += " AGE"
-	if cmdlineWidth > 0 {
-		header += fmt.Sprintf(" %-*s", cmdlineWidth, "CMDLINE")
-	}
-	table.WriteString(headerStyle.Render(header) + "\n")
-
-	// renderRow renders a single process row at the given cursor-relative index.
-	renderRow := func(p api.ProcessMetric, idx int) string {
-		cpuPct := p.CPUUserPct + p.CPUSystemPct
-		isSelected := idx == cursor
-
-		name := truncate(p.Name, nameWidth)
-
-		stateStr := p.State
-		if !isSelected {
-			stateStyle := valueStyle
-			switch p.State {
-			case "R":
-				stateStyle = lipgloss.NewStyle().Foreground(colorPurple)
-			case "S":
-				stateStyle = dimStyle
-			case "D":
-				stateStyle = alertWarnStyle
-			case "Z":
-				stateStyle = alertCritStyle
-			}
-			stateStr = stateStyle.Render(p.State)
-		}
-
-		age := ""
-		if p.StartTimeNs > 0 {
-			started := time.Unix(0, p.StartTimeNs)
-			dur := time.Since(started)
-			age = formatAge(dur)
-		}
-
-		pinChar := " "
-		if pinnedMap[p.Name] {
-			if isSelected {
-				pinChar = "*"
-			} else {
-				pinChar = lipgloss.NewStyle().Foreground(colorPink).Render("*")
-			}
-		}
-
-		row := fmt.Sprintf("%s %-6d %-*s", pinChar, p.PID, nameWidth, name)
-		row += fmt.Sprintf(" %6.1f%%", cpuPct)
-		row += fmt.Sprintf(" %8s", humanBytes(p.RSSBytes))
-		row += fmt.Sprintf("  %s  ", stateStr)
-		row += fmt.Sprintf(" %4d", p.NumThreads)
-		if p.Enriched {
-			row += fmt.Sprintf(" %5d", p.NumFDs)
-			// Combined read/write byte-rate; "--" when the daemon can't read this
-			// process's /proc/[pid]/io shows as 0/0 (same as idle — indistinguishable).
-			row += fmt.Sprintf(" %11s", humanBytes(uint64(p.ReadBytesSec))+"/"+humanBytes(uint64(p.WriteBytesSec)))
-			if showNet {
-				row += fmt.Sprintf(" %11s", humanBytes(uint64(p.RxBytesSec))+"/"+humanBytes(uint64(p.TxBytesSec)))
-			}
-		} else {
-			row += "    --"
-			row += fmt.Sprintf(" %11s", "--")
-			if showNet {
-				row += fmt.Sprintf(" %11s", "--")
-			}
-		}
-		row += fmt.Sprintf(" %6s", age)
-
-		if cmdlineWidth > 0 {
-			if p.Enriched && p.Cmdline != "" {
-				cmdline := truncate(p.Cmdline, cmdlineWidth)
-				if !isSelected {
-					row += " " + dimStyle.Render(cmdline)
-				} else {
-					row += " " + cmdline
-				}
-			} else if !p.Enriched {
-				if !isSelected {
-					row += " " + dimStyle.Render("--")
-				} else {
-					row += " --"
-				}
-			}
-		}
-
-		if isSelected {
-			row = selectedRowStyle.Render(row)
-		}
-		return row
-	}
-
-	// Render enriched processes (above the fold)
-	rowIdx := 0
-	for _, p := range enriched {
-		table.WriteString(renderRow(p, rowIdx) + "\n")
-		rowIdx++
-	}
-
-	// Fold separator between enriched and non-enriched
-	maxBelowFold := 50
-	belowFold := len(nonEnriched)
-	if belowFold > maxBelowFold {
-		belowFold = maxBelowFold
-	}
-	filteredLen := len(enriched) + belowFold
-
-	if len(nonEnriched) > 0 && len(enriched) > 0 {
-		foldLabel := fmt.Sprintf(" %d more processes ", len(nonEnriched))
-		innerWidth := width - 4 // account for panel border + padding
-		dashes := innerWidth - len(foldLabel)
-		if dashes < 2 {
-			dashes = 2
-		}
-		left := dashes / 2
-		right := dashes - left
-		foldLine := strings.Repeat("─", left) + foldLabel + strings.Repeat("─", right)
-		table.WriteString(dimStyle.Render(foldLine) + "\n")
-	}
-
-	// Render non-enriched processes (below the fold), capped
-	for i := 0; i < belowFold; i++ {
-		table.WriteString(renderRow(nonEnriched[i], rowIdx) + "\n")
-		rowIdx++
-	}
-
-	if len(nonEnriched) > maxBelowFold {
-		table.WriteString(dimStyle.Render(fmt.Sprintf("  ... and %d more processes", len(nonEnriched)-maxBelowFold)) + "\n")
-	}
-
-	// The keyboard-shortcut help is rendered as a fixed footer (processFooter, via
-	// Model.viewFooter) OUTSIDE the scrollable viewport — inside the Process List
-	// panel it scrolled off the bottom once the table filled the screen.
-	b.WriteString(renderPanel("Process List", table.String(), width))
-
-	// Chart mode tabs and history chart (pre-rendered)
+	// Chart-mode tabs + the pre-rendered history chart, always below the (bounded) table.
 	if cachedChart != "" {
 		b.WriteString("\n")
 		b.WriteString(renderChartModeTabs(chartPinned, width))
 		b.WriteString(cachedChart)
 	}
 
-	return b.String(), filteredLen
+	return b.String(), len(combined)
+}
+
+// procColumn describes one process-table column: its key (matched in buildProcessRow),
+// header title, fixed cell width, and alignment.
+type procColumn struct {
+	key   string
+	title string
+	width int
+	right bool
+}
+
+// processColumns returns the visible column set for the given terminal width, with a ▼
+// appended to the active sort's header. Narrow terminals drop the busier columns; the
+// data is still collected and reachable via the sort keys and the detail strip.
+func processColumns(width int, sortBy procSortField) []procColumn {
+	inner := width - 4 // panel border (2) + padding (2)
+	if inner < 20 {
+		inner = 20
+	}
+	nameW := 16
+	switch {
+	case width >= 150:
+		nameW = 24
+	case width >= 120:
+		nameW = 20
+	case width >= 100:
+		nameW = 18
+	}
+
+	cols := []procColumn{
+		{key: "mark", title: "", width: 2},
+		{key: "pid", title: "PID", width: 7, right: true},
+		{key: "name", title: "NAME", width: nameW},
+		{key: "cpu", title: "CPU%", width: 7, right: true},
+		{key: "mem", title: "MEM", width: 8, right: true},
+		{key: "st", title: "ST", width: 3},
+	}
+	if width >= 100 {
+		cols = append(cols,
+			procColumn{key: "thr", title: "THR", width: 5, right: true},
+			procColumn{key: "fds", title: "FDs", width: 6, right: true},
+			procColumn{key: "disk", title: "DISK R/W", width: 12, right: true},
+		)
+	}
+	if width >= 120 {
+		cols = append(cols, procColumn{key: "net", title: "NET R/W", width: 12, right: true})
+	}
+	cols = append(cols, procColumn{key: "age", title: "AGE", width: 5, right: true})
+
+	// CMDLINE absorbs the leftover width when there's room for a useful amount.
+	used := 0
+	for _, c := range cols {
+		used += c.width
+	}
+	if cmdW := inner - used; cmdW >= 14 {
+		cols = append(cols, procColumn{key: "cmd", title: "CMDLINE", width: cmdW})
+	}
+
+	if active := sortColumnKey(sortBy); active != "" {
+		for i := range cols {
+			if cols[i].key == active && cols[i].title != "" {
+				cols[i].title += "▼"
+			}
+		}
+	}
+	return cols
+}
+
+// sortColumnKey maps a sort field to the column key it highlights (empty if that column
+// isn't part of the table layout).
+func sortColumnKey(sortBy procSortField) string {
+	switch sortBy {
+	case procSortCPU:
+		return "cpu"
+	case procSortMem:
+		return "mem"
+	case procSortPID:
+		return "pid"
+	case procSortName:
+		return "name"
+	case procSortThreads:
+		return "thr"
+	case procSortFDs:
+		return "fds"
+	case procSortDiskIO:
+		return "disk"
+	case procSortNet:
+		return "net"
+	}
+	return ""
+}
+
+// sortName is the human label for a sort field, shown in the panel title so the active
+// sort is visible even when its column is hidden on a narrow terminal.
+func sortName(sortBy procSortField) string {
+	switch sortBy {
+	case procSortCPU:
+		return "cpu"
+	case procSortMem:
+		return "mem"
+	case procSortPID:
+		return "pid"
+	case procSortName:
+		return "name"
+	case procSortThreads:
+		return "threads"
+	case procSortFDs:
+		return "fds"
+	case procSortDiskIO:
+		return "disk"
+	case procSortNet:
+		return "net"
+	}
+	return "cpu"
+}
+
+// toTableColumns pre-aligns each header to its exact column width so the bubbles/table
+// header (which left-aligns) lines up with the alignment-baked cell values.
+func toTableColumns(cols []procColumn) []table.Column {
+	out := make([]table.Column, len(cols))
+	for i, c := range cols {
+		out[i] = table.Column{Title: alignCell(c.title, c.width, c.right), Width: c.width}
+	}
+	return out
+}
+
+// alignCell formats s to exactly width w (left- or right-aligned) with a one-column gap,
+// so adjacent cells (which bubbles/table renders flush) don't run together. The result is
+// exactly w wide, so the table's own Width/Truncate become no-ops (and never corrupt it).
+func alignCell(s string, w int, right bool) string {
+	if w <= 1 {
+		return truncate(s, w)
+	}
+	s = truncate(s, w-1) // reserve one column for the inter-column gap
+	if right {
+		return fmt.Sprintf("%*s ", w-1, s)
+	}
+	return fmt.Sprintf("%-*s", w, s)
+}
+
+// buildProcessRow renders one process into aligned cell strings matching cols. Cells are
+// plain text: bubbles/table's runewidth truncation isn't ANSI-aware, so per-cell colour
+// would corrupt; colour/identity lives in the table chrome (header, selected row, border).
+func buildProcessRow(p api.ProcessMetric, cols []procColumn, pinnedMap map[string]bool) table.Row {
+	row := make(table.Row, len(cols))
+	for i, c := range cols {
+		row[i] = alignCell(processCellValue(p, c.key, pinnedMap), c.width, c.right)
+	}
+	return row
+}
+
+// processCellValue returns the raw (unaligned) string for one column of one process.
+func processCellValue(p api.ProcessMetric, key string, pinnedMap map[string]bool) string {
+	switch key {
+	case "mark":
+		switch {
+		case pinnedMap[p.Name]:
+			return "*"
+		case !p.Enriched:
+			return "·"
+		default:
+			return " "
+		}
+	case "pid":
+		return fmt.Sprintf("%d", p.PID)
+	case "name":
+		return p.Name
+	case "cpu":
+		return fmt.Sprintf("%.1f%%", p.CPUUserPct+p.CPUSystemPct)
+	case "mem":
+		return humanBytes(p.RSSBytes)
+	case "st":
+		return p.State
+	case "thr":
+		return fmt.Sprintf("%d", p.NumThreads)
+	case "fds":
+		if !p.Enriched {
+			return "--"
+		}
+		return fmt.Sprintf("%d", p.NumFDs)
+	case "disk":
+		if !p.Enriched {
+			return "--"
+		}
+		return humanBytes(uint64(p.ReadBytesSec)) + "/" + humanBytes(uint64(p.WriteBytesSec))
+	case "net":
+		if !p.Enriched {
+			return "--"
+		}
+		return humanBytes(uint64(p.RxBytesSec)) + "/" + humanBytes(uint64(p.TxBytesSec))
+	case "age":
+		return processAge(p)
+	case "cmd":
+		if p.Enriched && p.Cmdline != "" {
+			return p.Cmdline
+		}
+		return "--"
+	}
+	return ""
+}
+
+func processAge(p api.ProcessMetric) string {
+	if p.StartTimeNs <= 0 {
+		return ""
+	}
+	return formatAge(time.Since(time.Unix(0, p.StartTimeNs)))
+}
+
+// processPanelTitle is the pink panel title: the summary line plus the active sort (so
+// the sort is visible even when its column is hidden) and any active filter.
+func processPanelTitle(procs *api.ProcessResponse, sortBy procSortField, shown int, pinnedOnly bool, searchQuery string) string {
+	title := fmt.Sprintf("Processes · %d total · %d active · CPU %.1f%% · Mem %s · ↓%s",
+		procs.TotalProcs, procs.ActiveProcs, procs.TotalCPUPct, humanBytes(procs.TotalRSSBytes), sortName(sortBy))
+	if pinnedOnly {
+		title += fmt.Sprintf(" · pinned %d", shown)
+	}
+	if searchQuery != "" {
+		title += fmt.Sprintf(" · %d matches", shown)
+	}
+	return title
+}
+
+// renderProcessDetailStrip is the single line under the table showing the selected
+// process in full — the columns the current width can't fit, plus the whole cmdline.
+func renderProcessDetailStrip(combined []api.ProcessMetric, cursor, width int) string {
+	if cursor < 0 || cursor >= len(combined) {
+		return ""
+	}
+	p := combined[cursor]
+	parts := []string{
+		fmt.Sprintf("cpu %.1f%%", p.CPUUserPct+p.CPUSystemPct),
+		fmt.Sprintf("mem %s", humanBytes(p.RSSBytes)),
+		fmt.Sprintf("thr %d", p.NumThreads),
+	}
+	if p.Enriched {
+		parts = append(parts,
+			fmt.Sprintf("fds %d", p.NumFDs),
+			fmt.Sprintf("disk %s/%s", humanBytes(uint64(p.ReadBytesSec)), humanBytes(uint64(p.WriteBytesSec))),
+			fmt.Sprintf("net %s/%s", humanBytes(uint64(p.RxBytesSec)), humanBytes(uint64(p.TxBytesSec))),
+		)
+	}
+	if age := processAge(p); age != "" {
+		parts = append(parts, "age "+age)
+	}
+	rest := strings.Join(parts, " · ")
+	if p.Enriched && p.Cmdline != "" {
+		rest += " · " + p.Cmdline
+	}
+
+	head := fmt.Sprintf("%d %s", p.PID, p.Name)
+	marker := lipgloss.NewStyle().Foreground(colorPink).Render("▸ ")
+	// Budget: marker (2) + head + " · " (3), truncate the remainder to fit one line.
+	avail := width - 2 - utf8.RuneCountInString(head) - 3
+	if avail < 0 {
+		avail = 0
+	}
+	return marker + valueStyle.Render(head) + dimStyle.Render(" · "+truncate(rest, avail))
 }
 
 // processFooter builds the process view's shortcut-help line for the fixed footer,
