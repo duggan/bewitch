@@ -155,12 +155,19 @@ func main() {
 		procCollector = proc
 	}
 
-	// Per-process network I/O via eBPF (Linux only; a no-op stub elsewhere). Skipped
-	// in mock mode (synthetic data shouldn't attach real kprobes). Load failures —
-	// old kernel, missing CAP_BPF, BTF-less host, unprivileged container — degrade to
-	// "no network rates" rather than failing the daemon, matching the SMART/GPU pattern.
+	// Per-process network I/O via eBPF (Linux only; a no-op stub elsewhere). Skipped in
+	// mock mode (synthetic data shouldn't attach real programs) and when disabled via
+	// [collectors.process] network_io = false (no programs loaded → no per-syscall kernel
+	// overhead and no per-cycle map iteration). Load failures — old kernel, missing
+	// CAP_BPF, BTF-less host, unprivileged container — degrade to "no network rates"
+	// rather than failing the daemon, matching the SMART/GPU pattern.
 	var netIOReader collector.NetIOReader
-	if !cfg.Daemon.Mock {
+	switch {
+	case cfg.Daemon.Mock:
+		// no-op
+	case !cfg.Collectors.Process.IsNetworkIOEnabled():
+		log.Infof("per-process network I/O disabled by config")
+	default:
 		if reader, err := collector.NewNetIOReader(); err != nil {
 			log.Warnf("per-process network I/O unavailable: %v", err)
 		} else if reader != nil {

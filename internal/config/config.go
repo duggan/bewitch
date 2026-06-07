@@ -186,10 +186,24 @@ type ProcessCollectorConfig struct {
 	Interval     string   `toml:"interval"`
 	MaxProcesses int      `toml:"max_processes"`
 	Pinned       []string `toml:"pinned"` // Glob patterns of process names to always track with full metrics
+	// NetworkIO toggles per-process network I/O collection (the eBPF reader). Pointer
+	// so an unset value defaults to enabled; set false to skip loading/attaching the BPF
+	// programs entirely, removing both the per-syscall kernel overhead and the per-cycle
+	// map iteration. Disk I/O (cheap /proc reads) is unaffected.
+	NetworkIO *bool `toml:"network_io"`
 }
 
 func (c *ProcessCollectorConfig) GetInterval(defaultInterval time.Duration) time.Duration {
 	return collectorInterval(c.Interval, defaultInterval)
+}
+
+// IsNetworkIOEnabled reports whether per-process network I/O (eBPF) should be collected.
+// Unset defaults to enabled, mirroring the temperature/power collector convention.
+func (c *ProcessCollectorConfig) IsNetworkIOEnabled() bool {
+	if c.NetworkIO == nil {
+		return true
+	}
+	return *c.NetworkIO
 }
 
 // DefaultMaxProcesses is the default number of processes to track.

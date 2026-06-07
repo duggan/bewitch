@@ -103,3 +103,6 @@ refresh_interval = "2s"
 # interval = "5s"
 # max_processes = 100  # maximum number of processes to track per collection cycle
 # pinned = ["nginx*", "postgres", "redis-server"]  # glob patterns of process names to always track with full metrics
+# network_io = true  # per-process network I/O via eBPF (TCP rx/tx); set false to skip loading
+#                    # the BPF programs entirely if the per-syscall/per-cycle overhead is unwanted.
+#                    # Requires CAP_BPF + CAP_PERFMON, BTF, and kernel >= 5.5; disk I/O is unaffected.

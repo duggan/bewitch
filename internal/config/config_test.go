@@ -159,6 +159,49 @@ func TestPowerCollectorIsEnabled(t *testing.T) {
 	}
 }
 
+func TestProcessNetworkIOEnabled(t *testing.T) {
+	trueVal := true
+	falseVal := false
+
+	tests := []struct {
+		name      string
+		networkIO *bool
+		want      bool
+	}{
+		{"nil defaults to true", nil, true},
+		{"explicit true", &trueVal, true},
+		{"explicit false", &falseVal, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := ProcessCollectorConfig{NetworkIO: tt.networkIO}
+			if got := c.IsNetworkIOEnabled(); got != tt.want {
+				t.Errorf("IsNetworkIOEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestLoadProcessNetworkIO confirms the network_io TOML key round-trips through Load
+// (guards the struct tag, not just the accessor).
+func TestLoadProcessNetworkIO(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bewitch.toml")
+	if err := os.WriteFile(path, []byte("[collectors.process]\nnetwork_io = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Collectors.Process.NetworkIO == nil {
+		t.Fatal("network_io did not parse (nil pointer)")
+	}
+	if cfg.Collectors.Process.IsNetworkIOEnabled() {
+		t.Error("network_io = false should disable network I/O")
+	}
+}
+
 func TestGetMaxProcesses(t *testing.T) {
 	tests := []struct {
 		name string
