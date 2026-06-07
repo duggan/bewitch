@@ -6,7 +6,7 @@ argument-hint: "<version> [description...]"
 
 # /changelog - Update Changelog
 
-Add entries to the project changelog (`CHANGELOG.md`), the docs site changelog page (`site/src/pages/docs/changelog.tsx`), and the Debian changelog (`debian/changelog`).
+Add entries to the project changelog (`CHANGELOG.md`), the Zola docs site changelog page (`site/content/docs/changelog.md`), and the Debian changelog (`debian/changelog`).
 
 ## Usage
 
@@ -23,7 +23,7 @@ Examples:
 1. **Reads** the current `CHANGELOG.md` and recent git history
 2. **Drafts** a new version entry with categorised changes (Added, Changed, Fixed, Removed)
 3. **Updates** `CHANGELOG.md` with the new entry below the `# Changelog` header
-4. **Updates** `site/src/pages/docs/changelog.tsx` with matching HTML content
+4. **Updates** `site/content/docs/changelog.md` with matching Markdown content
 5. **Updates** `debian/changelog` with a new entry in strict Debian format
 
 ## Changelog Format
@@ -59,24 +59,26 @@ Rules:
 
 ## Docs Site Changelog Format
 
-`site/src/pages/docs/changelog.tsx` mirrors the markdown content as JSX. Each version section uses:
+`site/content/docs/changelog.md` is a Zola Markdown page with a TOML front-matter block (`+++ … +++`) at the top. Below the front matter and the GitHub-link intro paragraph, each version section is plain Markdown:
 
-```tsx
-<h2>0.4.0</h2>
-<p class="text-muted text-sm">2026-04-01</p>
-<h3>Added</h3>
-<ul>
-  <li>New feature description</li>
-</ul>
+```markdown
+## 0.4.0
+
+2026-04-01
+
+### Added
+
+- New feature description
 ```
 
 Rules:
-- Version headers are `<h2>` (without the `v` prefix or brackets)
-- Date is a `<p>` with `text-muted text-sm` classes
-- Category headers are `<h3>`
-- Entries are `<li>` inside `<ul>`
-- Inline code uses `<code>` tags
-- New version sections go after the opening `<p>` (the GitHub link paragraph) and before existing versions
+- The `+++` front matter at the top of the file is left untouched
+- Version headers are `## 0.4.0` (no `v` prefix, no brackets — unlike `CHANGELOG.md`)
+- The date is a standalone paragraph line under the version header (no surrounding markup)
+- Category headers are `### Added` / `### Changed` / `### Fixed` / `### Removed`
+- Entries are `-` Markdown list items, inline code uses backticks
+- New version sections go after the intro paragraph (the GitHub-link line) and before the first existing `## <version>`
+- Content mirrors `CHANGELOG.md` exactly — only the heading style differs (`## 0.4.0` + bare date line vs `## [0.4.0] - 2026-04-01`)
 
 ## Debian Changelog Format
 
@@ -104,7 +106,7 @@ Format rules:
 
 When invoked:
 
-1. Read `CHANGELOG.md`, `site/src/pages/docs/changelog.tsx`, and `debian/changelog` to understand the current state
+1. Read `CHANGELOG.md`, `site/content/docs/changelog.md`, and `debian/changelog` to understand the current state
 2. If no description was provided, check git history since the last tag:
    ```bash
    git log --oneline $(git describe --tags --abbrev=0)..HEAD
@@ -113,8 +115,8 @@ When invoked:
 4. Once confirmed, update `CHANGELOG.md`:
    - Insert the new version section after the `# Changelog` header line and its description
    - Keep existing entries unchanged
-5. Update `site/src/pages/docs/changelog.tsx`:
-   - Insert the new version section as JSX after the GitHub link `<p>` and before the first existing `<h2>`
+5. Update `site/content/docs/changelog.md`:
+   - Insert the new version section as Markdown after the GitHub-link intro paragraph and before the first existing `## <version>` (leave the `+++` front matter untouched)
 6. Update `debian/changelog`:
    - Prepend a new entry using the maintainer info from the existing top entry
    - Use the current timestamp in RFC 2822 format

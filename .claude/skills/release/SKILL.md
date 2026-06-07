@@ -20,12 +20,13 @@ Examples:
 
 ## What This Skill Does
 
-1. **Updates changelogs** via `/changelog` (`CHANGELOG.md`, docs site, `debian/changelog`)
+1. **Updates changelogs** via `/changelog` (`CHANGELOG.md`, the Zola docs site at `site/content/docs/changelog.md`, `debian/changelog`)
 2. **Updates `VERSION`** and `LATEST_STABLE` files with the new version
-3. **Adds version** to the docs site version dropdown in `site/src/versions.ts`
-4. **Commits** the version bump and changelog
-5. **Tags** the release as `v<version>`
-6. **Pushes** the commit and tag (after user confirmation)
+3. **Commits** the version bump and changelog
+4. **Tags** the release as `v<version>`
+5. **Pushes** the commit and tag (after user confirmation)
+
+> The docs site is a Zola static site (migrated from the old Vite/TSX setup). There is **no `site/src/versions.ts`** to maintain — the version dropdown and versioned docs are fully dynamic: `release.yml` uploads versioned docs to R2 on each `v*` tag, and the Cloudflare Pages function `site/functions/docs/[[path]].js` serves them. The dropdown label is driven by `LATEST_STABLE`. So a release needs **no manual edit of any version list** in the repo.
 
 CI handles the rest — the `release.yml` workflow triggers on `v*` tags and:
 - Builds `.deb` and `.tar.gz` for amd64 and arm64
@@ -52,9 +53,8 @@ Version vs revision:
 
 When invoked:
 
-1. Run `/changelog <version>` to update all changelogs (CHANGELOG.md, docs site, debian/changelog)
-2. Update `VERSION` and `LATEST_STABLE` files with the new version
-3. Add a new versioned-docs entry to `site/src/versions.ts`
-4. Commit all changes
-5. Tag the release as `v<version>`
-6. Ask the user if they want to push now. If yes, run `git push origin main v<version>`
+1. Run `/changelog <version>` to update all changelogs (`CHANGELOG.md`, `site/content/docs/changelog.md`, `debian/changelog`)
+2. Update `VERSION` and `LATEST_STABLE` files with the new version (note: `VERSION` is often already at the target version from the previous release's dev-cycle bump — in that case only `LATEST_STABLE` changes)
+3. Commit all changes
+4. Tag the release as `v<version>`
+5. Ask the user if they want to push now. If yes, run `git push origin main v<version>`
