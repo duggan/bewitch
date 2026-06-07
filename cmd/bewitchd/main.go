@@ -388,21 +388,24 @@ func main() {
 		interval:  cfg.Collectors.Process.GetInterval(defaultInterval),
 	})
 
-	// Compute GCD of all intervals to determine tick rate
-	gcdDuration := func(a, b time.Duration) time.Duration {
-		for b != 0 {
-			a, b = b, a%b
-		}
-		return a
+	// Tick at the GCD of all collector intervals (floored — see computeTickInterval),
+	// firing each collector when tickCount % tickMod == 0.
+	collectorIntervals := make([]time.Duration, len(scheduled))
+	for i := range scheduled {
+		collectorIntervals[i] = scheduled[i].interval
 	}
-	tickInterval := scheduled[0].interval
-	for _, sc := range scheduled[1:] {
-		tickInterval = gcdDuration(tickInterval, sc.interval)
+	tickInterval, capped := computeTickInterval(collectorIntervals)
+	if capped {
+		log.Warnf("collector intervals share no common divisor ≥ %s; capping the scheduler tick at %s and approximating collector cadences — prefer round intervals (1s, 5s, 30s) to avoid this", minTick, minTick)
 	}
 
-	// Initialize tick modulos (all fire on first tick: tickCount=0, 0%n==0)
+	// Initialize tick modulos (all fire on first tick: tickCount=0, 0%n==0).
 	for i := range scheduled {
-		scheduled[i].tickMod = int(scheduled[i].interval / tickInterval)
+		mod := int(scheduled[i].interval / tickInterval)
+		if mod < 1 {
+			mod = 1 // a capped tick can exceed a collector's interval; never 0 (no-fire)
+		}
+		scheduled[i].tickMod = mod
 	}
 
 	// Log per-collector intervals and push to API server
@@ -897,6 +900,39 @@ func runScheduledJob(st *store.Store, jobName string, interval time.Duration, do
 			}
 		}
 	}()
+}
+
+// minTick floors the scheduler tick so pathological collector-interval
+// combinations can't spin it at hundreds of wakeups per second.
+const minTick = 100 * time.Millisecond
+
+func gcdDuration(a, b time.Duration) time.Duration {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
+}
+
+// computeTickInterval returns the scheduler tick — the GCD of all collector
+// intervals — floored at minTick, plus whether the floor was applied. Flooring
+// stops coprime sub-second intervals (whose GCD can be a few milliseconds) from
+// spinning the scheduler thousands of times a second. The minimum collector
+// interval is 100ms, so the floor engages only for intervals with no clean common
+// divisor, where each collector's cadence is then approximated to the nearest tick
+// multiple — a deliberate trade against runaway churn. Round intervals (1s, 5s,
+// 30s) share a clean divisor and never hit the floor.
+func computeTickInterval(intervals []time.Duration) (time.Duration, bool) {
+	if len(intervals) == 0 {
+		return minTick, false
+	}
+	tick := intervals[0]
+	for _, iv := range intervals[1:] {
+		tick = gcdDuration(tick, iv)
+	}
+	if tick < minTick {
+		return minTick, true
+	}
+	return tick, false
 }
 
 // selfRSSBytes returns the daemon's resident set size. On Linux it reads
