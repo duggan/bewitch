@@ -69,7 +69,7 @@ func (e *Engine) ReloadRules() {
 	// Threshold rules
 	if rows, err := db.Query(`SELECT r.id, r.name, r.severity,
 		t.metric, t.operator, t.value, t.duration,
-		COALESCE(t.mount, ''), COALESCE(t.interface_name, ''), COALESCE(t.sensor, '')
+		COALESCE(t.mount, ''), COALESCE(t.interface_name, ''), COALESCE(t.sensor, ''), COALESCE(t.aggregate, 'avg')
 		FROM alert_rules r
 		JOIN alert_rule_threshold t ON t.rule_id = r.id
 		WHERE r.enabled = true AND r.type = 'threshold'`); err != nil {
@@ -80,7 +80,7 @@ func (e *Engine) ReloadRules() {
 			var cfg ThresholdConfig
 			if err := rows.Scan(&base.ID, &base.Name, &base.Severity,
 				&cfg.Metric, &cfg.Operator, &cfg.Value, &cfg.Duration,
-				&cfg.Mount, &cfg.InterfaceName, &cfg.Sensor); err != nil {
+				&cfg.Mount, &cfg.InterfaceName, &cfg.Sensor, &cfg.Aggregate); err != nil {
 				log.Errorf("scanning threshold rule: %v", err)
 				continue
 			}

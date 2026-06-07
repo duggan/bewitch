@@ -184,6 +184,48 @@ func TestThresholdRuleBuildQuery(t *testing.T) {
 	})
 }
 
+// TestThresholdAggregateChoice verifies the per-rule aggregate threads into the
+// SQL function and the message label for value metrics, defaults to avg on
+// empty/unknown, and is IGNORED by the SMART metrics (intrinsic MAX/COUNT).
+func TestThresholdAggregateChoice(t *testing.T) {
+	cutoff := time.Now()
+	cases := []struct {
+		name, metric, aggregate, wantLabel, wantFn string
+	}{
+		{"cpu avg", "cpu.aggregate", "avg", "avg", "AVG("},
+		{"cpu max", "cpu.aggregate", "max", "max", "MAX("},
+		{"cpu min", "cpu.aggregate", "min", "min", "MIN("},
+		{"cpu empty defaults avg", "cpu.aggregate", "", "avg", "AVG("},
+		{"cpu unknown defaults avg", "cpu.aggregate", "bogus", "avg", "AVG("},
+		{"memory min", "memory.used_pct", "min", "min", "MIN("},
+		{"disk max", "disk.used_pct", "max", "max", "MAX("},
+		{"network.rx max", "network.rx", "max", "max", "MAX("},
+		{"temperature max", "temperature.sensor", "max", "max", "MAX("},
+		{"gpu.utilization max", "gpu.utilization", "max", "max", "MAX("},
+		// SMART ignores the user's choice and keeps its intrinsic aggregate.
+		{"smart.reallocated ignores avg", "smart.reallocated", "avg", "max", "MAX("},
+		{"smart.percent_used ignores min", "smart.percent_used", "min", "max", "MAX("},
+		{"smart.unhealthy ignores max", "smart.unhealthy", "max", "count", "COUNT("},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := &ThresholdRule{cfg: ThresholdConfig{
+				Metric: c.metric, Mount: "/", InterfaceName: "eth0", Sensor: "s", Aggregate: c.aggregate,
+			}}
+			query, _, agg, err := r.buildQuery(cutoff)
+			if err != nil {
+				t.Fatalf("buildQuery: %v", err)
+			}
+			if agg != c.wantLabel {
+				t.Errorf("agg label = %q, want %q", agg, c.wantLabel)
+			}
+			if !strings.Contains(query, c.wantFn) {
+				t.Errorf("query missing %q:\n%s", c.wantFn, query)
+			}
+		})
+	}
+}
+
 func TestRuleConstructorsAndName(t *testing.T) {
 	base := AlertRuleBase{ID: 1, Name: "test-rule", Type: "threshold", Severity: "warning", Enabled: true}
 

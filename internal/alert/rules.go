@@ -27,6 +27,25 @@ type ThresholdConfig struct {
 	Mount         string
 	InterfaceName string
 	Sensor        string
+	// Aggregate is the windowed reduction applied to the AVG-backed metrics:
+	// "avg" (default), "max" (catch a transient spike that averages out), or
+	// "min". The SMART metrics ignore it (their MAX/COUNT aggregate is intrinsic).
+	// Empty is treated as "avg" for back-compat with pre-migration rows.
+	Aggregate string
+}
+
+// aggFunc maps the configured aggregate to its SQL function and the lowercase
+// label used in the fired-alert message. Anything unrecognised (including the
+// empty string from an old rule) falls back to AVG so behaviour is unchanged.
+func aggFunc(aggregate string) (sqlFn, label string) {
+	switch aggregate {
+	case "max":
+		return "MAX", "max"
+	case "min":
+		return "MIN", "min"
+	default:
+		return "AVG", "avg"
+	}
 }
 
 // PredictiveConfig holds parameters for predictive alerts.
@@ -124,53 +143,56 @@ func (r *ThresholdRule) Evaluate(db *sql.DB) (*Alert, error) {
 }
 
 // buildQuery returns the SQL, its bind args, and a label naming the aggregate it
-// computes ("avg", "max", or "count") so the fired-alert message can be truthful
-// about what the compared number represents.
+// computes ("avg"/"max"/"min" for the value metrics, "max"/"count" for SMART) so
+// the fired-alert message can be truthful about what the compared number is. The
+// value metrics honour the rule's configured aggregate; the SMART metrics keep
+// their intrinsic MAX/COUNT and ignore it.
 func (r *ThresholdRule) buildQuery(cutoff time.Time) (string, []any, string, error) {
+	fn, agg := aggFunc(r.cfg.Aggregate)
 	switch r.cfg.Metric {
 	case "cpu.aggregate":
 		// core = -1 is the whole-CPU aggregate (core = 0 was just physical core 0).
 		// 100 - idle counts everything non-idle — including nice/irq/softirq and,
 		// crucially, steal — so a contended VPS (high steal, low user+system) can
 		// actually trip the alert instead of looking idle.
-		return "SELECT AVG(100 - idle_pct) FROM cpu_metrics WHERE core = -1 AND ts > ?", []any{cutoff}, "avg", nil
+		return fmt.Sprintf("SELECT %s(100 - idle_pct) FROM cpu_metrics WHERE core = -1 AND ts > ?", fn), []any{cutoff}, agg, nil
 	case "memory.used_pct":
-		return "SELECT AVG(CAST(used_bytes AS DOUBLE) / NULLIF(total_bytes, 0) * 100) FROM memory_metrics WHERE ts > ?", []any{cutoff}, "avg", nil
+		return fmt.Sprintf("SELECT %s(CAST(used_bytes AS DOUBLE) / NULLIF(total_bytes, 0) * 100) FROM memory_metrics WHERE ts > ?", fn), []any{cutoff}, agg, nil
 	case "disk.used_pct":
-		return `SELECT AVG(CAST(m.used_bytes AS DOUBLE) / NULLIF(m.total_bytes, 0) * 100)
+		return fmt.Sprintf(`SELECT %s(CAST(m.used_bytes AS DOUBLE) / NULLIF(m.total_bytes, 0) * 100)
 			FROM disk_metrics m
 			JOIN dimension_values d ON d.category = 'mount' AND d.id = m.mount_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Mount, cutoff}, "avg", nil
+			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.Mount, cutoff}, agg, nil
 	case "network.rx":
-		return `SELECT AVG(m.rx_bytes_sec)
+		return fmt.Sprintf(`SELECT %s(m.rx_bytes_sec)
 			FROM network_metrics m
 			JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.InterfaceName, cutoff}, "avg", nil
+			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.InterfaceName, cutoff}, agg, nil
 	case "network.tx":
-		return `SELECT AVG(m.tx_bytes_sec)
+		return fmt.Sprintf(`SELECT %s(m.tx_bytes_sec)
 			FROM network_metrics m
 			JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.InterfaceName, cutoff}, "avg", nil
+			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.InterfaceName, cutoff}, agg, nil
 	case "temperature.sensor":
-		return `SELECT AVG(m.temp_celsius)
+		return fmt.Sprintf(`SELECT %s(m.temp_celsius)
 			FROM temperature_metrics m
 			JOIN dimension_values d ON d.category = 'sensor' AND d.id = m.sensor_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, "avg", nil
+			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.Sensor, cutoff}, agg, nil
 	case "gpu.utilization":
-		return `SELECT AVG(m.utilization_pct)
+		return fmt.Sprintf(`SELECT %s(m.utilization_pct)
 			FROM gpu_metrics m
 			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, "avg", nil
+			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.Sensor, cutoff}, agg, nil
 	case "gpu.temperature":
-		return `SELECT AVG(m.temp_celsius)
+		return fmt.Sprintf(`SELECT %s(m.temp_celsius)
 			FROM gpu_metrics m
 			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, "avg", nil
+			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.Sensor, cutoff}, agg, nil
 	case "gpu.power":
-		return `SELECT AVG(m.power_watts)
+		return fmt.Sprintf(`SELECT %s(m.power_watts)
 			FROM gpu_metrics m
 			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
-			WHERE d.value = ? AND m.ts > ?`, []any{r.cfg.Sensor, cutoff}, "avg", nil
+			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.Sensor, cutoff}, agg, nil
 	// SMART metrics aggregate across all physical devices (the worst value over the
 	// window) so a failing drive trips the alert without a per-device scope — fire
 	// e.g. smart.reallocated > 0 or smart.percent_used > 90.

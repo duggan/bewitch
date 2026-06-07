@@ -155,6 +155,7 @@ type AlertRuleMetric struct {
 	Operator      string  `json:"operator,omitempty"`
 	Value         float64 `json:"value,omitempty"`
 	Duration      string  `json:"duration,omitempty"`
+	Aggregate     string  `json:"aggregate,omitempty"` // avg|max|min over the window; empty = avg (value metrics only; SMART ignores it)
 	Mount         string  `json:"mount,omitempty"`
 	InterfaceName string  `json:"interface_name,omitempty"`
 	Sensor        string  `json:"sensor,omitempty"`

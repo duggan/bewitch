@@ -196,10 +196,11 @@ func (s *Server) handleListAlertRules(w http.ResponseWriter, r *http.Request) {
 		switch rule.Type {
 		case "threshold":
 			cfgErr = db.QueryRow(`SELECT metric, operator, value, duration,
-				COALESCE(mount, ''), COALESCE(interface_name, ''), COALESCE(sensor, '')
+				COALESCE(mount, ''), COALESCE(interface_name, ''), COALESCE(sensor, ''),
+				COALESCE(aggregate, 'avg')
 				FROM alert_rule_threshold WHERE rule_id = ?`, rule.ID).Scan(
 				&rule.Metric, &rule.Operator, &rule.Value, &rule.Duration,
-				&rule.Mount, &rule.InterfaceName, &rule.Sensor)
+				&rule.Mount, &rule.InterfaceName, &rule.Sensor, &rule.Aggregate)
 
 		case "predictive":
 			cfgErr = db.QueryRow(`SELECT metric, mount, predict_hours, threshold_pct
@@ -280,11 +281,15 @@ func (s *Server) handleCreateAlertRule(w http.ResponseWriter, r *http.Request) {
 	// Insert into the appropriate type-specific table
 	switch rule.Type {
 	case "threshold":
+		agg := rule.Aggregate
+		if agg == "" {
+			agg = "avg"
+		}
 		_, err = db.Exec(`INSERT INTO alert_rule_threshold
-			(rule_id, metric, operator, value, duration, mount, interface_name, sensor)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			(rule_id, metric, operator, value, duration, mount, interface_name, sensor, aggregate)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			ruleID, rule.Metric, rule.Operator, rule.Value,
-			rule.Duration, rule.Mount, rule.InterfaceName, rule.Sensor)
+			rule.Duration, rule.Mount, rule.InterfaceName, rule.Sensor, agg)
 
 	case "predictive":
 		_, err = db.Exec(`INSERT INTO alert_rule_predictive
@@ -405,11 +410,15 @@ func (s *Server) handleUpdateAlertRule(w http.ResponseWriter, r *http.Request) {
 
 	switch storedType {
 	case "threshold":
+		agg := rule.Aggregate
+		if agg == "" {
+			agg = "avg"
+		}
 		_, err = tx.Exec(`UPDATE alert_rule_threshold SET
-			metric = ?, operator = ?, value = ?, duration = ?, mount = ?, interface_name = ?, sensor = ?
+			metric = ?, operator = ?, value = ?, duration = ?, mount = ?, interface_name = ?, sensor = ?, aggregate = ?
 			WHERE rule_id = ?`,
 			rule.Metric, rule.Operator, rule.Value, rule.Duration,
-			rule.Mount, rule.InterfaceName, rule.Sensor, id)
+			rule.Mount, rule.InterfaceName, rule.Sensor, agg, id)
 
 	case "predictive":
 		_, err = tx.Exec(`UPDATE alert_rule_predictive SET

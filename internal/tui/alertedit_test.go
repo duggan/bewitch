@@ -97,6 +97,24 @@ func TestFormRoundTrip(t *testing.T) {
 	}
 }
 
+// TestFormRoundTripAggregate verifies the per-rule aggregate survives the
+// form's edit round-trip, and that an old rule with no stored aggregate comes
+// back as "avg" rather than empty.
+func TestFormRoundTripAggregate(t *testing.T) {
+	for _, agg := range []string{"avg", "max", "min"} {
+		in := api.AlertRuleMetric{ID: 1, Name: "cpu", Type: "threshold", Severity: "warning", Enabled: true,
+			Metric: "cpu.aggregate", Operator: ">", Value: 90, Duration: "5m", Aggregate: agg}
+		if out := fromAlertRuleMetric(in).toAlertRuleMetric(); out.Aggregate != agg {
+			t.Errorf("aggregate %q did not round-trip, got %q", agg, out.Aggregate)
+		}
+	}
+	in := api.AlertRuleMetric{ID: 2, Name: "old", Type: "threshold", Severity: "warning", Enabled: true,
+		Metric: "disk.used_pct", Operator: ">", Value: 80, Duration: "5m", Mount: "/"}
+	if out := fromAlertRuleMetric(in).toAlertRuleMetric(); out.Aggregate != "avg" {
+		t.Errorf("empty aggregate must default to avg, got %q", out.Aggregate)
+	}
+}
+
 // TestFromAlertRuleMetricCategory checks the derived category/direction used to render
 // the locked parameter group.
 func TestFromAlertRuleMetricCategory(t *testing.T) {

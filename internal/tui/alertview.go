@@ -136,8 +136,14 @@ func renderRuleDetail(r api.AlertRuleMetric, width int) string {
 	switch r.Type {
 	case "threshold":
 		// "over" (across the window), not "for" (sustained for its whole length):
-		// the engine compares the windowed average/max, mirroring the fired-alert text.
-		row("condition", fmt.Sprintf("%s %s over %s", r.Operator, ftoa(r.Value), r.Duration))
+		// the engine compares the windowed aggregate, mirroring the fired-alert text.
+		// Prefix the aggregate for value metrics; SMART has an intrinsic MAX/COUNT, so
+		// don't mislabel it with the stored placeholder 'avg'.
+		cond := fmt.Sprintf("%s %s over %s", r.Operator, ftoa(r.Value), r.Duration)
+		if r.Aggregate != "" && !strings.HasPrefix(r.Metric, "smart.") {
+			cond = r.Aggregate + " " + cond
+		}
+		row("condition", cond)
 		switch {
 		case r.Mount != "":
 			row("mount", r.Mount)

@@ -31,6 +31,7 @@ type alertFormState struct {
 	operator     string
 	valueStr     string
 	durationStr  string
+	aggregate    string // threshold value metrics: avg (default), max, min
 	severity     string
 	mount        string
 	ifaceName    string
@@ -157,6 +158,22 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 				Value(&state.smartMetric),
 		).WithHideFunc(func() bool {
 			return state.category != "smart"
+		}),
+		// Aggregate function (value metrics only). Its own group because huh only
+		// supports hiding at the group level — the SMART metrics have a fixed
+		// MAX/COUNT aggregate, so this is hidden for them (and for non-threshold types).
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Aggregate").
+				Description("How the metric is reduced over the window before comparing").
+				Options(
+					huh.NewOption("Average over the window", "avg"),
+					huh.NewOption("Maximum in the window (catch a spike)", "max"),
+					huh.NewOption("Minimum in the window", "min"),
+				).
+				Value(&state.aggregate),
+		).WithHideFunc(func() bool {
+			return state.alertType != "threshold" || state.category == "smart"
 		}),
 		// Threshold parameters
 		huh.NewGroup(
@@ -459,6 +476,12 @@ func (s *alertFormState) toAlertRuleMetric() api.AlertRuleMetric {
 		rule.Operator = s.operator
 		rule.Value, _ = strconv.ParseFloat(s.valueStr, 64)
 		rule.Duration = s.durationStr
+		// Default empty → "avg" (back-compat). SMART stores 'avg' too but the engine
+		// ignores it (SMART has a fixed MAX/COUNT aggregate); the form hides the picker.
+		rule.Aggregate = s.aggregate
+		if rule.Aggregate == "" {
+			rule.Aggregate = "avg"
+		}
 		switch s.category {
 		case "cpu":
 			rule.Metric = "cpu.aggregate"
@@ -539,6 +562,10 @@ func fromAlertRuleMetric(rule api.AlertRuleMetric) *alertFormState {
 		s.operator = rule.Operator
 		s.valueStr = ftoa(rule.Value)
 		s.durationStr = rule.Duration
+		s.aggregate = rule.Aggregate
+		if s.aggregate == "" {
+			s.aggregate = "avg" // old rules created before the aggregate column
+		}
 		switch rule.Metric {
 		case "cpu.aggregate":
 			s.category = "cpu"
