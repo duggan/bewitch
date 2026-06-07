@@ -2,6 +2,38 @@
 
 All notable changes to bewitch are documented here.
 
+## [0.7.0] - 2026-06-07
+
+### Added
+
+- **Prometheus `/metrics` endpoint** — exposes hardware/ECC/power/SMART/GPU metrics in OpenMetrics format for scraping into an existing Prometheus/Grafana stack (honours bearer auth on TCP)
+- **Shoutrrr notifications** — Discord, Telegram, ntfy, Slack, Gotify, webhook and more from a single `shoutrrr_urls` config list
+- **SMART history & alerting** — SMART data is now persisted to a `smart_metrics` table and alertable via `smart.reallocated`, `smart.pending`, `smart.uncorrectable`, `smart.percent_used` (NVMe wear) and `smart.unhealthy`, with a "Disk health (SMART)" category in the alert form
+- **Daemon self-metrics** — write-queue depth, dropped batches, process-info cache size, heap/RSS, goroutines and per-collector backoff state on both `GET /api/stats` and `/metrics` (`bewitch_self_*`); `bewitch stats` gains a "Daemon health" section
+- **Stateful alert lifecycle** — alerts fire on the rising edge, suppress while breaching, and send a recovery/all-clear notification when they resolve, plus a **dead-man's-switch** alert that fires when metric collection stalls
+- **Per-rule threshold aggregate** (avg/max/min) so a rule can catch a transient spike or a sustained floor, not just the average
+- New collectors: **system load average** (1/5/15 min), **per-NIC dropped packets** (rx/tx), and **filesystem inode usage**
+- "Daemon unreachable" indicator in the TUI status bar
+
+### Changed
+
+- **Hardened the TCP API** — multi-statement SQL is rejected, a plaintext (non-TLS) listener with no auth token is now a fatal startup error, request bodies are capped, and slow-loris timeouts are set
+- `cpu.aggregate` alerts now use true utilization (`100 - idle`, including steal) rather than just user+system of core 0
+- The alert form only offers hardware categories (SMART/GPU/temperature) the host actually reports, so unfireable rules can't be created
+- Per-view keyboard shortcuts render in a fixed footer that stays visible as content scrolls
+- A missing config file is no longer fatal — the daemon starts with defaults
+
+### Fixed
+
+- The four process/threshold/predictive/variance alert rules that advertised behaviour the engine didn't implement (sustained `process_down`, target force-enrichment, honest threshold wording, predictive already-breached firing) now work as described
+- RAPL power counters no longer vanish on counter wrap, and duplicate power zones discovered via flat powercap symlinks are deduped
+- The alert form's threshold hint is now metric-aware (previously showed a stale CPU label for SMART rules)
+- The variance rule is guarded to memory-only metrics instead of silently running under another label
+- Database compaction is now reader- and restart-safe
+- The query API no longer swallows row scan/iteration errors
+- Rune-safe truncation in TUI and REPL table rendering
+- TUI viewport content is rendered once per message instead of twice
+
 ## [0.6.0] - 2026-06-04
 
 ### Added

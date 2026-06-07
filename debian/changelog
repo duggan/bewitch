@@ -1,3 +1,29 @@
+bewitch (0.7.0-1) unstable; urgency=medium
+
+  * Add a Prometheus /metrics endpoint exposing hardware/ECC/power/SMART/GPU metrics in OpenMetrics format (honours bearer auth on TCP)
+  * Add Shoutrrr notifications (Discord, Telegram, ntfy, Slack, Gotify, webhook and more) from a single shoutrrr_urls config list
+  * Persist SMART disk health to a smart_metrics table and make it alertable via smart.reallocated/pending/uncorrectable/percent_used/unhealthy, with a Disk health (SMART) category in the alert form
+  * Expose daemon self-metrics (write-queue depth, dropped batches, process-info cache size, heap/RSS, goroutines, per-collector backoff) on /api/stats and /metrics; bewitch stats gains a Daemon health section
+  * Alerts now fire on the rising edge, suppress while breaching, and send a recovery/all-clear notification on resolve, plus a dead-man's-switch alert when metric collection stalls
+  * Add a per-rule threshold aggregate (avg/max/min) so a rule can catch a transient spike or a sustained floor
+  * Add system load average (1/5/15 min), per-NIC dropped packets (rx/tx), and filesystem inode usage collectors
+  * Add a "daemon unreachable" indicator to the TUI status bar
+  * Harden the TCP API: reject multi-statement SQL, make a tokenless plaintext (non-TLS) listener a fatal startup error, cap request bodies, set slow-loris timeouts
+  * cpu.aggregate alerts now use true utilization (100 - idle, including steal) rather than just user+system of core 0
+  * The alert form only offers hardware categories (SMART/GPU/temperature) the host actually reports
+  * Per-view keyboard shortcuts render in a fixed footer that stays visible as content scrolls
+  * A missing config file is no longer fatal -- the daemon starts with defaults
+  * Fix four alert rules that advertised behaviour the engine did not implement (sustained process_down, target force-enrichment, honest threshold wording, predictive already-breached firing)
+  * Fix RAPL power counters vanishing on counter wrap, and dedupe duplicate power zones discovered via flat powercap symlinks
+  * Make the alert form's threshold hint metric-aware (previously showed a stale CPU label for SMART rules)
+  * Guard the variance rule to memory-only metrics instead of silently running under another label
+  * Make database compaction reader-safe and restart-safe
+  * Stop the query API swallowing row scan/iteration errors
+  * Rune-safe truncation in TUI and REPL table rendering
+  * Render TUI viewport content once per message instead of twice
+
+ -- Ross Duggan <ross@duggan.ie>  Sun, 07 Jun 2026 15:23:29 +0100
+
 bewitch (0.6.0-1) unstable; urgency=medium
 
   * Active alerts are now surfaced in the TUI status bar
