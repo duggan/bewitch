@@ -8,9 +8,18 @@ import (
 	"time"
 )
 
+// edacGlob is the sysfs glob for EDAC memory controllers. A package var so the
+// presence-detection test can point it at a fixture tree.
+var edacGlob = "/sys/devices/system/edac/mc/mc*"
+
 type ECCData struct {
 	Corrected   uint64
 	Uncorrected uint64
+	// Present is true when the host exposes EDAC memory controllers. Without it the
+	// zero sample (corrected=0, uncorrected=0) is indistinguishable from a machine
+	// with no ECC RAM, which made the TUI assert "ECC ok" on non-ECC hardware and
+	// would let the alert form offer ECC rules that can never fire.
+	Present bool
 }
 
 type ECCCollector struct{}
@@ -24,8 +33,8 @@ func (c *ECCCollector) Name() string { return "ecc" }
 func (c *ECCCollector) Collect() (Sample, error) {
 	var corrected, uncorrected uint64
 
-	// Walk /sys/devices/system/edac/mc/*/ce_count and ue_count
-	mcDirs, _ := filepath.Glob("/sys/devices/system/edac/mc/mc*")
+	// Walk the EDAC memory controllers' ce_count (corrected) and ue_count (uncorrectable).
+	mcDirs, _ := filepath.Glob(edacGlob)
 	for _, dir := range mcDirs {
 		corrected += readUint(filepath.Join(dir, "ce_count"))
 		uncorrected += readUint(filepath.Join(dir, "ue_count"))
@@ -34,7 +43,7 @@ func (c *ECCCollector) Collect() (Sample, error) {
 	return Sample{
 		Timestamp: time.Now(),
 		Kind:      "ecc",
-		Data:      ECCData{Corrected: corrected, Uncorrected: uncorrected},
+		Data:      ECCData{Corrected: corrected, Uncorrected: uncorrected, Present: len(mcDirs) > 0},
 	}, nil
 }
 

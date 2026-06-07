@@ -186,7 +186,7 @@ func NewMockECCCollector() *MockECCCollector { return &MockECCCollector{} }
 func (c *MockECCCollector) Name() string     { return "ecc" }
 
 func (c *MockECCCollector) Collect() (Sample, error) {
-	return Sample{Timestamp: time.Now(), Kind: "ecc", Data: ECCData{}}, nil
+	return Sample{Timestamp: time.Now(), Kind: "ecc", Data: ECCData{Present: true}}, nil
 }
 
 // --- Temperature ---

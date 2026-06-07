@@ -78,6 +78,8 @@ func TestFormRoundTrip(t *testing.T) {
 			Metric: "cpu.aggregate", Operator: ">", Value: 90, Duration: "5m"},
 		{ID: 13, Name: "cpu_steal", Type: "threshold", Severity: "warning", Enabled: true,
 			Metric: "cpu.steal", Operator: ">", Value: 20, Duration: "5m"},
+		{ID: 14, Name: "ecc_ue", Type: "threshold", Severity: "critical", Enabled: true,
+			Metric: "ecc.uncorrectable", Operator: ">", Value: 0, Duration: "5m"},
 		{ID: 2, Name: "disk_40", Type: "threshold", Severity: "warning", Enabled: true,
 			Metric: "disk.used_pct", Operator: ">", Value: 40.5, Duration: "1m", Mount: "/"},
 		{ID: 3, Name: "net_rx", Type: "threshold", Severity: "critical", Enabled: false,
@@ -229,6 +231,7 @@ func TestFromAlertRuleMetricCategory(t *testing.T) {
 	}{
 		{"cpu.aggregate", "threshold", "cpu", ""},
 		{"cpu.steal", "threshold", "cpu", ""},
+		{"ecc.uncorrectable", "threshold", "ecc", ""},
 		{"disk.used_pct", "threshold", "disk", ""},
 		{"network.rx", "threshold", "network", "rx"},
 		{"network.tx", "threshold", "network", "tx"},

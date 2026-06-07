@@ -15,7 +15,7 @@ func TestCategoryOptionsGating(t *testing.T) {
 		return m
 	}
 	always := []string{"cpu", "memory", "disk", "network", "process"}
-	gated := []string{"smart", "gpu", "temperature"}
+	gated := []string{"smart", "gpu", "temperature", "ecc"}
 
 	t.Run("no hardware: only always-present categories", func(t *testing.T) {
 		got := values(formCapabilities{})
@@ -32,7 +32,7 @@ func TestCategoryOptionsGating(t *testing.T) {
 	})
 
 	t.Run("all hardware present: every category offered", func(t *testing.T) {
-		got := values(formCapabilities{smart: true, gpu: true, temperature: true})
+		got := values(formCapabilities{smart: true, gpu: true, temperature: true, ecc: true})
 		for _, c := range append(append([]string{}, always...), gated...) {
 			if !got[c] {
 				t.Errorf("category %q should be offered when available", c)

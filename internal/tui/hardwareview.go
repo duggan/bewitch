@@ -33,7 +33,7 @@ func renderHardwareView(
 	// Sub-tab bar
 	hasTemp := len(temps) > 0
 	hasPower := len(zones) > 0
-	hasECC := ecc != nil
+	hasECC := ecc != nil && ecc.Available // not just a zero sample on non-ECC hardware
 	hasGPU := len(gpus) > 0
 
 	sectionCount := 0

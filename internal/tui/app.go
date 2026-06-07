@@ -1064,17 +1064,19 @@ func (m *Model) refreshDiskData() {
 // detectFormCapabilities reports which hardware-dependent alert categories the
 // host can actually satisfy, so the create form doesn't offer (e.g.) SMART alerts
 // on a box with no SMART-capable disks. Disk data is loaded at startup, but
-// GPU/temperature are only fetched when the Hardware view is visited — so refresh
-// all three here, otherwise jumping straight to Alerts and pressing 'n' would
-// wrongly hide GPU/temperature. A failed/empty snapshot simply gates the category
-// off, which is the safe direction (you can't alert on what the daemon can't see).
+// GPU/temperature/ECC are only fetched when the Hardware view is visited — so
+// refresh them here, otherwise jumping straight to Alerts and pressing 'n' would
+// wrongly hide them. A failed/empty snapshot simply gates the category off, which
+// is the safe direction (you can't alert on what the daemon can't see).
 func (m *Model) detectFormCapabilities() formCapabilities {
 	m.refreshDiskData()
 	m.refreshGPUData()
 	m.refreshTempData()
+	m.refreshMemData() // also fetches the ECC snapshot
 	caps := formCapabilities{
 		gpu:         len(m.gpuData) > 0,
 		temperature: len(m.tempData) > 0,
+		ecc:         m.eccData != nil && m.eccData.Available,
 	}
 	for _, d := range m.diskData {
 		if d.SMARTAvailable {

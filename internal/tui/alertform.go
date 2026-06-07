@@ -38,6 +38,7 @@ type alertFormState struct {
 	sensor       string
 	smartMetric  string // for smart category: smart.reallocated, smart.percent_used, ...
 	cpuMetric    string // for cpu category: cpu.aggregate (default) or cpu.steal
+	eccMetric    string // for ecc category: ecc.uncorrectable (default) or ecc.corrected
 	direction    string // rx, tx (for network)
 	predictHours string // for predictive
 	thresholdPct string // for predictive
@@ -67,6 +68,7 @@ type formCapabilities struct {
 	smart       bool // at least one disk reports SMART
 	gpu         bool // a GPU is present
 	temperature bool // at least one temperature sensor is present
+	ecc         bool // host exposes EDAC controllers (ECC RAM)
 }
 
 // categoryOptions builds the metric-category list, including the hardware-gated
@@ -86,6 +88,9 @@ func categoryOptions(caps formCapabilities) []huh.Option[string] {
 	}
 	if caps.smart {
 		opts = append(opts, huh.NewOption("Disk health (SMART)", "smart"))
+	}
+	if caps.ecc {
+		opts = append(opts, huh.NewOption("ECC memory", "ecc"))
 	}
 	opts = append(opts, huh.NewOption("Process", "process"))
 	return opts
@@ -155,6 +160,10 @@ func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 						return []huh.Option[string]{
 							huh.NewOption("SMART attribute over threshold", "threshold"),
 						}
+					case "ecc":
+						return []huh.Option[string]{
+							huh.NewOption("ECC error count over threshold", "threshold"),
+						}
 					case "process":
 						return []huh.Option[string]{
 							huh.NewOption("Process went down", "process_down"),
@@ -180,6 +189,19 @@ func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 				Value(&state.cpuMetric),
 		).WithHideFunc(func() bool {
 			return state.category != "cpu"
+		}),
+		// ECC error type. Counters are cumulative since boot, so the meaningful alert
+		// is > 0 (uncorrectable) or a corrected-count ceiling.
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("ECC Error Type").
+				Options(
+					huh.NewOption("Uncorrectable (alert > 0)", "ecc.uncorrectable"),
+					huh.NewOption("Corrected", "ecc.corrected"),
+				).
+				Value(&state.eccMetric),
+		).WithHideFunc(func() bool {
+			return state.category != "ecc"
 		}),
 		// SMART attribute (aggregated across all disks). Asked BEFORE the threshold
 		// value so that field's description/placeholder can reflect the chosen
@@ -431,7 +453,7 @@ func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 // before, in the reordered group). hashstructure dereferences the pointers, so
 // the funcs re-run whenever either string changes.
 func thresholdBindings(state *alertFormState) []any {
-	return []any{&state.category, &state.smartMetric, &state.cpuMetric}
+	return []any{&state.category, &state.smartMetric, &state.cpuMetric, &state.eccMetric}
 }
 
 func thresholdDesc(state *alertFormState) string {
@@ -453,6 +475,8 @@ func thresholdDesc(state *alertFormState) string {
 		return "GPU utilization percentage (0-100)"
 	case "smart":
 		return smartThresholdDesc(state.smartMetric)
+	case "ecc":
+		return "ECC error count, cumulative since boot (uncorrectable: alert > 0)"
 	}
 	return ""
 }
@@ -551,6 +575,11 @@ func (s *alertFormState) toAlertRuleMetric() api.AlertRuleMetric {
 			rule.Sensor = s.sensor
 		case "smart":
 			rule.Metric = s.smartMetric
+		case "ecc":
+			rule.Metric = s.eccMetric
+			if rule.Metric == "" {
+				rule.Metric = "ecc.uncorrectable"
+			}
 		}
 	case "variance":
 		rule.Metric = "memory.variance"
@@ -639,6 +668,9 @@ func fromAlertRuleMetric(rule api.AlertRuleMetric) *alertFormState {
 			} else if strings.HasPrefix(rule.Metric, "smart.") {
 				s.category = "smart"
 				s.smartMetric = rule.Metric
+			} else if strings.HasPrefix(rule.Metric, "ecc.") {
+				s.category = "ecc"
+				s.eccMetric = rule.Metric
 			}
 		}
 	case "variance":

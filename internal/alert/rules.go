@@ -215,6 +215,13 @@ func (r *ThresholdRule) buildQuery(cutoff time.Time) (string, []any, string, err
 		// Count of unhealthy snapshots in the window; > 0 means a drive reported a
 		// SMART health failure (the "your disk is dying" signal).
 		return "SELECT COUNT(*) FROM smart_metrics WHERE healthy = false AND ts > ?", []any{cutoff}, "count", nil
+	// ECC error counters are cumulative since boot (like the SMART counters), so use
+	// MAX over the window and ignore the rule's aggregate choice. ecc.uncorrectable
+	// > 0 means a DIMM has had an uncorrectable error — page-worthy.
+	case "ecc.uncorrectable":
+		return "SELECT MAX(uncorrected) FROM ecc_metrics WHERE ts > ?", []any{cutoff}, "max", nil
+	case "ecc.corrected":
+		return "SELECT MAX(corrected) FROM ecc_metrics WHERE ts > ?", []any{cutoff}, "max", nil
 	default:
 		return "", nil, "", fmt.Errorf("unsupported threshold metric: %s", r.cfg.Metric)
 	}

@@ -139,6 +139,8 @@ func TestThresholdRuleBuildQuery(t *testing.T) {
 		{"smart.uncorrectable", 1},
 		{"smart.percent_used", 1},
 		{"smart.unhealthy", 1},
+		{"ecc.uncorrectable", 1},
+		{"ecc.corrected", 1},
 	}
 
 	for _, tt := range validMetrics {
@@ -165,7 +167,8 @@ func TestThresholdRuleBuildQuery(t *testing.T) {
 			// message is truthful: SMART branches use MAX/COUNT, others AVG.
 			wantAgg := "avg"
 			switch tt.metric {
-			case "smart.reallocated", "smart.pending", "smart.uncorrectable", "smart.percent_used":
+			case "smart.reallocated", "smart.pending", "smart.uncorrectable", "smart.percent_used",
+				"ecc.uncorrectable", "ecc.corrected":
 				wantAgg = "max"
 			case "smart.unhealthy":
 				wantAgg = "count"

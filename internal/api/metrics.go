@@ -89,6 +89,7 @@ type PowerMetric struct {
 type ECCMetric struct {
 	Corrected   uint64 `json:"corrected"`
 	Uncorrected uint64 `json:"uncorrected"`
+	Available   bool   `json:"available"` // host exposes EDAC controllers (distinguishes "0 errors" from "no ECC")
 }
 
 type GPUMetric struct {

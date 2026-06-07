@@ -840,7 +840,7 @@ func pushSampleToCache(srv *api.Server, procCol collector.ProcessCollectorI, s c
 		srv.SetMetricsSnapshot(nil, nil, nil, nil, nil, power, nil)
 	case collector.ECCData:
 		ecc := &api.ECCMetric{
-			Corrected: d.Corrected, Uncorrected: d.Uncorrected,
+			Corrected: d.Corrected, Uncorrected: d.Uncorrected, Available: d.Present,
 		}
 		srv.SetMetricsSnapshot(nil, nil, nil, nil, nil, nil, ecc)
 	case collector.GPUData:
