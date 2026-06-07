@@ -12,8 +12,13 @@ Group=bewitch
 SupplementaryGroups=disk video render
 StateDirectory=bewitch
 RuntimeDirectory=bewitch
-AmbientCapabilities=CAP_SYS_RAWIO CAP_PERFMON
-CapabilityBoundingSet=CAP_SYS_RAWIO CAP_PERFMON
+# CAP_SYS_RAWIO: SMART device access. CAP_PERFMON: perf-event GPU/RAPL access.
+# CAP_SYS_PTRACE: read /proc/[pid]/io for processes the bewitch user doesn't own
+# (per-process disk I/O) — the ptrace_may_access READ check isn't satisfied by the
+# other two. It grants PTRACE_MODE_READ to any process; acceptable for a monitoring
+# daemon already holding CAP_SYS_RAWIO. Remove it to drop cross-user process I/O.
+AmbientCapabilities=CAP_SYS_RAWIO CAP_PERFMON CAP_SYS_PTRACE
+CapabilityBoundingSet=CAP_SYS_RAWIO CAP_PERFMON CAP_SYS_PTRACE
 
 [Install]
 WantedBy=multi-user.target

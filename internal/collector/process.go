@@ -336,8 +336,9 @@ func (c *ProcessCollector) Collect() (Sample, error) {
 	for _, b := range topN {
 		ps := c.enrichProc(b, now)
 		// Disk I/O rates (Phase-2 only — one /proc/[pid]/io read per enriched proc).
-		// Permission errors (another user's process, no CAP_SYS_PTRACE) leave the
-		// rates at 0 without logging; the first sample for a process has no prev.
+		// Reading another user's /proc/[pid]/io needs CAP_SYS_PTRACE (the debian unit
+		// grants it); without it proc.IO() returns EACCES, which we leave as rate 0
+		// without logging. The first sample for a process also has no prev.
 		if io, err := b.proc.IO(); err == nil {
 			newPrevIO[b.proc.PID] = io
 			if prev, ok := c.prevIO[b.proc.PID]; ok && dt > 0 {
