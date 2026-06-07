@@ -47,6 +47,9 @@ func NewGPUCollector() *GPUCollector {
 	if b := newNvidiaGPUBackend(); b != nil {
 		c.backends = append(c.backends, b)
 	}
+	if b := newAmdGPUBackend(); b != nil {
+		c.backends = append(c.backends, b)
+	}
 
 	return c
 }
