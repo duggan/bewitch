@@ -255,12 +255,52 @@ func (c *ProcessCollector) Collect() (Sample, error) {
 	var topN []procBasic
 	if len(allPins) > 0 {
 		pinnedPIDs := make(map[int]bool)
+		commMatched := make(map[string]bool, len(allPins)) // pins satisfied by a comm match
 		for _, b := range c.basics {
-			if matchesPinnedPattern(b.stat.Comm, allPins) {
-				topN = append(topN, b)
-				pinnedPIDs[b.proc.PID] = true
+			for _, p := range allPins {
+				if matched, _ := filepath.Match(p, b.stat.Comm); matched {
+					commMatched[p] = true
+					if !pinnedPIDs[b.proc.PID] {
+						topN = append(topN, b)
+						pinnedPIDs[b.proc.PID] = true
+					}
+				}
 			}
 		}
+
+		// Pins that no process's comm satisfied are likely cmdline globs (a rule's
+		// ProcessPattern): comm is only the 15-char basename, so the comm pass can't
+		// catch them. Re-check those against each process's full cmdline using an
+		// anchored glob — the same semantics the alert engine's SQL LIKE uses — so a
+		// ProcessPattern rule's target actually gets force-enriched and recorded.
+		// Cmdline is read through the same cache Phase-2 uses (60s TTL), so the cost
+		// is amortized; the whole pass is gated on having unsatisfied pins, so the
+		// common comm-only case reads no cmdlines here.
+		var cmdlinePins []string
+		for _, p := range allPins {
+			if !commMatched[p] {
+				cmdlinePins = append(cmdlinePins, p)
+			}
+		}
+		if len(cmdlinePins) > 0 {
+			for _, b := range c.basics {
+				if pinnedPIDs[b.proc.PID] {
+					continue
+				}
+				cmd := c.getCmdline(b.proc, now)
+				if cmd == "" {
+					continue
+				}
+				for _, p := range cmdlinePins {
+					if globMatchAny(p, cmd) {
+						topN = append(topN, b)
+						pinnedPIDs[b.proc.PID] = true
+						break
+					}
+				}
+			}
+		}
+
 		count := 0
 		for _, b := range c.basics {
 			if count >= c.maxProcs {
@@ -408,14 +448,35 @@ func (c *ProcessCollector) cleanCmdlineCache(currentPIDs map[int]procTimes) {
 	}
 }
 
-// matchesPinnedPattern checks if a process name matches any pinned glob pattern.
-func matchesPinnedPattern(comm string, patterns []string) bool {
-	for _, p := range patterns {
-		if matched, _ := filepath.Match(p, comm); matched {
-			return true
+// globMatchAny reports whether s matches the shell-style pattern, where '*' matches
+// any run of characters INCLUDING '/' and '?' matches exactly one. Unlike
+// filepath.Match it is not path-aware, and the match is anchored (the whole string
+// must match) — together that mirrors the SQL LIKE semantics the alert engine uses
+// for cmdline ProcessPattern globs, so a pattern enriches the same processes the
+// rule will later count. Byte-based two-pointer wildcard matcher (no regexp/alloc).
+func globMatchAny(pattern, s string) bool {
+	var px, sx int
+	starPx, starSx := -1, -1
+	for sx < len(s) {
+		switch {
+		case px < len(pattern) && (pattern[px] == '?' || pattern[px] == s[sx]):
+			px++
+			sx++
+		case px < len(pattern) && pattern[px] == '*':
+			starPx, starSx = px, sx
+			px++
+		case starPx != -1:
+			px = starPx + 1
+			starSx++
+			sx = starSx
+		default:
+			return false
 		}
 	}
-	return false
+	for px < len(pattern) && pattern[px] == '*' {
+		px++
+	}
+	return px == len(pattern)
 }
 
 // Ensure ProcessCollector implements Collector
