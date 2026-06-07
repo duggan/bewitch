@@ -22,7 +22,7 @@ type alertFormState struct {
 	origMetric string
 
 	// Step 1: category
-	category string // cpu, memory, disk, network, temperature, process
+	category string // cpu, memory, disk, network, temperature, gpu, smart, process
 
 	// Step 2: alert type
 	alertType string // threshold, variance, predictive, process_down, process_thrashing
@@ -140,6 +140,24 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 	}
 
 	groups = append(groups,
+		// SMART attribute (aggregated across all disks). Asked BEFORE the threshold
+		// value so that field's description/placeholder can reflect the chosen
+		// attribute (a raw sector count wants "0", NVMe wear wants "0-100 %").
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("SMART Attribute").
+				Description("Worst value across all disks trips the alert").
+				Options(
+					huh.NewOption("Reallocated sectors", "smart.reallocated"),
+					huh.NewOption("Pending sectors", "smart.pending"),
+					huh.NewOption("Uncorrectable errors", "smart.uncorrectable"),
+					huh.NewOption("NVMe wear (% used)", "smart.percent_used"),
+					huh.NewOption("Health failures (count)", "smart.unhealthy"),
+				).
+				Value(&state.smartMetric),
+		).WithHideFunc(func() bool {
+			return state.category != "smart"
+		}),
 		// Threshold parameters
 		huh.NewGroup(
 			huh.NewSelect[string]().
@@ -153,8 +171,13 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 				Value(&state.operator),
 			huh.NewInput().
 				Title("Threshold Value").
-				Description(thresholdDesc(state)).
-				Placeholder("90").
+				// Dynamic: the form is built once (with category="" in create mode),
+				// so a static Description/Placeholder could never reflect the metric
+				// the user later picks — it just showed blank. DescriptionFunc/
+				// PlaceholderFunc are re-evaluated by huh whenever the bound category
+				// or SMART attribute changes, so the hint always matches the metric.
+				DescriptionFunc(func() string { return thresholdDesc(state) }, thresholdBindings(state)).
+				PlaceholderFunc(func() string { return thresholdPlaceholder(state) }, thresholdBindings(state)).
 				Value(&state.valueStr).
 				Validate(validateFloat),
 			huh.NewInput().
@@ -216,22 +239,6 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 				Validate(validateNotEmpty),
 		).WithHideFunc(func() bool {
 			return !(state.category == "gpu")
-		}),
-		// SMART attribute (aggregated across all disks)
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("SMART Attribute").
-				Description("Worst value across all disks trips the alert").
-				Options(
-					huh.NewOption("Reallocated sectors", "smart.reallocated"),
-					huh.NewOption("Pending sectors", "smart.pending"),
-					huh.NewOption("Uncorrectable errors", "smart.uncorrectable"),
-					huh.NewOption("NVMe wear (% used)", "smart.percent_used"),
-					huh.NewOption("Health failures (count)", "smart.unhealthy"),
-				).
-				Value(&state.smartMetric),
-		).WithHideFunc(func() bool {
-			return !(state.category == "smart")
 		}),
 		// Variance parameters (memory only)
 		huh.NewGroup(
@@ -361,6 +368,15 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 	return huh.NewForm(groups...).WithTheme(theme).WithWidth(60)
 }
 
+// thresholdBindings is what huh watches to know when to re-evaluate the
+// Threshold Value field's DescriptionFunc/PlaceholderFunc: the category (set in
+// create mode after the form is built) and the SMART attribute (chosen just
+// before, in the reordered group). hashstructure dereferences the pointers, so
+// the funcs re-run whenever either string changes.
+func thresholdBindings(state *alertFormState) []any {
+	return []any{&state.category, &state.smartMetric}
+}
+
 func thresholdDesc(state *alertFormState) string {
 	switch state.category {
 	case "cpu":
@@ -376,9 +392,43 @@ func thresholdDesc(state *alertFormState) string {
 	case "gpu":
 		return "GPU utilization percentage (0-100)"
 	case "smart":
-		return "Threshold for the chosen SMART attribute (e.g. 0 sectors, 90 %)"
+		return smartThresholdDesc(state.smartMetric)
 	}
 	return ""
+}
+
+// smartThresholdDesc tailors the threshold hint to the chosen SMART attribute —
+// a raw sector/error count and an NVMe wear percentage have very different units.
+func smartThresholdDesc(metric string) string {
+	switch metric {
+	case "smart.percent_used":
+		return "NVMe wear level, percent (0-100); alert e.g. > 90"
+	case "smart.unhealthy":
+		return "Count of drives reporting a SMART health failure; alert > 0"
+	case "smart.reallocated", "smart.pending", "smart.uncorrectable":
+		return "Raw sector/error count, worst across disks; alert > 0"
+	}
+	return "Threshold for the chosen SMART attribute"
+}
+
+// thresholdPlaceholder gives the Threshold Value input a sensible example for the
+// chosen metric. The old static "90" was wrong for the SMART sector/error counts
+// (where the meaningful alert is > 0) and for raw throughput.
+func thresholdPlaceholder(state *alertFormState) string {
+	switch state.category {
+	case "network":
+		return "1000000"
+	case "temperature":
+		return "80"
+	case "smart":
+		switch state.smartMetric {
+		case "smart.percent_used":
+			return "90"
+		default:
+			return "0"
+		}
+	}
+	return "90"
 }
 
 func confirmTitle(state *alertFormState) string {
