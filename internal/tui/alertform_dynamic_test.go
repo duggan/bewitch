@@ -2,6 +2,55 @@ package tui
 
 import "testing"
 
+// TestCategoryOptionsGating verifies the create form only offers hardware-dependent
+// categories the host actually reports: the always-present ones are unconditional,
+// while SMART/GPU/temperature appear only when available — so a box with no SMART
+// disks isn't offered SMART alerts that could never fire.
+func TestCategoryOptionsGating(t *testing.T) {
+	values := func(caps formCapabilities) map[string]bool {
+		m := map[string]bool{}
+		for _, o := range categoryOptions(caps) {
+			m[o.Value] = true
+		}
+		return m
+	}
+	always := []string{"cpu", "memory", "disk", "network", "process"}
+	gated := []string{"smart", "gpu", "temperature"}
+
+	t.Run("no hardware: only always-present categories", func(t *testing.T) {
+		got := values(formCapabilities{})
+		for _, c := range always {
+			if !got[c] {
+				t.Errorf("category %q must always be offered", c)
+			}
+		}
+		for _, c := range gated {
+			if got[c] {
+				t.Errorf("category %q must be hidden when unavailable", c)
+			}
+		}
+	})
+
+	t.Run("all hardware present: every category offered", func(t *testing.T) {
+		got := values(formCapabilities{smart: true, gpu: true, temperature: true})
+		for _, c := range append(append([]string{}, always...), gated...) {
+			if !got[c] {
+				t.Errorf("category %q should be offered when available", c)
+			}
+		}
+	})
+
+	t.Run("only SMART present: gates independently", func(t *testing.T) {
+		got := values(formCapabilities{smart: true})
+		if !got["smart"] {
+			t.Error("smart should be offered when available")
+		}
+		if got["gpu"] || got["temperature"] {
+			t.Error("gpu/temperature must stay hidden when only smart is available")
+		}
+	})
+}
+
 // TestThresholdDescByMetric verifies the Threshold Value field's description is
 // metric-appropriate for every category — the bug was that the static binding
 // showed a blank (create mode) or stale ("CPU usage percentage") hint for SMART

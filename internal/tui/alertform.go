@@ -55,7 +55,42 @@ type alertFormState struct {
 	name string
 }
 
-func buildAlertForm(state *alertFormState) *huh.Form {
+// formCapabilities gates which metric categories the create form offers, based on
+// what the host actually reports. A box with no SMART-capable disks, no GPU, or no
+// temperature sensors shouldn't be offered alerts it could never satisfy (the
+// engine would query an always-empty table). The always-present categories (CPU,
+// memory, disk, network, process) are unconditional. Gating only affects NEW rules
+// — editing an existing rule of any type still works (its category group is
+// skipped), so a rule created on capable hardware survives a move to a VM.
+type formCapabilities struct {
+	smart       bool // at least one disk reports SMART
+	gpu         bool // a GPU is present
+	temperature bool // at least one temperature sensor is present
+}
+
+// categoryOptions builds the metric-category list, including the hardware-gated
+// categories only when the host reports them.
+func categoryOptions(caps formCapabilities) []huh.Option[string] {
+	opts := []huh.Option[string]{
+		huh.NewOption("CPU", "cpu"),
+		huh.NewOption("Memory", "memory"),
+		huh.NewOption("Disk", "disk"),
+		huh.NewOption("Network", "network"),
+	}
+	if caps.temperature {
+		opts = append(opts, huh.NewOption("Temperature", "temperature"))
+	}
+	if caps.gpu {
+		opts = append(opts, huh.NewOption("GPU", "gpu"))
+	}
+	if caps.smart {
+		opts = append(opts, huh.NewOption("Disk health (SMART)", "smart"))
+	}
+	opts = append(opts, huh.NewOption("Process", "process"))
+	return opts
+}
+
+func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 	theme := huh.ThemeCharm()
 	theme.Focused.Base = lipgloss.NewStyle().PaddingLeft(1)
 	theme.Focused.Title = lipgloss.NewStyle().Foreground(colorPink).Bold(true)
@@ -76,16 +111,7 @@ func buildAlertForm(state *alertFormState) *huh.Form {
 		groups = append(groups, huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Metric Category").
-				Options(
-					huh.NewOption("CPU", "cpu"),
-					huh.NewOption("Memory", "memory"),
-					huh.NewOption("Disk", "disk"),
-					huh.NewOption("Network", "network"),
-					huh.NewOption("Temperature", "temperature"),
-					huh.NewOption("GPU", "gpu"),
-					huh.NewOption("Disk health (SMART)", "smart"),
-					huh.NewOption("Process", "process"),
-				).
+				Options(categoryOptions(caps)...).
 				Value(&state.category),
 		))
 	}

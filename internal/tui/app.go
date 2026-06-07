@@ -1061,6 +1061,30 @@ func (m *Model) refreshDiskData() {
 	m.lastDataChange[viewDisk] = time.Now()
 }
 
+// detectFormCapabilities reports which hardware-dependent alert categories the
+// host can actually satisfy, so the create form doesn't offer (e.g.) SMART alerts
+// on a box with no SMART-capable disks. Disk data is loaded at startup, but
+// GPU/temperature are only fetched when the Hardware view is visited — so refresh
+// all three here, otherwise jumping straight to Alerts and pressing 'n' would
+// wrongly hide GPU/temperature. A failed/empty snapshot simply gates the category
+// off, which is the safe direction (you can't alert on what the daemon can't see).
+func (m *Model) detectFormCapabilities() formCapabilities {
+	m.refreshDiskData()
+	m.refreshGPUData()
+	m.refreshTempData()
+	caps := formCapabilities{
+		gpu:         len(m.gpuData) > 0,
+		temperature: len(m.tempData) > 0,
+	}
+	for _, d := range m.diskData {
+		if d.SMARTAvailable {
+			caps.smart = true
+			break
+		}
+	}
+	return caps
+}
+
 func (m *Model) refreshNetData() {
 	t := time.Now()
 	ifaces, err := m.client.GetNetwork()
@@ -2378,7 +2402,8 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 						category:    "process",
 						processName: selectedProc.Name,
 					}
-					m.alertForm = buildAlertForm(m.alertFormState)
+					// category is preset → the category group is skipped, so caps are unused.
+					m.alertForm = buildAlertForm(m.alertFormState, formCapabilities{})
 					m.alertFormActive = true
 					return m, m.alertForm.Init()
 				}
@@ -2407,14 +2432,15 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 			case "n":
 				m.alertFormErr = ""
 				m.alertFormState = &alertFormState{enabled: true}
-				m.alertForm = buildAlertForm(m.alertFormState)
+				m.alertForm = buildAlertForm(m.alertFormState, m.detectFormCapabilities())
 				m.alertFormActive = true
 				return m, m.alertForm.Init()
 			case "e":
 				if m.alertFocus == 0 && m.alertRuleCursor < len(m.alertRules) {
 					m.alertFormErr = ""
 					m.alertFormState = fromAlertRuleMetric(m.alertRules[m.alertRuleCursor])
-					m.alertForm = buildAlertForm(m.alertFormState)
+					// editID set → category group is skipped, so caps are unused.
+					m.alertForm = buildAlertForm(m.alertFormState, formCapabilities{})
 					m.alertFormActive = true
 					return m, m.alertForm.Init()
 				}
