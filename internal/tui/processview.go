@@ -21,6 +21,7 @@ const (
 	procSortName
 	procSortThreads
 	procSortFDs
+	procSortDiskIO
 )
 
 // orderedProcessList filters, sorts, and splits processes into enriched (above the fold)
@@ -125,6 +126,7 @@ func renderProcessView(procs *api.ProcessResponse, width int, cachedChart string
 	header += " STATE"
 	header += fmt.Sprintf(" %4s", "THR"+sortIndicator(procSortThreads))
 	header += fmt.Sprintf(" %5s", "FDs"+sortIndicator(procSortFDs))
+	header += fmt.Sprintf(" %11s", "DISK R/W"+sortIndicator(procSortDiskIO))
 	header += " AGE"
 	if cmdlineWidth > 0 {
 		header += fmt.Sprintf(" %-*s", cmdlineWidth, "CMDLINE")
@@ -177,8 +179,12 @@ func renderProcessView(procs *api.ProcessResponse, width int, cachedChart string
 		row += fmt.Sprintf(" %4d", p.NumThreads)
 		if p.Enriched {
 			row += fmt.Sprintf(" %5d", p.NumFDs)
+			// Combined read/write byte-rate; "--" when the daemon can't read this
+			// process's /proc/[pid]/io shows as 0/0 (same as idle — indistinguishable).
+			row += fmt.Sprintf(" %11s", humanBytes(uint64(p.ReadBytesSec))+"/"+humanBytes(uint64(p.WriteBytesSec)))
 		} else {
 			row += "    --"
+			row += fmt.Sprintf(" %11s", "--")
 		}
 		row += fmt.Sprintf(" %6s", age)
 
@@ -280,6 +286,7 @@ func processFooter(searchActive bool, searchQuery string, sortBy procSortField, 
 		{"n:name", sortBy == procSortName},
 		{"t:thr", sortBy == procSortThreads},
 		{"f:fds", sortBy == procSortFDs},
+		{"d:disk", sortBy == procSortDiskIO},
 	}
 	var parts []string
 	for _, item := range items {
@@ -372,6 +379,10 @@ func sortProcesses(procs []api.ProcessMetric, sortBy procSortField) {
 	case procSortFDs:
 		sort.Slice(procs, func(i, j int) bool {
 			return procs[i].NumFDs > procs[j].NumFDs
+		})
+	case procSortDiskIO:
+		sort.Slice(procs, func(i, j int) bool {
+			return procs[i].ReadBytesSec+procs[i].WriteBytesSec > procs[j].ReadBytesSec+procs[j].WriteBytesSec
 		})
 	}
 }

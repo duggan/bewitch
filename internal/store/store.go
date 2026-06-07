@@ -1121,8 +1121,8 @@ func (s *Store) writeProcessTx(tx *sql.Tx, sample collector.Sample, data collect
 
 	// Insert metrics (dynamic data only)
 	metricStmt, err := tx.Prepare(`INSERT INTO process_metrics
-		(ts, pid, start_time, state, cpu_user_pct, cpu_system_pct, rss_bytes, num_fds, num_threads)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		(ts, pid, start_time, state, cpu_user_pct, cpu_system_pct, rss_bytes, num_fds, num_threads, read_bytes_sec, write_bytes_sec)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("prepare metrics: %w", err)
 	}
@@ -1140,6 +1140,7 @@ func (s *Store) writeProcessTx(tx *sql.Tx, sample collector.Sample, data collect
 		if _, err := metricStmt.Exec(
 			sample.Timestamp, p.PID, p.StartTime, p.State,
 			p.CPUUserPct, p.CPUSystemPct, p.RSSBytes, p.NumFDs, p.NumThreads,
+			p.ReadBytesSec, p.WriteBytesSec,
 		); err != nil {
 			return fmt.Errorf("insert process_metrics %d: %w", p.PID, err)
 		}
@@ -1305,6 +1306,7 @@ func (s *Store) writeProcessAppender(driverConn driver.Conn, sample collector.Sa
 			if err := a.AppendRow(
 				sample.Timestamp, int32(p.PID), p.StartTime, p.State,
 				p.CPUUserPct, p.CPUSystemPct, int64(p.RSSBytes), int32(p.NumFDs), int32(p.NumThreads),
+				p.ReadBytesSec, p.WriteBytesSec,
 			); err != nil {
 				return fmt.Errorf("append process_metrics %d: %w", p.PID, err)
 			}

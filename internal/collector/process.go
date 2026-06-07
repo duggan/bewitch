@@ -27,6 +27,12 @@ type ProcessSample struct {
 	NumFDs       int32
 	NumThreads   int32
 	StartTime    int64 // unix nanoseconds
+	// Disk I/O rates (bytes/sec) from /proc/[pid]/io read_bytes/write_bytes — actual
+	// storage I/O, not page-cache (rchar/wchar). Phase-2 enriched only; 0 when the
+	// daemon lacks permission to read another user's /proc/[pid]/io (needs root or
+	// CAP_SYS_PTRACE) or on the first sample for a process.
+	ReadBytesSec  float64
+	WriteBytesSec float64
 }
 
 // ProcessData contains all process metrics from a single collection.
@@ -78,6 +84,7 @@ type procBasic struct {
 type ProcessCollector struct {
 	fs           procfs.FS
 	prev         map[int]procTimes     // PID -> previous CPU times
+	prevIO       map[int]procfs.ProcIO // PID -> previous I/O counters (enriched set only), for rates
 	cmdlineCache map[int]cachedCmdline // PID -> cached cmdline
 	prevTime     time.Time
 	maxProcs     int
@@ -123,6 +130,7 @@ func NewProcessCollector(maxProcs int, configPins []string) (*ProcessCollector, 
 	return &ProcessCollector{
 		fs:           fs,
 		prev:         make(map[int]procTimes),
+		prevIO:       make(map[int]procfs.ProcIO),
 		cmdlineCache: make(map[int]cachedCmdline),
 		prevTime:     time.Now(),
 		maxProcs:     maxProcs,
@@ -322,8 +330,25 @@ func (c *ProcessCollector) Collect() (Sample, error) {
 	// Now we read cmdline, status, and fd count only for processes we'll actually store.
 
 	c.samples = c.samples[:0] // Reuse slice
+	// prevIO is rebuilt from this cycle's enriched set, which auto-evicts processes
+	// that dropped out of enrichment or died (no separate stale sweep needed).
+	newPrevIO := make(map[int]procfs.ProcIO, len(topN))
 	for _, b := range topN {
 		ps := c.enrichProc(b, now)
+		// Disk I/O rates (Phase-2 only — one /proc/[pid]/io read per enriched proc).
+		// Permission errors (another user's process, no CAP_SYS_PTRACE) leave the
+		// rates at 0 without logging; the first sample for a process has no prev.
+		if io, err := b.proc.IO(); err == nil {
+			newPrevIO[b.proc.PID] = io
+			if prev, ok := c.prevIO[b.proc.PID]; ok && dt > 0 {
+				if d := int64(io.ReadBytes) - int64(prev.ReadBytes); d > 0 {
+					ps.ReadBytesSec = float64(d) / dt
+				}
+				if d := int64(io.WriteBytes) - int64(prev.WriteBytes); d > 0 {
+					ps.WriteBytesSec = float64(d) / dt
+				}
+			}
+		}
 		c.samples = append(c.samples, ps)
 	}
 
@@ -331,6 +356,7 @@ func (c *ProcessCollector) Collect() (Sample, error) {
 	c.cleanCmdlineCache(newPrev)
 
 	c.prev = newPrev
+	c.prevIO = newPrevIO
 	c.prevTime = now
 
 	return Sample{

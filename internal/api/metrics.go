@@ -107,22 +107,24 @@ type GPUMetric struct {
 }
 
 type ProcessMetric struct {
-	PID          int32   `json:"pid"`
-	PPID         int32   `json:"ppid"`
-	Name         string  `json:"name"`
-	Cmdline      string  `json:"cmdline"`
-	State        string  `json:"state"`
-	UID          uint32  `json:"uid"`
-	CPUUserPct   float64 `json:"cpu_user_pct"`
-	CPUSystemPct float64 `json:"cpu_system_pct"`
-	RSSBytes     uint64  `json:"rss_bytes"`
-	VSSBytes     uint64  `json:"vss_bytes"`
-	SharedBytes  uint64  `json:"shared_bytes"`
-	SwapBytes    uint64  `json:"swap_bytes"`
-	NumFDs       int32   `json:"num_fds"`
-	NumThreads   int32   `json:"num_threads"`
-	StartTimeNs  int64   `json:"start_time_ns"`
-	Enriched     bool    `json:"enriched"` // true = full data (Phase 2), false = lightweight (Phase 1 only)
+	PID           int32   `json:"pid"`
+	PPID          int32   `json:"ppid"`
+	Name          string  `json:"name"`
+	Cmdline       string  `json:"cmdline"`
+	State         string  `json:"state"`
+	UID           uint32  `json:"uid"`
+	CPUUserPct    float64 `json:"cpu_user_pct"`
+	CPUSystemPct  float64 `json:"cpu_system_pct"`
+	RSSBytes      uint64  `json:"rss_bytes"`
+	VSSBytes      uint64  `json:"vss_bytes"`
+	SharedBytes   uint64  `json:"shared_bytes"`
+	SwapBytes     uint64  `json:"swap_bytes"`
+	NumFDs        int32   `json:"num_fds"`
+	NumThreads    int32   `json:"num_threads"`
+	StartTimeNs   int64   `json:"start_time_ns"`
+	ReadBytesSec  float64 `json:"read_bytes_sec,omitempty"`  // disk I/O, Phase-2 enriched only
+	WriteBytesSec float64 `json:"write_bytes_sec,omitempty"` // disk I/O, Phase-2 enriched only
+	Enriched      bool    `json:"enriched"`                  // true = full data (Phase 2), false = lightweight (Phase 1 only)
 }
 
 type ProcessResponse struct {

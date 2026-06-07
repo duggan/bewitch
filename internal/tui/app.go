@@ -2390,6 +2390,9 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 			case "f":
 				m.procSortBy = procSortFDs
 				return m, nil
+			case "d":
+				m.procSortBy = procSortDiskIO
+				return m, nil
 			case "*":
 				if m.procData != nil && len(m.procData.Processes) > 0 {
 					if proc, ok := m.selectedProcess(); ok {
