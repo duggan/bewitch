@@ -245,10 +245,10 @@ func TestParseHexColor(t *testing.T) {
 		{"#FF0000", color.RGBA{255, 0, 0, 255}, false},
 		{"#1A1A2E", color.RGBA{0x1A, 0x1A, 0x2E, 0xFF}, false},
 		{"1A1A2E", color.RGBA{0x1A, 0x1A, 0x2E, 0xFF}, false},  // without #
-		{"#ff00ff", color.RGBA{0xFF, 0x00, 0xFF, 0xFF}, false},  // lowercase
+		{"#ff00ff", color.RGBA{0xFF, 0x00, 0xFF, 0xFF}, false}, // lowercase
 		{"", color.RGBA{}, true},
-		{"#FFF", color.RGBA{}, true},     // too short
-		{"#ZZZZZZ", color.RGBA{}, true},  // invalid hex
+		{"#FFF", color.RGBA{}, true},    // too short
+		{"#ZZZZZZ", color.RGBA{}, true}, // invalid hex
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {

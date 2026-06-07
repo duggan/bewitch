@@ -83,8 +83,8 @@ func renderTempView(temps []api.TemperatureMetric, width int, cachedChart string
 		Width(contentWidth).
 		Border(lipgloss.HiddenBorder())
 
-	b.WriteString(renderPanel("Sensors", tbl.Render()+"\n"+
-		lipgloss.NewStyle().Foreground(colorDeepPurple).Render("↑↓:navigate  space:toggle  a:all  PgUp/Dn:scroll"), width))
+	// Selection help renders as a fixed footer (hardwareFooter, via Model.viewFooter).
+	b.WriteString(renderPanel("Sensors", tbl.Render(), width))
 
 	// History chart (pre-rendered)
 	if cachedChart != "" {

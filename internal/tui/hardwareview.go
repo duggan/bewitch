@@ -86,6 +86,18 @@ func renderHardwareView(
 	return b.String()
 }
 
+// hardwareSelectionHelp is the per-sensor/zone/device selection help shared by the
+// Temperature, Power, and GPU hardware sub-sections. The caller (Model.viewFooter)
+// shows it only when the active section actually has items to select, matching the
+// old behaviour where it sat inside the populated table panel. "tab:switch section"
+// lives in the always-visible sub-tab bar at the top, so it isn't repeated here.
+func hardwareSelectionHelp() string {
+	sep := normalHelpStyle.Render("  ")
+	return normalHelpStyle.Render("↑↓:navigate") + sep +
+		normalHelpStyle.Render("space:toggle") + sep +
+		normalHelpStyle.Render("a:all")
+}
+
 func renderHardwareSubTabs(active int, hasTemp, hasPower, hasECC, hasGPU bool, width int) string {
 	activeStyle := lipgloss.NewStyle().Bold(true).Foreground(colorPink)
 	inactiveStyle := lipgloss.NewStyle().Foreground(colorDeepPurple)

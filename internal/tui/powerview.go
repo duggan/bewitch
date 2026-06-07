@@ -81,8 +81,8 @@ func renderPowerView(zones []api.PowerMetric, width int, cachedChart string, spa
 		Width(contentWidth).
 		Border(lipgloss.HiddenBorder())
 
-	b.WriteString(renderPanel("Zones", tbl.Render()+"\n"+
-		lipgloss.NewStyle().Foreground(colorDeepPurple).Render("↑↓:navigate  space:toggle  a:all  PgUp/Dn:scroll"), width))
+	// Selection help renders as a fixed footer (hardwareFooter, via Model.viewFooter).
+	b.WriteString(renderPanel("Zones", tbl.Render(), width))
 
 	// History chart (pre-rendered)
 	if cachedChart != "" {

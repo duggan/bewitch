@@ -155,6 +155,69 @@ func TestFormRoundTripAggregate(t *testing.T) {
 	}
 }
 
+// TestViewFooterAlwaysVisible verifies the per-view shortcut help renders in the
+// fixed footer (outside the scrollable viewport) for the interactive views, so it
+// stays visible even when a long table overflows the screen — the same class of bug
+// as the alerts view, generalized to Process / Network / Hardware.
+func TestViewFooterAlwaysVisible(t *testing.T) {
+	mc := newMockClient()
+	// Enough processes to overflow the viewport (a bottom-of-content footer would
+	// scroll off).
+	var procs []api.ProcessMetric
+	for i := 0; i < 80; i++ {
+		procs = append(procs, api.ProcessMetric{PID: int32(i + 1), Name: "proc", State: "S", CPUUserPct: 1})
+	}
+	mc.procs = &api.ProcessResponse{Processes: procs, TotalProcs: int32(len(procs))}
+	mc.net = []api.NetworkMetric{{Interface: "eth0", RxBytesSec: 100}, {Interface: "eth1"}}
+
+	build := func(v view) Model {
+		m := NewModel(mc, time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 28})
+		m = updated.(Model)
+		m.current = v
+		return m
+	}
+
+	t.Run("process", func(t *testing.T) {
+		m := build(viewProcess)
+		m.refreshProcessData()
+		out := m.View()
+		for _, want := range []string{"/:search", "c:cpu", "f:fds"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("process footer missing %q from View() (must be a fixed footer)", want)
+			}
+		}
+	})
+
+	t.Run("network", func(t *testing.T) {
+		m := build(viewNetwork)
+		m.refreshNetData()
+		out := m.View()
+		for _, want := range []string{"↑↓:navigate", "space:toggle", "a:all"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("network footer missing %q from View()", want)
+			}
+		}
+	})
+
+	t.Run("hardware temperature section with data", func(t *testing.T) {
+		m := build(viewHardware)
+		m.hardwareSection = hwSectionTemp
+		m.tempData = []api.TemperatureMetric{{Sensor: "coretemp/0", TempCelsius: 50}}
+		if !strings.Contains(m.View(), "space:toggle") {
+			t.Error("hardware selection help missing from View() when the section has data")
+		}
+	})
+
+	t.Run("hardware ECC section has no selection footer", func(t *testing.T) {
+		m := build(viewHardware)
+		m.hardwareSection = hwSectionECC
+		if strings.Contains(m.View(), "space:toggle") {
+			t.Error("ECC section must not show per-item selection help")
+		}
+	})
+}
+
 // TestFromAlertRuleMetricCategory checks the derived category/direction used to render
 // the locked parameter group.
 func TestFromAlertRuleMetricCategory(t *testing.T) {

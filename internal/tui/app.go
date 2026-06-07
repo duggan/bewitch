@@ -2917,7 +2917,7 @@ func (m *Model) captureViewContent() string {
 	if m.statusData != nil {
 		gutter = "\n" + renderStatusBar(buildStatusBar(m.statusData, m.current, m.lastDataChange[m.current], m.activeAlerts, m.activeAlertSeverity, time.Time{}), m.width, m.activeAlertSeverity)
 	}
-	return header + content + m.alertFooterLine() + gutter
+	return header + content + m.viewFooter() + gutter
 }
 
 // runCapture performs the actual file write. Called as an async tea.Cmd.
@@ -2940,14 +2940,47 @@ func runCapture(state *captureFormState, content string, settings CaptureSetting
 	return captureResultMsg{path: path}
 }
 
-// alertFooterLine returns the alerts view's fixed-footer line (with a leading
-// newline), or "" when another view or an overlay (form / date picker / capture)
-// owns the screen. Shared by the live View and the screenshot capture so they match.
-func (m Model) alertFooterLine() string {
-	if m.current != viewAlerts || m.alertFormActive || m.datePickerActive || m.captureFormActive {
+// viewFooter returns the current view's shortcut-help footer line (with a leading
+// newline), rendered OUTSIDE the scrollable viewport so it stays visible no matter
+// how tall the content grows — otherwise a help line embedded in a table panel
+// scrolls off the bottom once the table fills the screen. Empty when an overlay
+// (form / date picker / capture) owns the screen, or the view has no shortcuts
+// (dashboard) or only chart-range controls that stay with the chart (cpu/mem/disk).
+// Shared by View() and captureViewContent() so screenshots match the live frame.
+func (m Model) viewFooter() string {
+	if m.alertFormActive || m.datePickerActive || m.captureFormActive {
 		return ""
 	}
-	return "\n" + renderAlertFooter(m.alertFocus, m.alertConfirmDelete, m.alertConfirmName, m.alertFormErr)
+	var line string
+	switch m.current {
+	case viewAlerts:
+		line = renderAlertFooter(m.alertFocus, m.alertConfirmDelete, m.alertConfirmName, m.alertFormErr)
+	case viewProcess:
+		line = processFooter(m.procSearchActive, m.procSearchQuery, m.procSortBy, m.procPinnedOnly)
+	case viewNetwork:
+		line = netFooter(m.netDisplayBits)
+	case viewHardware:
+		// Only the sections with selectable items (and only when populated) carry
+		// selection controls; ECC and empty sections have none.
+		switch m.hardwareSection {
+		case hwSectionTemp:
+			if len(m.tempData) > 0 {
+				line = hardwareSelectionHelp()
+			}
+		case hwSectionPower:
+			if len(m.powerData) > 0 {
+				line = hardwareSelectionHelp()
+			}
+		case hwSectionGPU:
+			if len(m.gpuData) > 0 {
+				line = hardwareSelectionHelp()
+			}
+		}
+	}
+	if line == "" {
+		return ""
+	}
+	return "\n" + line
 }
 
 func (m *Model) renderCurrentContent() string {
@@ -3106,7 +3139,7 @@ func (m Model) View() string {
 		// form error), kept OUT of the scrollable viewport so it stays visible no
 		// matter how tall the fired-alerts table grows. The helpHeight reservation in
 		// the resize handler budgets for this line alongside the scroll indicator.
-		footer := m.alertFooterLine()
+		footer := m.viewFooter()
 
 		// Show scroll indicator if content is scrollable
 		totalLines := m.viewport.TotalLineCount()

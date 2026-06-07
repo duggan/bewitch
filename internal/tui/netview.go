@@ -149,35 +149,9 @@ func renderNetView(ifaces []api.NetworkMetric, width int, cachedChart string, sp
 		Width(contentWidth).
 		Border(lipgloss.HiddenBorder())
 
-	// Build help line with active-state highlighting
-	normalHelp := lipgloss.NewStyle().Foreground(colorDeepPurple)
-	activeHelp := lipgloss.NewStyle().Foreground(colorPink).Bold(true)
-	bitsLabel := "b:bytes"
-	if displayBits {
-		bitsLabel = "b:bits"
-	}
-	type helpItem struct {
-		text   string
-		active bool
-	}
-	helpItems := []helpItem{
-		{"↑↓:navigate", false},
-		{"space:toggle", false},
-		{"a:all", false},
-		{bitsLabel, displayBits},
-		{"PgUp/Dn:scroll", false},
-	}
-	var helpParts []string
-	for _, item := range helpItems {
-		if item.active {
-			helpParts = append(helpParts, activeHelp.Render(item.text))
-		} else {
-			helpParts = append(helpParts, normalHelp.Render(item.text))
-		}
-	}
-	helpLine := strings.Join(helpParts, normalHelp.Render("  "))
-
-	b.WriteString(renderPanel("Interfaces", tbl.Render()+"\n"+helpLine, width))
+	// Shortcut help renders as a fixed footer (netFooter, via Model.viewFooter),
+	// not inside this panel where it scrolled off once the chart pushed it down.
+	b.WriteString(renderPanel("Interfaces", tbl.Render(), width))
 
 	// History chart (pre-rendered)
 	if cachedChart != "" {
@@ -186,6 +160,23 @@ func renderNetView(ifaces []api.NetworkMetric, width int, cachedChart string, sp
 	}
 
 	return b.String()
+}
+
+// netFooter builds the network view's shortcut-help line for the fixed footer.
+func netFooter(displayBits bool) string {
+	bitsLabel := "b:bytes"
+	if displayBits {
+		bitsLabel = "b:bits"
+	}
+	bits := normalHelpStyle.Render(bitsLabel)
+	if displayBits {
+		bits = activeHelpStyle.Render(bitsLabel)
+	}
+	sep := normalHelpStyle.Render("  ")
+	return normalHelpStyle.Render("↑↓:navigate") + sep +
+		normalHelpStyle.Render("space:toggle") + sep +
+		normalHelpStyle.Render("a:all") + sep +
+		bits
 }
 
 func renderNetHistoryChart(series []api.TimeSeries, width, height int, start, end time.Time, displayBits bool) string {

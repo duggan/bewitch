@@ -243,44 +243,10 @@ func renderProcessView(procs *api.ProcessResponse, width int, cachedChart string
 		table.WriteString(dimStyle.Render(fmt.Sprintf("  ... and %d more processes", len(nonEnriched)-maxBelowFold)) + "\n")
 	}
 
-	// Build help line with active-state highlighting
-	normalHelp := lipgloss.NewStyle().Foreground(colorDeepPurple)
-	activeHelp := lipgloss.NewStyle().Foreground(colorPink).Bold(true)
-
-	type helpItem struct {
-		text   string
-		active bool
-	}
-
-	var helpLine string
-	if searchActive {
-		helpLine = normalHelp.Render("enter:confirm  esc:clear  searching name/cmdline")
-	} else {
-		items := []helpItem{
-			{"/:search", searchQuery != ""},
-			{"a:alert", false},
-			{"*:pin", false},
-			{"P:pinned", pinnedOnly},
-			{"↑↓:navigate", false},
-			{"c:cpu", sortBy == procSortCPU},
-			{"m:mem", sortBy == procSortMem},
-			{"p:pid", sortBy == procSortPID},
-			{"n:name", sortBy == procSortName},
-			{"t:thr", sortBy == procSortThreads},
-			{"f:fds", sortBy == procSortFDs},
-		}
-		var parts []string
-		for _, item := range items {
-			if item.active {
-				parts = append(parts, activeHelp.Render(item.text))
-			} else {
-				parts = append(parts, normalHelp.Render(item.text))
-			}
-		}
-		helpLine = strings.Join(parts, normalHelp.Render("  "))
-	}
-
-	b.WriteString(renderPanel("Process List", table.String()+helpLine, width))
+	// The keyboard-shortcut help is rendered as a fixed footer (processFooter, via
+	// Model.viewFooter) OUTSIDE the scrollable viewport — inside the Process List
+	// panel it scrolled off the bottom once the table filled the screen.
+	b.WriteString(renderPanel("Process List", table.String(), width))
 
 	// Chart mode tabs and history chart (pre-rendered)
 	if cachedChart != "" {
@@ -290,6 +256,40 @@ func renderProcessView(procs *api.ProcessResponse, width int, cachedChart string
 	}
 
 	return b.String(), filteredLen
+}
+
+// processFooter builds the process view's shortcut-help line for the fixed footer,
+// with the active sort key / filter highlighted.
+func processFooter(searchActive bool, searchQuery string, sortBy procSortField, pinnedOnly bool) string {
+	if searchActive {
+		return normalHelpStyle.Render("enter:confirm  esc:clear  searching name/cmdline")
+	}
+	type helpItem struct {
+		text   string
+		active bool
+	}
+	items := []helpItem{
+		{"/:search", searchQuery != ""},
+		{"a:alert", false},
+		{"*:pin", false},
+		{"P:pinned", pinnedOnly},
+		{"↑↓:navigate", false},
+		{"c:cpu", sortBy == procSortCPU},
+		{"m:mem", sortBy == procSortMem},
+		{"p:pid", sortBy == procSortPID},
+		{"n:name", sortBy == procSortName},
+		{"t:thr", sortBy == procSortThreads},
+		{"f:fds", sortBy == procSortFDs},
+	}
+	var parts []string
+	for _, item := range items {
+		if item.active {
+			parts = append(parts, activeHelpStyle.Render(item.text))
+		} else {
+			parts = append(parts, normalHelpStyle.Render(item.text))
+		}
+	}
+	return strings.Join(parts, normalHelpStyle.Render("  "))
 }
 
 var (

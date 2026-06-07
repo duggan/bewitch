@@ -74,7 +74,7 @@ func initPNGFont(dpi float64) {
 			name string
 			data []byte
 		}{
-			{"NotoSansSymbols2", notoSymbols2TTF}, // ✧ ✦ + braille
+			{"NotoSansSymbols2", notoSymbols2TTF},   // ✧ ✦ + braille
 			{"NotoSansSymbols", notoSymbolsMoonTTF}, // ☽
 		} {
 			f, err := opentype.Parse(fb.data)

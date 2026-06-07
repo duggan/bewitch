@@ -105,8 +105,8 @@ func renderGPUView(gpus []api.GPUMetric, width int, cachedChart string, sparkDat
 		Width(contentWidth).
 		Border(lipgloss.HiddenBorder())
 
-	b.WriteString(renderPanel("Devices", tbl.Render()+"\n"+
-		lipgloss.NewStyle().Foreground(colorDeepPurple).Render("↑↓:navigate  space:toggle  a:all  PgUp/Dn:scroll"), width))
+	// Selection help renders as a fixed footer (hardwareFooter, via Model.viewFooter).
+	b.WriteString(renderPanel("Devices", tbl.Render(), width))
 
 	// History chart (pre-rendered)
 	if cachedChart != "" {

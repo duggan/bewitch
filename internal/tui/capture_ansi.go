@@ -15,22 +15,22 @@ import (
 type alertAction int
 
 const (
-	alertActionNone    alertAction = iota
-	alertActionToggle              // space: toggle enabled/disabled on rule at cursor
-	alertActionDelete              // d: delete rule at cursor
-	alertActionClear               // c: clear all fired alerts
+	alertActionNone   alertAction = iota
+	alertActionToggle             // space: toggle enabled/disabled on rule at cursor
+	alertActionDelete             // d: delete rule at cursor
+	alertActionClear              // c: clear all fired alerts
 )
 
 // DemoState identifies a unique renderable TUI state.
 type DemoState struct {
-	View            view
-	HistoryRange    int           // index into historyRanges
-	HardwareSection int           // hwSectionTemp..hwSectionGPU (hardware view only)
-	ProcessSort     procSortField // process view only
-	AlertFocus      int           // 0=rules, 1=alerts (alerts view only)
-	CursorPos       int           // cursor position in selector list (-1 = no cursor)
-	CursorDeselected bool         // true = item at cursor is toggled off
-	AlertAction     alertAction   // mutation applied to alerts view
+	View             view
+	HistoryRange     int           // index into historyRanges
+	HardwareSection  int           // hwSectionTemp..hwSectionGPU (hardware view only)
+	ProcessSort      procSortField // process view only
+	AlertFocus       int           // 0=rules, 1=alerts (alerts view only)
+	CursorPos        int           // cursor position in selector list (-1 = no cursor)
+	CursorDeselected bool          // true = item at cursor is toggled off
+	AlertAction      alertAction   // mutation applied to alerts view
 }
 
 // StateKey returns a string identifier for this state, used as JSON map key
@@ -79,11 +79,11 @@ func (s DemoState) StateKey(rangeLabels []string) string {
 
 // DemoStateMap is the complete output for the browser demo player.
 type DemoStateMap struct {
-	Cols        int                        `json:"cols"`
-	Rows        int                        `json:"rows"`
-	States      map[string][]string        `json:"states"`      // stateKey → ANSI frames
+	Cols        int                          `json:"cols"`
+	Rows        int                          `json:"rows"`
+	States      map[string][]string          `json:"states"`      // stateKey → ANSI frames
 	Transitions map[string]map[string]string `json:"transitions"` // stateKey → { key → stateKey }
-	Initial     string                     `json:"initial"`
+	Initial     string                       `json:"initial"`
 }
 
 // SelectorItemCounts holds the number of items in each selector list.
@@ -292,7 +292,7 @@ func BuildTransitions(states []DemoState, rangeLabels []string, defaultRange int
 		// Tab / Shift+Tab: hardware section cycling
 		if s.View == viewHardware {
 			for _, dir := range []struct {
-				key  string
+				key   string
 				delta int
 			}{{"Tab", 1}, {"Shift+Tab", 3}} {
 				sec := s
