@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/duggan/bewitch/internal/api"
 	"github.com/duggan/bewitch/internal/config"
 )
@@ -78,23 +79,54 @@ func TestProcessTinyTerminalDropsChart(t *testing.T) {
 	}
 }
 
-// TestProcessTableNavigation verifies arrow keys drive the bounded table's cursor (the
-// selection source of truth) rather than the outer viewport.
+// TestProcessTableNavigation verifies arrow keys drive the table cursor (the selection
+// source of truth) and that the selected process follows it.
 func TestProcessTableNavigation(t *testing.T) {
 	m := processSplitModel(t, 30, 140, 40)
-	if m.procTable.Cursor() != 0 {
-		t.Fatalf("initial cursor = %d, want 0", m.procTable.Cursor())
+	if m.procCursor != 0 {
+		t.Fatalf("initial cursor = %d, want 0", m.procCursor)
 	}
 	for i := 0; i < 3; i++ {
 		updated, _ := m.Update(key("down"))
 		m = updated.(Model)
 	}
-	if got := m.procTable.Cursor(); got != 3 {
-		t.Errorf("after 3×down, cursor = %d, want 3", got)
+	if m.procCursor != 3 {
+		t.Errorf("after 3×down, cursor = %d, want 3", m.procCursor)
 	}
 	// The detail strip should follow the cursor to the 4th process.
 	if sel, ok := m.selectedProcess(); !ok || sel.PID != 103 {
 		t.Errorf("selectedProcess after navigation = %+v (ok=%v), want PID 103", sel, ok)
+	}
+}
+
+// TestProcessRowColoring verifies the hand-rendered table colours process-state cells
+// (the reason it isn't a bubbles/table, whose cell truncation corrupts embedded ANSI) and
+// keeps every row exactly the table width — i.e. the colour codes don't break alignment.
+func TestProcessRowColoring(t *testing.T) {
+	cols := processColumns(120, procSortCPU)
+	tableW := 0
+	for _, c := range cols {
+		tableW += c.width
+	}
+	cases := []struct {
+		state string
+		style lipgloss.Style
+	}{
+		{"R", lipgloss.NewStyle().Foreground(colorPurple)},
+		{"D", alertWarnStyle},
+		{"Z", alertCritStyle},
+	}
+	for _, tc := range cases {
+		p := api.ProcessMetric{PID: 1, Name: "x", State: tc.state, Enriched: true, StartTimeNs: time.Now().Add(-time.Hour).UnixNano()}
+		row := renderProcessRow(p, cols, false, nil, tableW)
+		sample := tc.style.Render("·") // "\x1b[<sgr>m·\x1b[0m" — the opening SGR is what we expect in the row
+		sgr := sample[:strings.Index(sample, "m")+1]
+		if !strings.Contains(row, sgr) {
+			t.Errorf("state %s: row missing the expected colour escape %q", tc.state, sgr)
+		}
+		if w := lipgloss.Width(row); w != tableW {
+			t.Errorf("state %s: row width = %d, want %d (colour broke alignment)", tc.state, w, tableW)
+		}
 	}
 }
 

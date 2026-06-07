@@ -9,7 +9,6 @@ import (
 
 	"github.com/duggan/bewitch/internal/api"
 
-	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -78,30 +77,22 @@ func orderedCombined(procs []api.ProcessMetric, searchQuery string, pinnedMap ma
 	return combined
 }
 
-// renderProcessView lays out the "Split Deck": a height-capped, internally-scrolling
-// process table (bubbles/table, sized in setProcTableHeight) over an always-visible
-// history chart, with a one-line detail strip for the selected row in between. The table
-// pointer carries scroll/cursor state across frames; this function only (re)builds its
-// columns and rows from the cached process snapshot, so it stays render-pure.
+// renderProcessView lays out the "Split Deck": a height-capped, scrolling process table
+// over an always-visible history chart, with a one-line detail strip for the selected
+// row in between. The table is hand-rendered (renderProcessTable) rather than via
+// bubbles/table so cells can carry colour (process state, pin marker, dimmed lightweight
+// rows) — bubbles/table's runewidth truncation corrupts ANSI inside a cell. Scroll/cursor
+// state lives on the Model; this function is render-pure over the pre-clamped values.
 //
-// Returns the rendered content and the number of displayed rows (for cursor bookkeeping).
-func renderProcessView(procs *api.ProcessResponse, width int, procTable *table.Model, searchInput textinput.Model, cachedChart string, sortBy procSortField, searchActive bool, searchQuery string, pinnedMap map[string]bool, pinnedOnly bool, chartPinned bool) (string, int) {
+// `combined` is the displayed process slice in render order (caller-built so the cursor
+// maps to it). Returns the rendered content and the row count (for cursor bookkeeping).
+func renderProcessView(procs *api.ProcessResponse, combined []api.ProcessMetric, width, tableHeight, scroll, cursor int, searchInput textinput.Model, cachedChart string, sortBy procSortField, searchActive bool, searchQuery string, pinnedMap map[string]bool, pinnedOnly bool, chartPinned bool) (string, int) {
 	if procs == nil {
 		return renderPanel("Processes", dimStyle.Render("loading..."), width), 0
 	}
 
-	combined := orderedCombined(procs.Processes, searchQuery, pinnedMap, pinnedOnly, sortBy)
-
-	// Rebuild columns (width-tiered, with a ▼ on the active sort) and rows from the
-	// cached snapshot. bubbles/table keeps the cursor across SetRows (clamping if the
-	// filtered set shrank), so navigation state survives ticks and filter changes.
 	cols := processColumns(width, sortBy)
-	procTable.SetColumns(toTableColumns(cols))
-	rows := make([]table.Row, len(combined))
-	for i, p := range combined {
-		rows[i] = buildProcessRow(p, cols, pinnedMap)
-	}
-	procTable.SetRows(rows)
+	table := renderProcessTable(combined, cols, cursor, scroll, tableHeight, pinnedMap)
 
 	var b strings.Builder
 
@@ -113,10 +104,10 @@ func renderProcessView(procs *api.ProcessResponse, width int, procTable *table.M
 			dimStyle.Render("(/:edit  esc:clear)") + "\n")
 	}
 
-	b.WriteString(renderPanel(processPanelTitle(procs, sortBy, len(combined), pinnedOnly, searchQuery), procTable.View(), width))
+	b.WriteString(renderPanel(processPanelTitle(procs, sortBy, len(combined), cursor, pinnedOnly, searchQuery), table, width))
 
 	// Detail strip: the columns that don't fit (and the full cmdline) for the cursor row.
-	b.WriteString("\n" + renderProcessDetailStrip(combined, procTable.Cursor(), width))
+	b.WriteString("\n" + renderProcessDetailStrip(combined, cursor, width))
 
 	// Chart-mode tabs + the pre-rendered history chart, always below the (bounded) table.
 	if cachedChart != "" {
@@ -126,6 +117,93 @@ func renderProcessView(procs *api.ProcessResponse, width int, procTable *table.M
 	}
 
 	return b.String(), len(combined)
+}
+
+// renderProcessTable renders the bounded, scrolling, COLOURED process table: a styled
+// header (purple, with the ▼ sort marker) and a bottom rule, then the window of data rows
+// [scroll, scroll+body) around the cursor, padded to exactly tableHeight lines. Hand-
+// rendered (not bubbles/table) so each cell can carry colour the table widget would
+// corrupt: process state (R/D/Z), the pink pin marker, dimmed lightweight (Phase-1) rows,
+// and the pink selected row.
+func renderProcessTable(combined []api.ProcessMetric, cols []procColumn, cursor, scroll, tableHeight int, pinnedMap map[string]bool) string {
+	tableW := 0
+	for _, c := range cols {
+		tableW += c.width
+	}
+
+	// Header + bottom rule (2 lines), mirroring the bubbles/table look.
+	var head strings.Builder
+	for _, c := range cols {
+		head.WriteString(headerStyle.Render(alignCell(c.title, c.width, c.right)))
+	}
+	lines := []string{
+		head.String(),
+		lipgloss.NewStyle().Foreground(colorDeepPurple).Render(strings.Repeat("─", tableW)),
+	}
+
+	body := tableHeight - 2
+	if body < 1 {
+		body = 1
+	}
+	for i := scroll; i < scroll+body; i++ {
+		if i >= 0 && i < len(combined) {
+			lines = append(lines, renderProcessRow(combined[i], cols, i == cursor, pinnedMap, tableW))
+		} else {
+			lines = append(lines, "") // blank padding keeps the panel a fixed height
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// renderProcessRow renders one process as a single coloured line of width tableW. The
+// selected row is drawn plain and wrapped in the pink selected style (so per-cell colours
+// don't fight the highlight); other rows colour the state and pin marker, and dim
+// lightweight (non-enriched) rows so the fully-sampled processes stand out.
+func renderProcessRow(p api.ProcessMetric, cols []procColumn, selected bool, pinnedMap map[string]bool, tableW int) string {
+	if selected {
+		var plain strings.Builder
+		for _, c := range cols {
+			plain.WriteString(alignCell(processCellValue(p, c.key, pinnedMap), c.width, c.right))
+		}
+		return selectedRowStyle.Render(plain.String())
+	}
+
+	var b strings.Builder
+	for _, c := range cols {
+		cell := alignCell(processCellValue(p, c.key, pinnedMap), c.width, c.right)
+		switch {
+		case c.key == "mark":
+			if pinnedMap[p.Name] {
+				cell = lipgloss.NewStyle().Foreground(colorPink).Render(cell)
+			} else {
+				cell = dimStyle.Render(cell)
+			}
+		case c.key == "st":
+			cell = procStateStyle(p.State).Render(cell)
+		case !p.Enriched:
+			cell = dimStyle.Render(cell) // lightweight rows recede
+		default:
+			cell = valueStyle.Render(cell)
+		}
+		b.WriteString(cell)
+	}
+	return b.String()
+}
+
+// procStateStyle colours a process state letter: running purple, sleeping dim,
+// uninterruptible-sleep (D) warning, zombie (Z) critical.
+func procStateStyle(state string) lipgloss.Style {
+	switch state {
+	case "R":
+		return lipgloss.NewStyle().Foreground(colorPurple)
+	case "D":
+		return alertWarnStyle
+	case "Z":
+		return alertCritStyle
+	case "S", "I":
+		return dimStyle
+	}
+	return valueStyle
 }
 
 // procColumn describes one process-table column: its key (matched in buildProcessRow),
@@ -242,19 +320,9 @@ func sortName(sortBy procSortField) string {
 	return "cpu"
 }
 
-// toTableColumns pre-aligns each header to its exact column width so the bubbles/table
-// header (which left-aligns) lines up with the alignment-baked cell values.
-func toTableColumns(cols []procColumn) []table.Column {
-	out := make([]table.Column, len(cols))
-	for i, c := range cols {
-		out[i] = table.Column{Title: alignCell(c.title, c.width, c.right), Width: c.width}
-	}
-	return out
-}
-
 // alignCell formats s to exactly width w (left- or right-aligned) with a one-column gap,
-// so adjacent cells (which bubbles/table renders flush) don't run together. The result is
-// exactly w wide, so the table's own Width/Truncate become no-ops (and never corrupt it).
+// so adjacent cells (rendered flush) don't run together. The plain result is exactly w
+// wide; callers may then wrap it in a colour style (which doesn't change visible width).
 func alignCell(s string, w int, right bool) string {
 	if w <= 1 {
 		return truncate(s, w)
@@ -264,17 +332,6 @@ func alignCell(s string, w int, right bool) string {
 		return fmt.Sprintf("%*s ", w-1, s)
 	}
 	return fmt.Sprintf("%-*s", w, s)
-}
-
-// buildProcessRow renders one process into aligned cell strings matching cols. Cells are
-// plain text: bubbles/table's runewidth truncation isn't ANSI-aware, so per-cell colour
-// would corrupt; colour/identity lives in the table chrome (header, selected row, border).
-func buildProcessRow(p api.ProcessMetric, cols []procColumn, pinnedMap map[string]bool) table.Row {
-	row := make(table.Row, len(cols))
-	for i, c := range cols {
-		row[i] = alignCell(processCellValue(p, c.key, pinnedMap), c.width, c.right)
-	}
-	return row
 }
 
 // processCellValue returns the raw (unaligned) string for one column of one process.
@@ -335,8 +392,9 @@ func processAge(p api.ProcessMetric) string {
 }
 
 // processPanelTitle is the pink panel title: the summary line plus the active sort (so
-// the sort is visible even when its column is hidden) and any active filter.
-func processPanelTitle(procs *api.ProcessResponse, sortBy procSortField, shown int, pinnedOnly bool, searchQuery string) string {
+// the sort is visible even when its column is hidden), the cursor position, and any
+// active filter.
+func processPanelTitle(procs *api.ProcessResponse, sortBy procSortField, shown, cursor int, pinnedOnly bool, searchQuery string) string {
 	title := fmt.Sprintf("Processes · %d total · %d active · CPU %.1f%% · Mem %s · ↓%s",
 		procs.TotalProcs, procs.ActiveProcs, procs.TotalCPUPct, humanBytes(procs.TotalRSSBytes), sortName(sortBy))
 	if pinnedOnly {
@@ -344,6 +402,9 @@ func processPanelTitle(procs *api.ProcessResponse, sortBy procSortField, shown i
 	}
 	if searchQuery != "" {
 		title += fmt.Sprintf(" · %d matches", shown)
+	}
+	if shown > 0 {
+		title += fmt.Sprintf(" · %d/%d", cursor+1, shown)
 	}
 	return title
 }
