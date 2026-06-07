@@ -124,6 +124,8 @@ type ProcessMetric struct {
 	StartTimeNs   int64   `json:"start_time_ns"`
 	ReadBytesSec  float64 `json:"read_bytes_sec,omitempty"`  // disk I/O, Phase-2 enriched only
 	WriteBytesSec float64 `json:"write_bytes_sec,omitempty"` // disk I/O, Phase-2 enriched only
+	RxBytesSec    float64 `json:"rx_bytes_sec,omitempty"`    // network I/O (eBPF), Phase-2 enriched only
+	TxBytesSec    float64 `json:"tx_bytes_sec,omitempty"`    // network I/O (eBPF), Phase-2 enriched only
 	Enriched      bool    `json:"enriched"`                  // true = full data (Phase 2), false = lightweight (Phase 1 only)
 }
 

@@ -155,6 +155,21 @@ func main() {
 		procCollector = proc
 	}
 
+	// Per-process network I/O via eBPF (Linux only; a no-op stub elsewhere). Skipped
+	// in mock mode (synthetic data shouldn't attach real kprobes). Load failures —
+	// old kernel, missing CAP_BPF, BTF-less host, unprivileged container — degrade to
+	// "no network rates" rather than failing the daemon, matching the SMART/GPU pattern.
+	var netIOReader collector.NetIOReader
+	if !cfg.Daemon.Mock {
+		if reader, err := collector.NewNetIOReader(); err != nil {
+			log.Warnf("per-process network I/O unavailable: %v", err)
+		} else if reader != nil {
+			procCollector.SetNetIOReader(reader)
+			netIOReader = reader
+			log.Infof("per-process network I/O enabled (eBPF)")
+		}
+	}
+
 	// alertEngine is constructed further down, but the runtime-pins closure below
 	// captures it by reference. The closure runs once per collection cycle, well
 	// after the engine is built, so the nil guard only covers the brief startup
@@ -688,6 +703,9 @@ func main() {
 					s.Stop()
 				}
 			}
+			if netIOReader != nil {
+				netIOReader.Close() // detach eBPF fentry links / unload the map
+			}
 			apiServer.Shutdown(ctx)
 			close(writeCh)
 			writeWg.Wait() // drain remaining batches before DB close
@@ -728,6 +746,8 @@ func buildProcessSnapshot(pd *collector.ProcessData, allBasic []collector.Proces
 			StartTimeNs:   p.StartTime,
 			ReadBytesSec:  p.ReadBytesSec,
 			WriteBytesSec: p.WriteBytesSec,
+			RxBytesSec:    p.RxBytesSec,
+			TxBytesSec:    p.TxBytesSec,
 			Enriched:      true,
 		})
 	}

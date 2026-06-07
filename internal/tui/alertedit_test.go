@@ -193,6 +193,26 @@ func TestViewFooterAlwaysVisible(t *testing.T) {
 		}
 	})
 
+	t.Run("net column + w sort", func(t *testing.T) {
+		mc2 := newMockClient()
+		mc2.procs = &api.ProcessResponse{Processes: []api.ProcessMetric{
+			{PID: 1, Name: "p", State: "S", Enriched: true, RxBytesSec: 65536, TxBytesSec: 32768},
+		}, TotalProcs: 1}
+		m := NewModel(mc2, time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
+		updated, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+		m = updated.(Model)
+		m.current = viewProcess
+		m.refreshProcessData()
+		m.viewport.SetContent(m.renderCurrentContent())
+		if !strings.Contains(m.View(), "NET R/W") {
+			t.Error("process view should show the NET R/W column at width 140")
+		}
+		updated, _ = m.Update(key("w"))
+		if updated.(Model).procSortBy != procSortNet {
+			t.Error("'w' should set the net sort")
+		}
+	})
+
 	t.Run("cpu shows the range help footer", func(t *testing.T) {
 		m := build(viewCPU)
 		out := m.View()

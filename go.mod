@@ -13,6 +13,7 @@ require (
 	github.com/charmbracelet/log v0.4.2
 	github.com/charmbracelet/x/ansi v0.11.1
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20260209194814-eeb2896ac759
+	github.com/cilium/ebpf v0.21.0
 	github.com/containrrr/shoutrrr v0.8.0
 	github.com/duckdb/duckdb-go/v2 v2.5.5
 	github.com/knz/bubbline v0.0.0-20251201090646-433e881e9884

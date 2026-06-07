@@ -383,6 +383,8 @@ func (c *MockProcessCollector) SetRuntimePinsFunc(fn func() []string) {
 	c.runtimePinsFn = fn
 }
 
+func (c *MockProcessCollector) SetNetIOReader(NetIOReader) {} // no-op: mock has no eBPF backend
+
 func (c *MockProcessCollector) AllProcessSnapshot() []ProcessBasicInfo {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

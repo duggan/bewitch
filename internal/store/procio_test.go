@@ -19,20 +19,25 @@ func TestProcessDiskIOPersisted(t *testing.T) {
 		Data: collector.ProcessData{Processes: []collector.ProcessSample{
 			{PID: 4242, StartTime: 1000, Name: "writer", State: "R",
 				CPUUserPct: 1, RSSBytes: 2048, NumFDs: 3, NumThreads: 2,
-				ReadBytesSec: 1048576, WriteBytesSec: 524288},
+				ReadBytesSec: 1048576, WriteBytesSec: 524288,
+				RxBytesSec: 65536, TxBytesSec: 32768},
 		}},
 	}
 	if err := s.WriteBatch([]collector.Sample{sample}); err != nil {
 		t.Fatalf("WriteBatch: %v", err)
 	}
 
-	var read, write float64
+	var read, write, rx, tx float64
 	if err := s.db.QueryRow(
-		"SELECT read_bytes_sec, write_bytes_sec FROM process_metrics WHERE pid = 4242").Scan(&read, &write); err != nil {
-		t.Fatalf("read disk I/O: %v", err)
+		"SELECT read_bytes_sec, write_bytes_sec, net_rx_bytes_sec, net_tx_bytes_sec FROM process_metrics WHERE pid = 4242").
+		Scan(&read, &write, &rx, &tx); err != nil {
+		t.Fatalf("read process I/O: %v", err)
 	}
 	if read != 1048576 || write != 524288 {
 		t.Errorf("disk I/O = %v/%v, want 1048576/524288", read, write)
+	}
+	if rx != 65536 || tx != 32768 {
+		t.Errorf("net I/O = %v/%v, want 65536/32768", rx, tx)
 	}
 }
 

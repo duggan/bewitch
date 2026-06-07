@@ -33,6 +33,10 @@ type ProcessSample struct {
 	// CAP_SYS_PTRACE) or on the first sample for a process.
 	ReadBytesSec  float64
 	WriteBytesSec float64
+	// Network I/O rates (bytes/sec) from the eBPF NetIOReader (TCP send/recv payload).
+	// Phase-2 enriched only; 0 when the eBPF backend isn't loaded or on the first sample.
+	RxBytesSec float64
+	TxBytesSec float64
 }
 
 // ProcessData contains all process metrics from a single collection.
@@ -83,9 +87,11 @@ type procBasic struct {
 // ProcessCollector collects process metrics via /proc.
 type ProcessCollector struct {
 	fs           procfs.FS
-	prev         map[int]procTimes     // PID -> previous CPU times
-	prevIO       map[int]procfs.ProcIO // PID -> previous I/O counters (enriched set only), for rates
-	cmdlineCache map[int]cachedCmdline // PID -> cached cmdline
+	prev         map[int]procTimes       // PID -> previous CPU times
+	prevIO       map[int]procfs.ProcIO   // PID -> previous disk I/O counters (enriched set only), for rates
+	prevNet      map[int32]NetIOCounters // PID -> previous network byte counters, for rates
+	netIO        NetIOReader             // optional eBPF per-process network reader (nil = unavailable)
+	cmdlineCache map[int]cachedCmdline   // PID -> cached cmdline
 	prevTime     time.Time
 	maxProcs     int
 	bootTime     uint64          // system boot time in seconds since epoch
@@ -131,6 +137,7 @@ func NewProcessCollector(maxProcs int, configPins []string) (*ProcessCollector, 
 		fs:           fs,
 		prev:         make(map[int]procTimes),
 		prevIO:       make(map[int]procfs.ProcIO),
+		prevNet:      make(map[int32]NetIOCounters),
 		cmdlineCache: make(map[int]cachedCmdline),
 		prevTime:     time.Now(),
 		maxProcs:     maxProcs,
@@ -147,6 +154,12 @@ func NewProcessCollector(maxProcs int, configPins []string) (*ProcessCollector, 
 // Called once per collection cycle to get the latest pins from preferences.
 func (c *ProcessCollector) SetRuntimePinsFunc(fn func() []string) {
 	c.runtimePinsFn = fn
+}
+
+// SetNetIOReader installs the optional per-process network I/O reader (the eBPF
+// backend on Linux). nil disables per-process network rates.
+func (c *ProcessCollector) SetNetIOReader(r NetIOReader) {
+	c.netIO = r
 }
 
 // AllProcessSnapshot returns the latest lightweight snapshot of all processes.
@@ -333,6 +346,12 @@ func (c *ProcessCollector) Collect() (Sample, error) {
 	// prevIO is rebuilt from this cycle's enriched set, which auto-evicts processes
 	// that dropped out of enrichment or died (no separate stale sweep needed).
 	newPrevIO := make(map[int]procfs.ProcIO, len(topN))
+	// Per-process network counters: snapshot the eBPF map once per cycle (cheap), then
+	// delta per enriched PID below. nil when the eBPF backend isn't loaded.
+	var netSnap map[int32]NetIOCounters
+	if c.netIO != nil {
+		netSnap = c.netIO.Snapshot()
+	}
 	for _, b := range topN {
 		ps := c.enrichProc(b, now)
 		// Disk I/O rates (Phase-2 only — one /proc/[pid]/io read per enriched proc).
@@ -350,6 +369,19 @@ func (c *ProcessCollector) Collect() (Sample, error) {
 				}
 			}
 		}
+		// Network I/O rates from the eBPF cumulative counters, delta'd against last cycle.
+		if netSnap != nil && dt > 0 {
+			if cur, ok := netSnap[int32(b.proc.PID)]; ok {
+				if prev, ok := c.prevNet[int32(b.proc.PID)]; ok {
+					if d := int64(cur.RxBytes) - int64(prev.RxBytes); d > 0 {
+						ps.RxBytesSec = float64(d) / dt
+					}
+					if d := int64(cur.TxBytes) - int64(prev.TxBytes); d > 0 {
+						ps.TxBytesSec = float64(d) / dt
+					}
+				}
+			}
+		}
 		c.samples = append(c.samples, ps)
 	}
 
@@ -358,6 +390,9 @@ func (c *ProcessCollector) Collect() (Sample, error) {
 
 	c.prev = newPrev
 	c.prevIO = newPrevIO
+	if netSnap != nil {
+		c.prevNet = netSnap // the eBPF map already bounds entries to network-active PIDs
+	}
 	c.prevTime = now
 
 	return Sample{

@@ -12,13 +12,21 @@ Group=bewitch
 SupplementaryGroups=disk video render
 StateDirectory=bewitch
 RuntimeDirectory=bewitch
-# CAP_SYS_RAWIO: SMART device access. CAP_PERFMON: perf-event GPU/RAPL access.
+# CAP_SYS_RAWIO: SMART device access. CAP_PERFMON: perf-event GPU/RAPL access AND
+# attaching the eBPF tracing (fentry) programs. CAP_BPF: loading those BPF programs and
+# creating their map (per-process network I/O via tcp_sendmsg/tcp_cleanup_rbuf fentry
+# hooks); without CAP_BPF the daemon logs a warning and reports zero network rates.
 # CAP_SYS_PTRACE: read /proc/[pid]/io for processes the bewitch user doesn't own
 # (per-process disk I/O) — the ptrace_may_access READ check isn't satisfied by the
-# other two. It grants PTRACE_MODE_READ to any process; acceptable for a monitoring
-# daemon already holding CAP_SYS_RAWIO. Remove it to drop cross-user process I/O.
-AmbientCapabilities=CAP_SYS_RAWIO CAP_PERFMON CAP_SYS_PTRACE
-CapabilityBoundingSet=CAP_SYS_RAWIO CAP_PERFMON CAP_SYS_PTRACE
+# others. It grants PTRACE_MODE_READ to any process; acceptable for a monitoring daemon
+# already holding CAP_SYS_RAWIO. Remove individual caps to drop the matching feature.
+#
+# NOTE: eBPF per-process network attribution keys on the host/init PID namespace (that is
+# what bpf_get_current_pid_tgid returns), so the daemon must run in the host PID namespace
+# — do not add PrivatePID/user-namespacing here. No SystemCallFilter is set, so bpf() and
+# perf_event_open() are not blocked; adding one must allowlist the @bpf set.
+AmbientCapabilities=CAP_SYS_RAWIO CAP_PERFMON CAP_SYS_PTRACE CAP_BPF
+CapabilityBoundingSet=CAP_SYS_RAWIO CAP_PERFMON CAP_SYS_PTRACE CAP_BPF
 
 [Install]
 WantedBy=multi-user.target

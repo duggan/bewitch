@@ -22,6 +22,7 @@ const (
 	procSortThreads
 	procSortFDs
 	procSortDiskIO
+	procSortNet
 )
 
 // orderedProcessList filters, sorts, and splits processes into enriched (above the fold)
@@ -109,12 +110,15 @@ func renderProcessView(procs *api.ProcessResponse, width int, cachedChart string
 		return ""
 	}
 
-	// Adaptive column widths based on terminal width
+	// Adaptive column widths based on terminal width. The NET R/W column only appears
+	// on wide terminals (the table is already busy); the 'w' sort still works at any
+	// width and the data is always collected, so narrow terminals just don't show it.
 	nameWidth := 16
 	cmdlineWidth := 0
+	showNet := width >= 120
 	if width >= 120 {
 		nameWidth = 20
-		cmdlineWidth = 30
+		cmdlineWidth = 24 // trimmed from 30 to make room for the NET column
 	} else if width >= 100 {
 		nameWidth = 18
 		cmdlineWidth = 20
@@ -127,6 +131,9 @@ func renderProcessView(procs *api.ProcessResponse, width int, cachedChart string
 	header += fmt.Sprintf(" %4s", "THR"+sortIndicator(procSortThreads))
 	header += fmt.Sprintf(" %5s", "FDs"+sortIndicator(procSortFDs))
 	header += fmt.Sprintf(" %11s", "DISK R/W"+sortIndicator(procSortDiskIO))
+	if showNet {
+		header += fmt.Sprintf(" %11s", "NET R/W"+sortIndicator(procSortNet))
+	}
 	header += " AGE"
 	if cmdlineWidth > 0 {
 		header += fmt.Sprintf(" %-*s", cmdlineWidth, "CMDLINE")
@@ -182,9 +189,15 @@ func renderProcessView(procs *api.ProcessResponse, width int, cachedChart string
 			// Combined read/write byte-rate; "--" when the daemon can't read this
 			// process's /proc/[pid]/io shows as 0/0 (same as idle — indistinguishable).
 			row += fmt.Sprintf(" %11s", humanBytes(uint64(p.ReadBytesSec))+"/"+humanBytes(uint64(p.WriteBytesSec)))
+			if showNet {
+				row += fmt.Sprintf(" %11s", humanBytes(uint64(p.RxBytesSec))+"/"+humanBytes(uint64(p.TxBytesSec)))
+			}
 		} else {
 			row += "    --"
 			row += fmt.Sprintf(" %11s", "--")
+			if showNet {
+				row += fmt.Sprintf(" %11s", "--")
+			}
 		}
 		row += fmt.Sprintf(" %6s", age)
 
@@ -287,6 +300,7 @@ func processFooter(searchActive bool, searchQuery string, sortBy procSortField, 
 		{"t:thr", sortBy == procSortThreads},
 		{"f:fds", sortBy == procSortFDs},
 		{"d:disk", sortBy == procSortDiskIO},
+		{"w:net", sortBy == procSortNet},
 	}
 	var parts []string
 	for _, item := range items {
@@ -383,6 +397,10 @@ func sortProcesses(procs []api.ProcessMetric, sortBy procSortField) {
 	case procSortDiskIO:
 		sort.Slice(procs, func(i, j int) bool {
 			return procs[i].ReadBytesSec+procs[i].WriteBytesSec > procs[j].ReadBytesSec+procs[j].WriteBytesSec
+		})
+	case procSortNet:
+		sort.Slice(procs, func(i, j int) bool {
+			return procs[i].RxBytesSec+procs[i].TxBytesSec > procs[j].RxBytesSec+procs[j].TxBytesSec
 		})
 	}
 }
