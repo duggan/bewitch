@@ -19,7 +19,7 @@ var (
 	notifyDimStyle  = lipgloss.NewStyle().Foreground(colorMuted)
 )
 
-func renderAlertView(alerts []api.AlertMetric, width int, alertTable *table.Model, rules []api.AlertRuleMetric, ruleCursor int, alertFocus int, notifyLog []notifyLogEntry, notifySending bool, confirmDelete bool, confirmName string, formErr string) string {
+func renderAlertView(alerts []api.AlertMetric, width int, alertTable *table.Model, rules []api.AlertRuleMetric, ruleCursor int, alertFocus int, notifyLog []notifyLogEntry, notifySending bool) string {
 	var sections []string
 
 	// --- Rules section ---
@@ -60,22 +60,29 @@ func renderAlertView(alerts []api.AlertMetric, width int, alertTable *table.Mode
 		sections = append(sections, renderNotifyLog(notifyLog, notifySending, width))
 	}
 
-	// --- Transient form error ---
-	if formErr != "" {
-		sections = append(sections, notifyErrStyle.Render("  ⚠ "+formErr))
-	}
+	// NOTE: the help line, delete-confirmation prompt, and transient form error are
+	// NOT appended here — they render as a FIXED FOOTER (renderAlertFooter) outside
+	// the scrollable viewport. Inside the viewport they scrolled off-screen once the
+	// fired-alerts table grew, which hid the help and (worse) the "Delete rule? y/N"
+	// prompt, so a delete could never be confirmed.
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
 
-	// --- Delete confirmation prompt (takes the place of the help line) ---
+// renderAlertFooter builds the always-visible footer for the alerts view: the
+// delete-confirmation prompt while one is pending, else a transient form error,
+// else the keyboard-shortcut help. It is a single line so the fixed-footer budget
+// (see View) holds even alongside the scroll indicator.
+func renderAlertFooter(alertFocus int, confirmDelete bool, confirmName, formErr string) string {
 	if confirmDelete {
-		prompt := alertCritStyle.Render(fmt.Sprintf("Delete rule %q and its fired alerts?", confirmName)) +
+		return alertCritStyle.Render(fmt.Sprintf("Delete rule %q and its fired alerts?", confirmName)) +
 			normalHelpStyle.Render("   ") +
 			alertCritStyle.Bold(true).Render("y") + normalHelpStyle.Render(" / ") +
 			lipgloss.NewStyle().Foreground(colorPink).Bold(true).Render("N")
-		sections = append(sections, lipgloss.NewStyle().MarginTop(1).Render(prompt))
-		return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	}
+	if formErr != "" {
+		return notifyErrStyle.Render("⚠ " + formErr)
 	}
 
-	// Build help line with active-state highlighting for current focus panel.
 	type helpItem struct {
 		text   string
 		active bool
@@ -98,11 +105,7 @@ func renderAlertView(alerts []api.AlertMetric, width int, alertTable *table.Mode
 			helpParts = append(helpParts, normalHelpStyle.Render(item.text))
 		}
 	}
-	helpLine := strings.Join(helpParts, normalHelpStyle.Render("  "))
-	help := lipgloss.NewStyle().MarginTop(1).Render(helpLine)
-	sections = append(sections, help)
-
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	return strings.Join(helpParts, normalHelpStyle.Render("  "))
 }
 
 var (

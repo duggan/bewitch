@@ -2917,7 +2917,7 @@ func (m *Model) captureViewContent() string {
 	if m.statusData != nil {
 		gutter = "\n" + renderStatusBar(buildStatusBar(m.statusData, m.current, m.lastDataChange[m.current], m.activeAlerts, m.activeAlertSeverity, time.Time{}), m.width, m.activeAlertSeverity)
 	}
-	return header + content + gutter
+	return header + content + m.alertFooterLine() + gutter
 }
 
 // runCapture performs the actual file write. Called as an async tea.Cmd.
@@ -2938,6 +2938,16 @@ func runCapture(state *captureFormState, content string, settings CaptureSetting
 		return captureResultMsg{err: err}
 	}
 	return captureResultMsg{path: path}
+}
+
+// alertFooterLine returns the alerts view's fixed-footer line (with a leading
+// newline), or "" when another view or an overlay (form / date picker / capture)
+// owns the screen. Shared by the live View and the screenshot capture so they match.
+func (m Model) alertFooterLine() string {
+	if m.current != viewAlerts || m.alertFormActive || m.datePickerActive || m.captureFormActive {
+		return ""
+	}
+	return "\n" + renderAlertFooter(m.alertFocus, m.alertConfirmDelete, m.alertConfirmName, m.alertFormErr)
 }
 
 func (m *Model) renderCurrentContent() string {
@@ -2986,7 +2996,7 @@ func (m *Model) renderCurrentContent() string {
 		m.procFilteredLen = fl
 		return c
 	case viewAlerts:
-		return renderAlertView(m.alertsData, m.width, &m.alertTable, m.alertRules, m.alertRuleCursor, m.alertFocus, m.notifyLog, m.notifySending, m.alertConfirmDelete, m.alertConfirmName, m.alertFormErr)
+		return renderAlertView(m.alertsData, m.width, &m.alertTable, m.alertRules, m.alertRuleCursor, m.alertFocus, m.notifyLog, m.notifySending)
 	default:
 		return ""
 	}
@@ -3092,6 +3102,12 @@ func (m Model) View() string {
 			viewportView = placeOverlay(viewportView, popup, m.width, m.viewport.Height)
 		}
 
+		// Fixed footer for the alerts view (shortcut help / delete-confirm prompt /
+		// form error), kept OUT of the scrollable viewport so it stays visible no
+		// matter how tall the fired-alerts table grows. The helpHeight reservation in
+		// the resize handler budgets for this line alongside the scroll indicator.
+		footer := m.alertFooterLine()
+
 		// Show scroll indicator if content is scrollable
 		totalLines := m.viewport.TotalLineCount()
 		if totalLines > m.viewport.Height {
@@ -3104,9 +3120,9 @@ func (m Model) View() string {
 			pctStr := fmt.Sprintf(" %.0f%% ", scrollPct*100)
 			scrollHint := lipgloss.NewStyle().Foreground(colorMuted).Render(pctStr + "PgUp/Dn to scroll")
 			indicator := prog.ViewAs(scrollPct) + scrollHint
-			return header + viewportView + "\n" + indicator + "\n" + debugPanel + gutter
+			return header + viewportView + "\n" + indicator + footer + "\n" + debugPanel + gutter
 		}
-		return header + viewportView + "\n" + debugPanel + gutter
+		return header + viewportView + footer + "\n" + debugPanel + gutter
 	}
 	return header
 }

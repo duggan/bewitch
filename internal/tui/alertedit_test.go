@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -8,6 +9,45 @@ import (
 	"github.com/duggan/bewitch/internal/api"
 	"github.com/duggan/bewitch/internal/config"
 )
+
+// TestAlertFooterAlwaysVisible guards the regression where the shortcut help and the
+// delete-confirmation prompt lived at the bottom of the scrollable viewport: once the
+// fired-alerts table grew, they scrolled off-screen, so the help vanished and a delete
+// could never be confirmed. They must now render in a fixed footer, always visible.
+func TestAlertFooterAlwaysVisible(t *testing.T) {
+	mc := newMockClient()
+	mc.rules = []api.AlertRuleMetric{
+		{ID: 1, Name: "disk_40", Type: "threshold", Severity: "warning", Enabled: true,
+			Metric: "disk.used_pct", Operator: ">", Value: 40, Duration: "1m", Mount: "/"},
+	}
+	// Far more fired alerts than fit on screen, so a bottom-of-content footer would
+	// scroll away.
+	ts := time.Now()
+	for i := 0; i < 80; i++ {
+		mc.alerts = append(mc.alerts, api.AlertMetric{
+			ID: i + 1, Timestamp: ts, RuleName: "disk_40", Severity: "warning",
+			Message: "disk.used_pct 42.7 > 40.0 over 1m", Acknowledged: true,
+		})
+	}
+	m := alertsModel(t, mc)
+
+	if !strings.Contains(m.View(), "d:delete") {
+		t.Error("help line missing from View() with a full fired-alerts table (must be a fixed footer)")
+	}
+
+	updated, _ := m.Update(key("d"))
+	m = updated.(Model)
+	if !m.alertConfirmDelete {
+		t.Fatal("delete confirmation not armed after 'd'")
+	}
+	view := m.View()
+	if !strings.Contains(view, "Delete rule") {
+		t.Error("delete-confirm prompt missing from View() — it must render in the fixed footer, not scrollable content")
+	}
+	if strings.Contains(view, "d:delete") {
+		t.Error("help line should yield to the confirm prompt while a delete is pending")
+	}
+}
 
 // alertsModel builds a ready model on the alerts view with the given rules/alerts loaded.
 func alertsModel(t *testing.T, mc *mockClient) Model {
