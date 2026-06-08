@@ -70,12 +70,17 @@ demo-frames: build
 docgen:
 	go run cmd/docgen/main.go . > site/data/api-schema.json
 
+# Generate site/data/versions.json from VERSION + LATEST_STABLE (drives the docs
+# version switcher/banner). Committed too, so a bare `zola build` still works.
+site-versions:
+	@scripts/gen-site-versions.sh
+
 # Build the static site with Zola (output: site/dist/).
-site:
+site: site-versions
 	cd site && zola build
 
 # Serve the site locally with live reload at http://127.0.0.1:1111.
-site-serve:
+site-serve: site-versions
 	cd site && zola serve
 
 # Rebuild the homepage terminal-demo bundle (site/static/js/demo-bundle.js) from

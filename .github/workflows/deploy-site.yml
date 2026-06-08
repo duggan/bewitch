@@ -43,6 +43,10 @@ jobs:
             -e "s|bewitch_[0-9][0-9.]*-1_|bewitch_${V}-1_|g" \
             site/content/docs/installation.md
 
+      - name: Generate docs version data
+        # Drives the docs version switcher/banner from VERSION + LATEST_STABLE.
+        run: scripts/gen-site-versions.sh
+
       - name: Build
         working-directory: site
         # Production (push to main) builds with the absolute base_url for correct

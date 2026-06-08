@@ -313,6 +313,14 @@ code {
 .sidebar a:hover { color: var(--lavender); background: rgba(255, 110, 199, 0.05); }
 .sidebar a.active { color: var(--pink); border-left-color: var(--pink); background: rgba(255, 110, 199, 0.1); }
 
+// Dev banner atop docs pages built from main.
+.dev-banner { font-family: var(--mono); font-size: 0.8rem; line-height: 1.5;
+  color: var(--muted); background: rgba(255, 184, 108, 0.07);
+  border: 1px solid rgba(255, 184, 108, 0.35); border-left: 3px solid var(--orange, #FFB86C);
+  border-radius: var(--radius); padding: 0.6rem 0.85rem; margin-bottom: 1.5rem; }
+.dev-banner strong { color: var(--text); }
+.dev-banner a { color: var(--pink); }
+
 .toc { position: sticky; top: 4.75rem; align-self: start; font-family: var(--mono); font-size: 0.8rem; }
 .toc .kicker { display: block; margin-bottom: 0.6rem; }
 .toc ul { list-style: none; margin: 0; padding: 0; }

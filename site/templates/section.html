@@ -8,6 +8,7 @@
 <div class="docs">
   {{ nav::docs_nav(current=section.permalink) }}
   <article class="content">
+    {{ nav::dev_banner() }}
     <h1>{{ section.title }}</h1>
     {{ section.content | safe }}
 
@@ -23,4 +24,4 @@
 </div>
 {% endblock body %}
 
-{% block extra_body %}{{ nav::search_assets() }}{% endblock extra_body %}
+{% block extra_body %}{{ nav::search_assets() }}<script src="{{ get_url(path='js/docs-version.js') }}"></script>{% endblock extra_body %}

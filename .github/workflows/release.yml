@@ -119,3 +119,45 @@ jobs:
                 "https://bewitch.dev/apt/dists/stable/main/binary-arm64/Packages.gz"
               ]
             }'
+
+  # Snapshot the docs for this release into R2 so they're served, frozen, at
+  # /docs/<tag>/** (functions/docs/[[path]].js). The default /docs/ keeps
+  # tracking main; this preserves each release's docs at a stable URL.
+  docs-snapshot:
+    runs-on: ubuntu-latest
+    env:
+      ZOLA_VERSION: 0.22.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zola
+        run: |
+          curl -sSL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz
+          sudo mv zola /usr/local/bin/
+
+      - name: Stamp docs version from VERSION
+        # Match deploy-site.yml: pin version-specific download URLs in the
+        # installation docs before building.
+        run: |
+          V=$(cat VERSION)
+          sed -i \
+            -e "s|bewitch-[0-9][0-9.]*-linux|bewitch-${V}-linux|g" \
+            -e "s|bewitch_[0-9][0-9.]*-1_|bewitch_${V}-1_|g" \
+            site/content/docs/installation.md
+
+      - name: Generate docs version data
+        run: scripts/gen-site-versions.sh
+
+      - name: Build site
+        working-directory: site
+        run: zola build
+
+      - name: Install wrangler
+        run: npm install -g wrangler
+
+      - name: Upload docs snapshot to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: scripts/upload-docs.sh site/dist/docs "${{ github.ref_name }}"

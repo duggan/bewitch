@@ -22,6 +22,18 @@
 </nav>
 {% endmacro docs_nav %}
 
+{# Banner shown atop docs pages built from `main` (the default deploy), warning that
+   these are next-release docs. docs-version.js hides it on /docs/vX.Y.Z/ snapshots
+   (which are released docs). #}
+{% macro dev_banner() %}
+{% set versions = load_data(path="data/versions.json") %}
+<div id="docs-dev-banner" class="dev-banner">
+  <strong>Development docs.</strong> You’re reading the docs for the next release
+  (v{{ versions.dev }}); some features here may not have shipped yet. The current
+  stable release is v{{ versions.stable }} — see <a href="/docs/installation/">installation</a>.
+</div>
+{% endmacro dev_banner %}
+
 {# Right-hand "On this page" TOC from Zola's page.toc (H2s + one nested level of H3s). #}
 {% macro page_toc(page) %}
 <nav class="toc" aria-label="On this page">

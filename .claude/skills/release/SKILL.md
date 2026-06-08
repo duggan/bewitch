@@ -26,7 +26,7 @@ Examples:
 4. **Tags** the release as `v<version>`
 5. **Pushes** the commit and tag (after user confirmation)
 
-> The docs site is a Zola static site (migrated from the old Vite/TSX setup). There is **no `site/src/versions.ts`** to maintain — the version dropdown and versioned docs are fully dynamic: `release.yml` uploads versioned docs to R2 on each `v*` tag, and the Cloudflare Pages function `site/functions/docs/[[path]].js` serves them. The dropdown label is driven by `LATEST_STABLE`. So a release needs **no manual edit of any version list** in the repo.
+> The docs site is a Zola static site (migrated from the old Vite/TSX setup). There is **no `site/src/versions.ts`** to maintain. `site/data/versions.json` (the docs "development docs" banner source) is **generated** from `VERSION` + `LATEST_STABLE` by `scripts/gen-site-versions.sh` during every site build (`make site`, `deploy-site.yml`, `release.yml`), so it's never hand-edited. The default `/docs/` tracks `main` (dev) and shows the banner; the `release.yml` `docs-snapshot` job builds each release's docs at the tag and uploads them to R2 under `docs/v<tag>/` (`scripts/upload-docs.sh`), served by `site/functions/docs/[[path]].js` at `/docs/v<version>/`. So a release needs **no manual edit of any version list** in the repo — just bump `VERSION`/`LATEST_STABLE` (step 2). (A version switcher over the accrued snapshots can be added later; it isn't there yet.)
 
 CI handles the rest — the `release.yml` workflow triggers on `v*` tags and:
 - Builds `.deb` and `.tar.gz` for amd64 and arm64

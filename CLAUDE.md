@@ -178,13 +178,13 @@ The `debian/` directory contains full packaging for Debian/Ubuntu:
 - Data stored in `/var/lib/bewitch/` (owned by `bewitch:bewitch`)
 - Package recommends `smartmontools` for enhanced SMART disk health coverage via smartctl
 
-To release a new version:
+To release a new version (use the `/release` skill, which orchestrates this):
 
-1. Update `CHANGELOG.md` and `site/src/pages/docs/changelog.tsx` (use `/changelog` skill)
+1. Update `CHANGELOG.md` and the Zola docs changelog `site/content/docs/changelog.md` (use `/changelog` skill)
 2. Update `debian/changelog` with new version and changes
-3. Run `make deb` on a Debian/Ubuntu system
-4. Test with `sudo dpkg -i ../bewitch_<version>_<arch>.deb`
-5. Add the new version to the docs site version dropdown in `site/src/versions.ts`
+3. Bump `VERSION` (dev) and `LATEST_STABLE` (released) at the repo root — these drive the docs "development docs" banner (`site/data/versions.json` is generated from them by `scripts/gen-site-versions.sh` during the site build; never hand-edit it). No manual version list to maintain.
+4. Run `make deb` on a Debian/Ubuntu system; test with `sudo dpkg -i ../bewitch_<version>_<arch>.deb`
+5. Tag `v<version>` and push — CI (`release.yml`) builds packages, the APT repo, and snapshots the docs to R2 at `/docs/v<version>/` (`docs-snapshot` job → `scripts/upload-docs.sh`), served by `site/functions/docs/[[path]].js`. The default `/docs/` keeps tracking `main` via `deploy-site.yml`. (A version switcher over the accrued `/docs/v*` snapshots can be layered on later; the banner + per-version URLs work without it.)
 
 ## Documentation
 
