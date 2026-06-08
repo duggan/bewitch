@@ -100,33 +100,33 @@ func TestLoadSourcesMergeAndValidate(t *testing.T) {
 	// Drop-in file defining two sources; one overrides an inline source.
 	dropin := `
 [[custom_source]]
-name = "plex"
-base_url = "http://127.0.0.1:32400"
+name = "homeassistant"
+base_url = "http://127.0.0.1:8123"
   [[custom_source.metric]]
-  name = "streams"
+  name = "entities"
   path = "size"
   unit = "count"
 
 [[custom_source]]
-name = "qbittorrent"
+name = "pihole"
 base_url = "http://127.0.0.1:9999"
   [[custom_source.metric]]
-  name = "dl"
-  path = "dl_info_speed"
-  unit = "bytes"
+  name = "blocked"
+  path = "ads_blocked_today"
+  unit = "count"
 `
 	if err := os.WriteFile(filepath.Join(dir, "services.toml"), []byte(dropin), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	inline := []CustomSourceConfig{validSource("qbittorrent")} // base_url 8080, overridden by drop-in 9999
+	inline := []CustomSourceConfig{validSource("pihole")} // base_url 8080, overridden by drop-in 9999
 
 	sources, warnings, err := LoadSources(inline, dir)
 	if err != nil {
 		t.Fatalf("LoadSources: %v", err)
 	}
 	if len(sources) != 2 {
-		t.Fatalf("got %d sources, want 2 (qbittorrent merged): %+v", len(sources), sources)
+		t.Fatalf("got %d sources, want 2 (pihole merged): %+v", len(sources), sources)
 	}
 	if len(warnings) != 1 {
 		t.Errorf("expected 1 override warning, got %d: %v", len(warnings), warnings)
@@ -135,11 +135,11 @@ base_url = "http://127.0.0.1:9999"
 	for _, s := range sources {
 		byName[s.Name] = s
 	}
-	if byName["qbittorrent"].BaseURL != "http://127.0.0.1:9999" {
-		t.Errorf("drop-in should override inline: got %q", byName["qbittorrent"].BaseURL)
+	if byName["pihole"].BaseURL != "http://127.0.0.1:9999" {
+		t.Errorf("drop-in should override inline: got %q", byName["pihole"].BaseURL)
 	}
-	if _, ok := byName["plex"]; !ok {
-		t.Error("plex source missing")
+	if _, ok := byName["homeassistant"]; !ok {
+		t.Error("homeassistant source missing")
 	}
 }
 

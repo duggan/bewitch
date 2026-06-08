@@ -5,7 +5,7 @@ weight = 35
 +++
 
 Bewitch monitors the host. Custom sources let it monitor the *things running on* the host:
-qBittorrent's transfer rates, Plex's active streams, Docker's container count, Home Bridge's
+Pi-hole's blocked queries, Home Assistant's sensors, Docker's container count, Homebridge's
 status — anything with a local HTTP API that returns JSON.
 
 You declare a source in TOML. The daemon polls it, pulls out the fields you name, and treats
@@ -16,31 +16,31 @@ in a dedicated **Services** tab in the TUI. No plugin to compile, no Go to write
 
 ```toml
 [[custom_source]]
-name      = "qbittorrent"
+name      = "pihole"
 interval  = "10s"
-base_url  = "http://127.0.0.1:8080"
+base_url  = "http://pi.hole"
 
   [custom_source.request]
-  path = "/api/v2/transfer/info"
+  path = "/admin/api.php"
 
   [[custom_source.metric]]
-  name = "dl_speed"
-  path = "dl_info_speed"
-  unit = "bytes"
+  name = "queries"
+  path = "dns_queries_today"
+  unit = "count"
 
   [[custom_source.metric]]
-  name = "up_speed"
-  path = "up_info_speed"
-  unit = "bytes"
+  name = "blocked"
+  path = "ads_blocked_today"
+  unit = "count"
 
   [[custom_source.status]]
-  label = "Connection"
-  path  = "connection_status"
+  label = "Blocking"
+  path  = "status"
 ```
 
-That endpoint returns `{"dl_info_speed": 1048576, "up_info_speed": 524288, "connection_status": "connected", ...}`.
-Bewitch stores `dl_speed` and `up_speed` as time-series, and shows `Connection: connected` live
-on the Services tab. Done.
+That endpoint returns `{"dns_queries_today": 48213, "ads_blocked_today": 9102, "status": "enabled", ...}`.
+Bewitch stores `queries` and `blocked` as time-series, and shows `Blocking: enabled` live on the
+Services tab. Done.
 
 ## Where definitions live
 
@@ -51,7 +51,7 @@ Two places, merged at startup:
   its own `[[custom_source]]` blocks. The directory defaults to `sources.d/` next to your config
   file; override it with `[daemon] sources_dir`.
 
-Drop-in files make sources shareable — a `qbittorrent.toml` you can hand to someone else, or keep
+Drop-in files make sources shareable — a `pihole.toml` you can hand to someone else, or keep
 your secrets out of the main config. If a drop-in defines a source with the same `name` as an
 inline one, the drop-in wins (and the daemon logs that it did).
 
@@ -94,12 +94,12 @@ Each source declares two kinds of fields:
 
 ```toml
   [[custom_source.status]]
-  label = "Connection"
-  path  = "connection_status"
+  label = "Health"
+  path  = "health"
   [custom_source.status.badges]
-  connected    = "ok"      # green
-  firewalled   = "warn"    # amber
-  disconnected = "crit"    # red
+  ok       = "ok"      # green
+  degraded = "warn"    # amber
+  down     = "crit"    # red
 ```
 
 ## Authentication
@@ -169,7 +169,7 @@ Custom metrics show up everywhere host metrics do:
 
 ```
 # /metrics
-bewitch_custom_value{source="qbittorrent",metric="dl_speed"} 1048576
+bewitch_custom_value{source="pihole",metric="queries"} 48213
 ```
 
 ```sql
@@ -186,7 +186,7 @@ cardinality) — they're live-only.
 ## Per-source intervals and timeouts
 
 Each source is its own collector, so it has its own `interval` and its own failure backoff — a
-flaky Plex won't slow down qBittorrent. `timeout` bounds a single request and is automatically
+flaky Home Assistant won't slow down Pi-hole. `timeout` bounds a single request and is automatically
 capped below the interval, so a hung endpoint can never stall the collection cycle. A good rule of
 thumb: keep `interval` at least twice `timeout`.
 
@@ -195,4 +195,4 @@ thumb: keep `interval` at least twice `timeout`.
 Custom sources are operator configuration — the same trust level as an alert command. The daemon
 will fetch whatever URL you give it, so point it at services you control (typically loopback).
 Redirects are disabled and response bodies are capped, but bewitch deliberately *doesn't* block
-private/loopback addresses: that's where qBittorrent, Plex, and Docker actually live.
+private/loopback addresses: that's where Pi-hole, Home Assistant, and Docker actually live.

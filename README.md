@@ -7,7 +7,7 @@ bewitch is two small binaries: bewitchd, a daemon that quietly reads /proc and /
 ## Features
 
 - **Metrics collection** — CPU (per-core), memory, disk (space + I/O + SMART health), network, ECC errors, temperature sensors, power consumption (powercap/RAPL), process tracking (all processes visible, top N enriched with full details)
-- **Custom data sources** — point the daemon at a local service's HTTP API (qBittorrent, Plex, Docker, etc.) and chart its numbers alongside everything else; declared in TOML (gjson field extraction), no Go required, surfaced in a dedicated TUI "Services" tab and on `/metrics`
+- **Custom data sources** — point the daemon at a local service's HTTP API (Pi-hole, Home Assistant, Docker, etc.) and chart its numbers alongside everything else; declared in TOML (gjson field extraction), no Go required, surfaced in a dedicated TUI "Services" tab and on `/metrics`
 - **Process pinning** — pin processes by glob pattern (config or TUI) to always collect full metrics, regardless of CPU/memory ranking
 - **Per-collector intervals** — each collector has a configurable collection interval (e.g., CPU at 1s, disk at 30s, ECC at 60s) with a global default; failing collectors automatically back off exponentially and recover on success
 - **Persistent storage** — embedded database with automatic WAL checkpointing, optional retention pruning, scheduled or on-demand compaction, and Parquet archival for long-term storage
@@ -228,25 +228,25 @@ Point the daemon at a local service's HTTP API and chart its numbers alongside t
 
 ```toml
 [[custom_source]]
-name     = "qbittorrent"
+name     = "pihole"
 interval = "10s"
-base_url = "http://127.0.0.1:8080"
+base_url = "http://pi.hole"
 
   [custom_source.request]
-  path = "/api/v2/transfer/info"
+  path = "/admin/api.php"
 
   # Numeric fields → stored, charted, Prometheus-exported, alertable.
   # `path` is a gjson path; `unit` is a display hint
   # (bytes|bits|percent|count|duration|raw).
   [[custom_source.metric]]
-  name = "dl_speed"
-  path = "dl_info_speed"
-  unit = "bytes"
+  name = "blocked"
+  path = "ads_blocked_today"
+  unit = "count"
 
   # Non-numeric fields → live status strip only.
   [[custom_source.status]]
-  label = "Connection"
-  path  = "connection_status"
+  label = "Blocking"
+  path  = "status"
 ```
 
 Configure at least one source and a **Services** tab appears in the TUI (one sub-section per source, with a live status strip and a history chart per metric). Custom metrics also show up on `/metrics` as `bewitch_custom_value{source=...,metric=...}` and are queryable from the REPL (`SELECT … FROM custom_metrics`).

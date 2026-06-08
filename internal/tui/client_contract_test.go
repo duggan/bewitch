@@ -123,19 +123,19 @@ func TestDaemonClientCustomContract(t *testing.T) {
 
 	// Catalog.
 	srv.SetCustomCatalog([]api.CustomSourceInfo{{
-		Name:    "qb",
+		Name:    "pihole",
 		Metrics: []api.CustomFieldInfo{{Name: "dl", Unit: "bytes"}},
 		Status:  []api.CustomFieldInfo{{Name: "Connection"}},
 	}})
 	sources, err := client.GetCustomSources()
-	if err != nil || len(sources) != 1 || sources[0].Name != "qb" || sources[0].Metrics[0].Unit != "bytes" {
+	if err != nil || len(sources) != 1 || sources[0].Name != "pihole" || sources[0].Metrics[0].Unit != "bytes" {
 		t.Fatalf("GetCustomSources: %+v err=%v", sources, err)
 	}
 
 	// Live metrics + status.
-	srv.SetCustomSnapshot("qb",
-		[]api.CustomMetric{{Source: "qb", Name: "dl", Unit: "bytes", Value: 2048}},
-		[]api.CustomStatus{{Source: "qb", Label: "Connection", Value: "connected", Badge: "ok"}})
+	srv.SetCustomSnapshot("pihole",
+		[]api.CustomMetric{{Source: "pihole", Name: "dl", Unit: "bytes", Value: 2048}},
+		[]api.CustomStatus{{Source: "pihole", Label: "Connection", Value: "connected", Badge: "ok"}})
 	metrics, status, err := client.GetCustom()
 	if err != nil || len(metrics) != 1 || metrics[0].Value != 2048 {
 		t.Fatalf("GetCustom metrics: %+v err=%v", metrics, err)
@@ -148,12 +148,12 @@ func TestDaemonClientCustomContract(t *testing.T) {
 	now := time.Now()
 	for i := 0; i < 3; i++ {
 		if _, err := database.Exec(
-			`INSERT INTO custom_metrics (ts, source, metric, value) VALUES (?, 'qb', 'dl', ?)`,
+			`INSERT INTO custom_metrics (ts, source, metric, value) VALUES (?, 'pihole', 'dl', ?)`,
 			now.Add(-time.Duration(i)*time.Minute), float64(100+i)); err != nil {
 			t.Fatalf("seed custom_metrics: %v", err)
 		}
 	}
-	series, err := client.GetCustomHistory("qb", "dl", now.Add(-time.Hour), now.Add(time.Minute))
+	series, err := client.GetCustomHistory("pihole", "dl", now.Add(-time.Hour), now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("GetCustomHistory: %v", err)
 	}

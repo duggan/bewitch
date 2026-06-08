@@ -29,9 +29,9 @@ func TestHandleMetricsCustomCacheAndETag(t *testing.T) {
 	}
 
 	// Push two sources; getCachedCustom flattens them sorted by source.
-	s.SetCustomSnapshot("plex", []CustomMetric{{Source: "plex", Name: "streams", Value: 2}}, nil)
-	s.SetCustomSnapshot("qb", []CustomMetric{{Source: "qb", Name: "dl", Unit: "bytes", Value: 1024}},
-		[]CustomStatus{{Source: "qb", Label: "Connection", Value: "connected", Badge: "ok"}})
+	s.SetCustomSnapshot("homeassistant", []CustomMetric{{Source: "homeassistant", Name: "entities", Value: 2}}, nil)
+	s.SetCustomSnapshot("pihole", []CustomMetric{{Source: "pihole", Name: "blocked", Unit: "count", Value: 1024}},
+		[]CustomStatus{{Source: "pihole", Label: "Blocking", Value: "enabled", Badge: "ok"}})
 
 	rec = httptest.NewRecorder()
 	s.handleMetricsCustom(rec, httptest.NewRequest("GET", "/api/metrics/custom", nil))
@@ -45,8 +45,8 @@ func TestHandleMetricsCustomCacheAndETag(t *testing.T) {
 	if len(resp.Metrics) != 2 {
 		t.Fatalf("got %d metrics, want 2 (merged across sources): %+v", len(resp.Metrics), resp.Metrics)
 	}
-	// Sorted by source: plex before qb.
-	if resp.Metrics[0].Source != "plex" || resp.Metrics[1].Source != "qb" {
+	// Sorted by source: homeassistant before pihole.
+	if resp.Metrics[0].Source != "homeassistant" || resp.Metrics[1].Source != "pihole" {
 		t.Errorf("metrics not source-sorted: %+v", resp.Metrics)
 	}
 	if len(resp.Status) != 1 || resp.Status[0].Badge != "ok" {
@@ -79,7 +79,7 @@ func TestHandleCustomCatalog(t *testing.T) {
 	}
 
 	s.SetCustomCatalog([]CustomSourceInfo{{
-		Name:    "qb",
+		Name:    "pihole",
 		Metrics: []CustomFieldInfo{{Name: "dl", Unit: "bytes"}},
 		Status:  []CustomFieldInfo{{Name: "Connection"}},
 	}})
@@ -89,21 +89,21 @@ func TestHandleCustomCatalog(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Sources) != 1 || got.Sources[0].Name != "qb" || got.Sources[0].Metrics[0].Unit != "bytes" {
+	if len(got.Sources) != 1 || got.Sources[0].Name != "pihole" || got.Sources[0].Metrics[0].Unit != "bytes" {
 		t.Errorf("catalog = %+v", got)
 	}
 }
 
 func TestPrometheusIncludesCustom(t *testing.T) {
 	s := &Server{}
-	s.SetCustomSnapshot("qb",
-		[]CustomMetric{{Source: "qb", Name: "dl", Unit: "bytes", Value: 1024}},
-		[]CustomStatus{{Source: "qb", Label: "Connection", Value: "connected"}})
+	s.SetCustomSnapshot("pihole",
+		[]CustomMetric{{Source: "pihole", Name: "dl", Unit: "bytes", Value: 1024}},
+		[]CustomStatus{{Source: "pihole", Label: "Connection", Value: "connected"}})
 
 	rec := httptest.NewRecorder()
 	s.handlePrometheus(rec, httptest.NewRequest("GET", "/metrics", nil))
 	out := rec.Body.String()
-	if !strings.Contains(out, `bewitch_custom_value{source="qb",metric="dl"} 1024`) {
+	if !strings.Contains(out, `bewitch_custom_value{source="pihole",metric="dl"} 1024`) {
 		t.Errorf("missing custom gauge in /metrics:\n%s", out)
 	}
 	// Status strings must NOT be exported (unbounded cardinality).
@@ -123,19 +123,19 @@ func TestHandleHistoryCustom(t *testing.T) {
 	now := time.Now()
 	for i := 0; i < 5; i++ {
 		if _, err := database.Exec(
-			`INSERT INTO custom_metrics (ts, source, metric, value) VALUES (?, 'qb', 'dl', ?)`,
+			`INSERT INTO custom_metrics (ts, source, metric, value) VALUES (?, 'pihole', 'dl', ?)`,
 			now.Add(-time.Duration(i)*time.Minute), float64(100+i)); err != nil {
 			t.Fatalf("seed: %v", err)
 		}
 	}
-	// A different metric that must NOT appear in the qb/dl query.
-	database.Exec(`INSERT INTO custom_metrics (ts, source, metric, value) VALUES (?, 'qb', 'up', 999)`, now)
+	// A different metric that must NOT appear in the pihole/dl query.
+	database.Exec(`INSERT INTO custom_metrics (ts, source, metric, value) VALUES (?, 'pihole', 'up', 999)`, now)
 
 	start := strconv.FormatInt(now.Add(-time.Hour).Unix(), 10)
 	end := strconv.FormatInt(now.Add(time.Minute).Unix(), 10)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET",
-		"/api/history/custom?source=qb&metric=dl&start="+start+"&end="+end, nil)
+		"/api/history/custom?source=pihole&metric=dl&start="+start+"&end="+end, nil)
 	s.handleHistoryCustom(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("history: %d %s", rec.Code, rec.Body.String())

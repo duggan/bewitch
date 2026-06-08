@@ -30,7 +30,7 @@ func TestCustomSourceCollectExtraction(t *testing.T) {
 	defer srv.Close()
 
 	cfg := config.CustomSourceConfig{
-		Name:    "qb",
+		Name:    "pihole",
 		BaseURL: srv.URL,
 		Request: config.CustomRequestConfig{Path: "/info"},
 		Metrics: []config.CustomMetricSpec{
@@ -52,7 +52,7 @@ func TestCustomSourceCollectExtraction(t *testing.T) {
 	if !ok {
 		t.Fatalf("Data is %T, want CustomSourceData", sample.Data)
 	}
-	if sample.Kind != "custom" || data.Source != "qb" {
+	if sample.Kind != "custom" || data.Source != "pihole" {
 		t.Errorf("kind=%q source=%q", sample.Kind, data.Source)
 	}
 	if len(data.Metrics) != 3 {

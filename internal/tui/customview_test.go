@@ -13,22 +13,22 @@ func mockClientWithSources() *mockClient {
 	mc := newMockClient()
 	mc.customSources = []api.CustomSourceInfo{
 		{
-			Name:    "qbittorrent",
-			Metrics: []api.CustomFieldInfo{{Name: "dl_speed", Unit: "bytes"}, {Name: "up_speed", Unit: "bytes"}},
+			Name:    "homeassistant",
+			Metrics: []api.CustomFieldInfo{{Name: "throughput", Unit: "bytes"}, {Name: "automations", Unit: "count"}},
 			Status:  []api.CustomFieldInfo{{Name: "Connection"}},
 		},
 		{
-			Name:    "plex",
-			Metrics: []api.CustomFieldInfo{{Name: "streams", Unit: "count"}},
+			Name:    "pihole",
+			Metrics: []api.CustomFieldInfo{{Name: "blocked", Unit: "count"}},
 		},
 	}
 	mc.customMetrics = []api.CustomMetric{
-		{Source: "qbittorrent", Name: "dl_speed", Unit: "bytes", Value: 1048576},
-		{Source: "qbittorrent", Name: "up_speed", Unit: "bytes", Value: 524288},
-		{Source: "plex", Name: "streams", Unit: "count", Value: 3},
+		{Source: "homeassistant", Name: "throughput", Unit: "bytes", Value: 1048576},
+		{Source: "homeassistant", Name: "automations", Unit: "count", Value: 24},
+		{Source: "pihole", Name: "blocked", Unit: "count", Value: 9102},
 	}
 	mc.customStatus = []api.CustomStatus{
-		{Source: "qbittorrent", Label: "Connection", Value: "connected", Badge: "ok"},
+		{Source: "homeassistant", Label: "Connection", Value: "connected", Badge: "ok"},
 	}
 	return mc
 }
@@ -56,43 +56,43 @@ func TestRenderCustomView(t *testing.T) {
 	mc := mockClientWithSources()
 	out := renderCustomView(mc.customSources, mc.customMetrics, mc.customStatus, 120, "", 0, 0)
 
-	// Active source (qbittorrent) status + metrics render; the chart is empty.
-	for _, want := range []string{"qbittorrent", "plex", "Connection", "connected", "dl_speed", "up_speed"} {
+	// Active source (homeassistant) status + metrics render; the chart is empty.
+	for _, want := range []string{"homeassistant", "pihole", "Connection", "connected", "throughput", "automations"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("renderCustomView missing %q:\n%s", want, out)
 		}
 	}
 	// 1 MiB formatted via the bytes unit.
 	if !strings.Contains(out, "1.0M") {
-		t.Errorf("dl_speed not formatted as bytes:\n%s", out)
+		t.Errorf("throughput not formatted as bytes:\n%s", out)
 	}
 }
 
 func TestSelectedCustomSeries(t *testing.T) {
 	m := NewModel(mockClientWithSources(), time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
 	m.current = viewServices
-	// Default: section 0 (qbittorrent), metric cursor 0 (dl_speed).
+	// Default: section 0 (homeassistant), metric cursor 0 (throughput).
 	src, metric, unit := m.selectedCustomSeries()
-	if src != "qbittorrent" || metric != "dl_speed" || unit != "bytes" {
+	if src != "homeassistant" || metric != "throughput" || unit != "bytes" {
 		t.Fatalf("selectedCustomSeries = %q/%q/%q", src, metric, unit)
 	}
 	if !m.hasHistory() {
 		t.Error("Services with a metric should report hasHistory")
 	}
 
-	// Move metric cursor to up_speed.
+	// Move metric cursor to automations.
 	m.servicesMetricCursor = 1
 	_, metric, _ = m.selectedCustomSeries()
-	if metric != "up_speed" {
-		t.Errorf("metric after cursor move = %q, want up_speed", metric)
+	if metric != "automations" {
+		t.Errorf("metric after cursor move = %q, want automations", metric)
 	}
 
-	// Switch to plex sub-section.
+	// Switch to pihole sub-section.
 	m.servicesSection = 1
 	m.servicesMetricCursor = 0
 	src, metric, unit = m.selectedCustomSeries()
-	if src != "plex" || metric != "streams" || unit != "count" {
-		t.Errorf("plex series = %q/%q/%q", src, metric, unit)
+	if src != "pihole" || metric != "blocked" || unit != "count" {
+		t.Errorf("pihole series = %q/%q/%q", src, metric, unit)
 	}
 
 	// A status-only source has no chart, so no history controls.

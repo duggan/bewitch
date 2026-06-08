@@ -18,7 +18,7 @@ func TestCustomMetricsPersisted(t *testing.T) {
 		Timestamp: ts,
 		Kind:      "custom",
 		Data: collector.CustomSourceData{
-			Source: "qbittorrent",
+			Source: "pihole",
 			Metrics: []collector.CustomMetricSample{
 				{Name: "dl_speed", Unit: "bytes", Value: 1048576},
 				{Name: "up_speed", Unit: "bytes", Value: 524288},
@@ -33,7 +33,7 @@ func TestCustomMetricsPersisted(t *testing.T) {
 	}
 
 	var n int
-	if err := s.db.QueryRow("SELECT count(*) FROM custom_metrics WHERE source = 'qbittorrent'").Scan(&n); err != nil {
+	if err := s.db.QueryRow("SELECT count(*) FROM custom_metrics WHERE source = 'pihole'").Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 2 {
@@ -42,7 +42,7 @@ func TestCustomMetricsPersisted(t *testing.T) {
 
 	var v float64
 	if err := s.db.QueryRow(
-		"SELECT value FROM custom_metrics WHERE source = 'qbittorrent' AND metric = 'dl_speed'").Scan(&v); err != nil {
+		"SELECT value FROM custom_metrics WHERE source = 'pihole' AND metric = 'dl_speed'").Scan(&v); err != nil {
 		t.Fatalf("read dl_speed: %v", err)
 	}
 	if v != 1048576 {

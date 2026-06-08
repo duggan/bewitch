@@ -12,26 +12,26 @@ import (
 func MockCustomSources() []config.CustomSourceConfig {
 	return []config.CustomSourceConfig{
 		{
-			Name:    "qbittorrent",
+			Name:    "pihole",
 			BaseURL: "http://mock",
 			Metrics: []config.CustomMetricSpec{
-				{Name: "dl_speed", Path: "dl_info_speed", Unit: "bytes"},
-				{Name: "up_speed", Path: "up_info_speed", Unit: "bytes"},
-				{Name: "active_torrents", Path: "active", Unit: "count"},
+				{Name: "queries", Path: "dns_queries_today", Unit: "count"},
+				{Name: "blocked", Path: "ads_blocked_today", Unit: "count"},
+				{Name: "block_pct", Path: "ads_percentage_today", Unit: "percent"},
 			},
 			Status: []config.CustomStatusSpec{
-				{Label: "Connection", Path: "connection_status"},
+				{Label: "Blocking", Path: "status"},
 			},
 		},
 		{
-			Name:    "plex",
+			Name:    "homeassistant",
 			BaseURL: "http://mock",
 			Metrics: []config.CustomMetricSpec{
-				{Name: "streams", Path: "size", Unit: "count"},
-				{Name: "bandwidth", Path: "bandwidth", Unit: "bits"},
+				{Name: "entities", Path: "entities", Unit: "count"},
+				{Name: "automations", Path: "automations", Unit: "count"},
 			},
 			Status: []config.CustomStatusSpec{
-				{Label: "Server", Path: "version"},
+				{Label: "Connection", Path: "state"},
 			},
 		},
 	}
@@ -71,10 +71,10 @@ func (c *MockCustomSourceCollector) Collect() (Sample, error) {
 	for _, st := range c.cfg.Status {
 		val, badge := "ok", "ok"
 		switch c.cfg.Name {
-		case "qbittorrent":
+		case "pihole":
+			val = "enabled"
+		case "homeassistant":
 			val = "connected"
-		case "plex":
-			val, badge = "1.40.2", ""
 		}
 		data.Status = append(data.Status, CustomStatusSample{Label: st.Label, Value: val, Badge: badge})
 	}
