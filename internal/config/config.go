@@ -17,6 +17,11 @@ type Config struct {
 	Alerts     AlertsConfig     `toml:"alerts"`
 	TUI        TUIConfig        `toml:"tui"`
 	Collectors CollectorsConfig `toml:"collectors"`
+	// CustomSources are user-defined HTTP data sources polled by the daemon.
+	// Repeated [[custom_source]] sections, sibling of [[alerts.email]] — host
+	// config, not a collector. Sources may also live in drop-in *.toml files
+	// under [daemon] sources_dir; both are merged by LoadSources (sources.go).
+	CustomSources []CustomSourceConfig `toml:"custom_source"`
 }
 
 type DaemonConfig struct {
@@ -39,6 +44,7 @@ type DaemonConfig struct {
 	TLSKey              string `toml:"tls_key"`              // PEM private key path; empty = auto-generate self-signed
 	TLSDisabled         bool   `toml:"tls_disabled"`         // set true to disable TLS on TCP listener
 	AuthToken           string `toml:"auth_token"`           // bearer token for TCP client authentication; empty = no auth
+	SourcesDir          string `toml:"sources_dir"`          // directory of drop-in custom-source *.toml files; default <configdir>/sources.d
 }
 
 type AlertsConfig struct {

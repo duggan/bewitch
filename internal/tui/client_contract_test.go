@@ -99,3 +99,65 @@ func TestDaemonClientAlertContract(t *testing.T) {
 		t.Errorf("expected fired alerts cleared on delete, got %d", remaining)
 	}
 }
+
+// TestDaemonClientCustomContract drives the real DaemonClient custom-source methods
+// (catalog, live metrics/status, history) against the real handlers, catching
+// client/server drift on the Services-tab endpoints.
+func TestDaemonClientCustomContract(t *testing.T) {
+	database, err := db.Open(filepath.Join(t.TempDir(), "custom-contract.duckdb"), "", "")
+	if err != nil {
+		t.Fatalf("opening migrated db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	srv := api.NewServer(&config.Config{}, func() *sql.DB { return database })
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		srv.Shutdown(ctx)
+	})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	client := NewDaemonClientTCP(strings.TrimPrefix(ts.URL, "http://"), nil, "")
+
+	// Catalog.
+	srv.SetCustomCatalog([]api.CustomSourceInfo{{
+		Name:    "qb",
+		Metrics: []api.CustomFieldInfo{{Name: "dl", Unit: "bytes"}},
+		Status:  []api.CustomFieldInfo{{Name: "Connection"}},
+	}})
+	sources, err := client.GetCustomSources()
+	if err != nil || len(sources) != 1 || sources[0].Name != "qb" || sources[0].Metrics[0].Unit != "bytes" {
+		t.Fatalf("GetCustomSources: %+v err=%v", sources, err)
+	}
+
+	// Live metrics + status.
+	srv.SetCustomSnapshot("qb",
+		[]api.CustomMetric{{Source: "qb", Name: "dl", Unit: "bytes", Value: 2048}},
+		[]api.CustomStatus{{Source: "qb", Label: "Connection", Value: "connected", Badge: "ok"}})
+	metrics, status, err := client.GetCustom()
+	if err != nil || len(metrics) != 1 || metrics[0].Value != 2048 {
+		t.Fatalf("GetCustom metrics: %+v err=%v", metrics, err)
+	}
+	if len(status) != 1 || status[0].Badge != "ok" {
+		t.Fatalf("GetCustom status: %+v", status)
+	}
+
+	// History.
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		if _, err := database.Exec(
+			`INSERT INTO custom_metrics (ts, source, metric, value) VALUES (?, 'qb', 'dl', ?)`,
+			now.Add(-time.Duration(i)*time.Minute), float64(100+i)); err != nil {
+			t.Fatalf("seed custom_metrics: %v", err)
+		}
+	}
+	series, err := client.GetCustomHistory("qb", "dl", now.Add(-time.Hour), now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("GetCustomHistory: %v", err)
+	}
+	if len(series) != 1 || len(series[0].Points) == 0 {
+		t.Fatalf("GetCustomHistory series = %+v", series)
+	}
+}

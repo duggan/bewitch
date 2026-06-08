@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,7 +36,8 @@ const (
 	viewHardware
 	viewProcess
 	viewAlerts
-	viewCount // sentinel for wrapping
+	viewServices // user-defined custom HTTP sources; appended only when configured
+	viewCount    // sentinel for wrapping
 )
 
 // Hardware sub-sections within the Hardware tab.
@@ -151,6 +153,12 @@ type Model struct {
 	hardwareSection  int                  // active hardware sub-tab: hwSectionTemp, hwSectionPower, hwSectionECC, hwSectionGPU
 	dashSparkData    map[string][]float64 // keys: "cpu", "mem"
 	dashSparkInited  bool
+	// Services view state (custom HTTP sources)
+	customSources        []api.CustomSourceInfo // catalog, fetched once at startup
+	customMetrics        []api.CustomMetric     // live values, refreshed on tick
+	customStatus         []api.CustomStatus
+	servicesSection      int // active source sub-section index (persisted)
+	servicesMetricCursor int // selected metric within the active source (drives the chart)
 	// Alert view state
 	alertRules         []api.AlertRuleMetric
 	alertRuleCursor    int
@@ -278,6 +286,14 @@ func NewModel(client daemonClient, interval time.Duration, historyRanges []confi
 	if zones, err := client.GetPower(); err == nil {
 		m.powerData = zones
 	}
+	// Custom-source catalog is static; fetch once so updateVisibleTabs can decide
+	// whether to show the Services tab.
+	if sources, err := client.GetCustomSources(); err == nil {
+		m.customSources = sources
+	}
+	if m.servicesSection >= len(m.customSources) {
+		m.servicesSection = 0
+	}
 	m.updateVisibleTabs()
 	m.initDashSparklines()
 	// Fetch status info for persistent status bar
@@ -293,6 +309,9 @@ func NewModel(client daemonClient, interval time.Duration, historyRanges []confi
 	m.refreshProcessData()
 	m.refreshAlertRules()
 	m.refreshAlertsData()
+	if len(m.customSources) > 0 {
+		m.refreshCustomData()
+	}
 	m.d("init: interval=%s ranges=%d tabs=%d pinned=%d",
 		interval, len(historyRanges), len(m.visibleTabs), len(m.pinnedProcesses))
 	m.d("init: {/}=scroll debug, (/)=resize debug")
@@ -501,6 +520,11 @@ const processTopNRefreshInterval = 60 * time.Second
 // avoiding the expensive Top-N query.
 func (m *Model) fetchHistoryCmd() tea.Cmd {
 	v := m.current
+	// Services history is keyed by source+metric (not a single metric string),
+	// so it has its own command and skips the metric-string machinery below.
+	if v == viewServices {
+		return m.fetchCustomHistoryCmd()
+	}
 	metric := viewMetric(v)
 	if metric == "" {
 		return nil
@@ -588,6 +612,33 @@ func (m *Model) fetchHistoryCmd() tea.Cmd {
 			return historyResultMsg{forView: v, err: err, start: start, end: end, duration: d}
 		}
 		return historyResultMsg{forView: v, series: series, start: start, end: end, duration: d}
+	}
+}
+
+// fetchCustomHistoryCmd fetches the history series for the currently-selected
+// custom source/metric on the Services tab. Always a full fetch (no incremental
+// tail merge) — custom series are low-cardinality and cheap to re-query.
+func (m *Model) fetchCustomHistoryCmd() tea.Cmd {
+	source, metric, _ := m.selectedCustomSeries()
+	if source == "" || metric == "" {
+		return nil
+	}
+	var start, end time.Time
+	if m.customStart != nil && m.customEnd != nil {
+		start, end = *m.customStart, *m.customEnd
+	} else {
+		end = time.Now()
+		start = end.Add(-m.historyRanges[m.historyRange].Duration)
+	}
+	client := m.client
+	return func() tea.Msg {
+		t := time.Now()
+		series, err := client.GetCustomHistory(source, metric, start, end)
+		d := time.Since(t)
+		if errors.Is(err, ErrNotModified) || err != nil {
+			return historyResultMsg{forView: viewServices, err: err, start: start, end: end, duration: d}
+		}
+		return historyResultMsg{forView: viewServices, series: series, start: start, end: end, duration: d}
 	}
 }
 
@@ -886,6 +937,14 @@ func (m *Model) regenerateHistoryChart() {
 		default:
 			m.cachedHistoryCharts[m.current] = ""
 		}
+	case viewServices:
+		source, metric, unit := m.selectedCustomSeries()
+		title := "Service History"
+		if source != "" {
+			title = fmt.Sprintf("%s · %s History [%s]", source, metric, rangeLabel)
+		}
+		chart := renderCustomHistoryChart(m.historySeries, chartWidth, ch, m.historyStart, m.historyEnd, unit)
+		m.cachedHistoryCharts[m.current] = renderPanel(title, chart+historyHelpInline(rangeLabel), m.width)
 	default:
 		m.cachedHistoryCharts[m.current] = ""
 	}
@@ -898,7 +957,39 @@ func (m *Model) regenerateHistoryChart() {
 }
 
 func (m *Model) hasHistory() bool {
-	return m.current == viewCPU || m.current == viewMemory || m.current == viewDisk || m.current == viewNetwork || m.current == viewHardware || m.current == viewProcess
+	switch m.current {
+	case viewCPU, viewMemory, viewDisk, viewNetwork, viewHardware, viewProcess:
+		return true
+	case viewServices:
+		// Only metric-bearing sources have a chart; a status-only source has no
+		// range controls (and no stuck history fetch).
+		src := m.activeCustomSource()
+		return src != nil && len(src.Metrics) > 0
+	}
+	return false
+}
+
+// activeCustomSource returns the catalog entry for the active Services sub-section.
+func (m *Model) activeCustomSource() *api.CustomSourceInfo {
+	if m.servicesSection < 0 || m.servicesSection >= len(m.customSources) {
+		return nil
+	}
+	return &m.customSources[m.servicesSection]
+}
+
+// selectedCustomSeries returns the source, metric name and unit currently
+// selected for charting on the Services tab.
+func (m *Model) selectedCustomSeries() (source, metric, unit string) {
+	src := m.activeCustomSource()
+	if src == nil || len(src.Metrics) == 0 {
+		return "", "", ""
+	}
+	idx := m.servicesMetricCursor
+	if idx < 0 || idx >= len(src.Metrics) {
+		idx = 0
+	}
+	f := src.Metrics[idx]
+	return src.Name, f.Name, f.Unit
 }
 
 // bucketDuration returns the aggregation bucket size for a given time range,
@@ -1000,7 +1091,9 @@ func (m *Model) switchView(v view) tea.Cmd {
 	prev := m.current
 	m.current = v
 	var cmd tea.Cmd
-	if m.hasHistory() {
+	// Services drives its own (source+metric) history fetch in the refresh switch
+	// below, outside the generic per-view cache/prefetch machinery.
+	if m.hasHistory() && v != viewServices {
 		if cached, ok := m.historyCache[v]; ok && cached != nil {
 			m.d("view: %s→%s (cache hit, %d series)", viewName(prev), viewName(v), len(cached.series))
 			m.historySeries = cached.series
@@ -1054,6 +1147,9 @@ func (m *Model) switchView(v view) tea.Cmd {
 	case viewAlerts:
 		m.refreshAlertRules()
 		m.refreshAlertsData()
+	case viewServices:
+		m.refreshCustomData()
+		cmd = m.fetchCustomHistoryCmd()
 	}
 	if m.ready {
 		m.viewport.GotoTop()
@@ -1272,6 +1368,23 @@ func (m *Model) refreshGPUData() {
 	m.gpuData = gpus
 	m.gpuHints = hints
 	m.lastDataChange[viewHardware] = time.Now()
+}
+
+func (m *Model) refreshCustomData() {
+	t := time.Now()
+	metrics, status, err := m.client.GetCustom()
+	if errors.Is(err, ErrNotModified) {
+		m.d("refresh: custom 304 (%s)", time.Since(t))
+		return
+	}
+	if err != nil {
+		m.d("refresh: custom err=%v (%s)", err, time.Since(t))
+		return
+	}
+	m.d("refresh: custom (%s)", time.Since(t))
+	m.customMetrics = metrics
+	m.customStatus = status
+	m.lastDataChange[viewServices] = time.Now()
 }
 
 func (m *Model) refreshAlertsData() {
@@ -1627,6 +1740,13 @@ func (m *Model) loadSelections() {
 			m.hardwareSection = hwSectionTemp
 		}
 	}
+
+	// Services sub-section (clamped to the live source count when rendered).
+	if v, ok := prefs["services_section"]; ok {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			m.servicesSection = n
+		}
+	}
 }
 
 // selectedProcess returns the currently selected process after applying filter+sort,
@@ -1776,6 +1896,11 @@ func (m *Model) loadHistoryRange() {
 // Hardware tab is always present (contains temp, power, ECC sub-sections).
 func (m *Model) updateVisibleTabs() {
 	tabs := []view{viewDashboard, viewCPU, viewMemory, viewDisk, viewNetwork, viewHardware, viewProcess, viewAlerts}
+	// Services tab is appended only when at least one custom source is configured,
+	// kept last so the fixed 1-8 number-key mapping never shifts.
+	if len(m.customSources) > 0 {
+		tabs = append(tabs, viewServices)
+	}
 	m.visibleTabs = tabs
 
 	// If current view is no longer visible, switch to dashboard
@@ -2441,6 +2566,48 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			}
 		}
+		// Services view: tab cycles source sub-sections; up/down selects which
+		// metric the history chart shows.
+		if m.current == viewServices {
+			switch msg.String() {
+			case "pgup", "pgdown", "ctrl+u", "ctrl+d", "home", "end":
+				var cmd tea.Cmd
+				m.viewport, cmd = m.viewport.Update(msg)
+				return m, cmd
+			case "tab":
+				if len(m.customSources) > 0 {
+					m.servicesSection = (m.servicesSection + 1) % len(m.customSources)
+					m.servicesMetricCursor = 0
+					m.cachedHistoryCharts[m.current] = ""
+					go m.client.SetPreference("services_section", fmt.Sprintf("%d", m.servicesSection))
+					return m, m.fetchHistoryCmd()
+				}
+				return m, nil
+			case "shift+tab":
+				if len(m.customSources) > 0 {
+					m.servicesSection = (m.servicesSection - 1 + len(m.customSources)) % len(m.customSources)
+					m.servicesMetricCursor = 0
+					m.cachedHistoryCharts[m.current] = ""
+					go m.client.SetPreference("services_section", fmt.Sprintf("%d", m.servicesSection))
+					return m, m.fetchHistoryCmd()
+				}
+				return m, nil
+			case "down", "j":
+				if src := m.activeCustomSource(); src != nil && len(src.Metrics) > 0 {
+					m.servicesMetricCursor = (m.servicesMetricCursor + 1) % len(src.Metrics)
+					m.cachedHistoryCharts[m.current] = ""
+					return m, m.fetchHistoryCmd()
+				}
+				return m, nil
+			case "up", "k":
+				if src := m.activeCustomSource(); src != nil && len(src.Metrics) > 0 {
+					m.servicesMetricCursor = (m.servicesMetricCursor - 1 + len(src.Metrics)) % len(src.Metrics)
+					m.cachedHistoryCharts[m.current] = ""
+					return m, m.fetchHistoryCmd()
+				}
+				return m, nil
+			}
+		}
 		// Process view: arrows/page keys move the table cursor (the window scrolls to
 		// follow in renderCurrentContent); letter keys change sort / filter / pin.
 		if m.current == viewProcess {
@@ -2988,8 +3155,12 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 		m.updateVisibleTabs()
 		var cmds []tea.Cmd
 		if m.hasHistory() && !m.historyFetching[m.current] {
-			m.historyFetching[m.current] = true
-			cmds = append(cmds, m.fetchHistoryCmd())
+			// Only mark in-flight when a fetch is actually dispatched; a nil cmd
+			// (e.g. a sub-section with no history) must not stick the flag true.
+			if cmd := m.fetchHistoryCmd(); cmd != nil {
+				m.historyFetching[m.current] = true
+				cmds = append(cmds, cmd)
+			}
 		}
 		// Refresh cached data for current view (served from in-memory cache, fast)
 		switch m.current {
@@ -3018,6 +3189,8 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 		case viewAlerts:
 			m.refreshAlertRules()
 			m.refreshAlertsData()
+		case viewServices:
+			m.refreshCustomData()
 		}
 		// Refresh the active-alert summary on every view so the status bar always
 		// reflects current problems. On the Alerts view, derive it from the list we
@@ -3113,6 +3286,8 @@ func (m Model) viewFooter() string {
 				line = hardwareSelectionHelp()
 			}
 		}
+	case viewServices:
+		line = servicesFooter(len(m.customSources) > 1, m.hasHistory(), m.historyRangeLabel())
 	}
 	if line == "" {
 		return ""
@@ -3176,6 +3351,9 @@ func (m *Model) renderCurrentContent() string {
 		return c
 	case viewAlerts:
 		return renderAlertView(m.alertsData, m.width, &m.alertTable, m.alertRules, m.alertRuleCursor, m.alertFocus, m.notifyLog, m.notifySending)
+	case viewServices:
+		return renderCustomView(m.customSources, m.customMetrics, m.customStatus, m.width,
+			m.cachedHistoryCharts[m.current], m.servicesSection, m.servicesMetricCursor)
 	default:
 		return ""
 	}

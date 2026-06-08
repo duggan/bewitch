@@ -45,6 +45,7 @@ func TestStatsEmpty(t *testing.T) {
 		"process_metrics":     true,
 		"gpu_metrics":         true,
 		"smart_metrics":       true,
+		"custom_metrics":      true,
 	}
 	for _, ts := range stats.Tables {
 		if !expectedTables[ts.Name] {

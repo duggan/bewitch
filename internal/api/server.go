@@ -57,6 +57,10 @@ type Server struct {
 	// Static hints about missing GPU tools (set once at startup)
 	gpuHints []string
 
+	// Static catalog of configured custom sources (specs + display hints, set
+	// once at startup) — what the TUI renders the Services tab from.
+	customCatalog []CustomSourceInfo
+
 	// History response cache (avoids re-running expensive DB queries every TUI tick)
 	historyCache   map[string]*historyCacheEntry
 	historyCacheMu sync.RWMutex
@@ -77,6 +81,12 @@ type metricsCache struct {
 	ecc   *ECCMetric
 	gpus  []GPUMetric
 	dash  *DashboardData // lazily built from components; nil until first request
+
+	// Custom HTTP-source data, keyed by source name. Each per-source collector
+	// pushes only its own rows, so SetCustomSnapshot merges by source rather
+	// than clobbering. Status is live-only (never persisted).
+	custom       map[string][]CustomMetric
+	customStatus map[string][]CustomStatus
 }
 
 // historyCacheEntry caches a history response.
@@ -401,6 +411,7 @@ func (s *Server) SetArchiveConfig(archivePath string, archiveThreshold time.Dura
 var archiveViewTables = []string{
 	"cpu_metrics", "memory_metrics", "load_metrics", "disk_metrics", "network_metrics",
 	"ecc_metrics", "temperature_metrics", "power_metrics", "process_metrics", "gpu_metrics", "smart_metrics",
+	"custom_metrics",
 }
 
 // CreateArchiveViews creates or replaces all_* views that union each metric
@@ -515,6 +526,8 @@ func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	mux.HandleFunc("GET /api/metrics/gpu", s.handleMetricsGPU)
 	mux.HandleFunc("GET /api/metrics/process", s.handleMetricsProcess)
 	mux.HandleFunc("GET /api/metrics/dashboard", s.handleMetricsDashboard)
+	mux.HandleFunc("GET /api/metrics/custom", s.handleMetricsCustom)
+	mux.HandleFunc("GET /api/custom/sources", s.handleCustomCatalog)
 	mux.HandleFunc("POST /api/compact", s.handleCompact)
 	mux.HandleFunc("GET /api/history/cpu", s.handleHistoryCPU)
 	mux.HandleFunc("GET /api/history/memory", s.handleHistoryMemory)
@@ -524,6 +537,7 @@ func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	mux.HandleFunc("GET /api/history/power", s.handleHistoryPower)
 	mux.HandleFunc("GET /api/history/gpu", s.handleHistoryGPU)
 	mux.HandleFunc("GET /api/history/process", s.handleHistoryProcess)
+	mux.HandleFunc("GET /api/history/custom", s.handleHistoryCustom)
 	mux.HandleFunc("GET /api/alert-rules", s.handleListAlertRules)
 	mux.HandleFunc("POST /api/alert-rules", s.handleCreateAlertRule)
 	mux.HandleFunc("PUT /api/alert-rules/{id}", s.handleUpdateAlertRule)

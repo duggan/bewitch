@@ -22,6 +22,7 @@ var (
 		"process_metrics",
 		"gpu_metrics",
 		"smart_metrics",
+		"custom_metrics",
 	}
 
 	// DimensionTables lists dimension/lookup tables.

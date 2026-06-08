@@ -19,6 +19,7 @@ require (
 	github.com/knz/bubbline v0.0.0-20251201090646-433e881e9884
 	github.com/muesli/termenv v0.16.0
 	github.com/prometheus/procfs v0.19.2
+	github.com/tidwall/gjson v1.19.0
 	golang.org/x/image v0.38.0
 	golang.org/x/sys v0.41.0
 	golang.org/x/term v0.40.0
@@ -68,6 +69,8 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect

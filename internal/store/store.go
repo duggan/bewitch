@@ -280,6 +280,8 @@ func (s *Store) writeSample(sample collector.Sample) error {
 		return s.writeGPU(sample, data)
 	case collector.ProcessData:
 		return s.writeProcess(sample, data)
+	case collector.CustomSourceData:
+		return s.writeCustom(sample, data)
 	default:
 		return fmt.Errorf("unknown sample kind: %s", sample.Kind)
 	}
@@ -438,6 +440,8 @@ func (s *Store) writeSampleAppender(driverConn driver.Conn, sample collector.Sam
 		return s.writeGPUAppender(driverConn, sample, data)
 	case collector.ProcessData:
 		return s.writeProcessAppender(driverConn, sample, data)
+	case collector.CustomSourceData:
+		return s.writeCustomAppender(driverConn, sample, data)
 	default:
 		return fmt.Errorf("unknown sample kind: %s", sample.Kind)
 	}
@@ -1233,6 +1237,43 @@ func (s *Store) writeSMARTAppender(driverConn driver.Conn, sample collector.Samp
 				int16(si.AvailableSpare), int16(si.PercentUsed),
 			); err != nil {
 				return fmt.Errorf("append smart %s: %w", d.Device, err)
+			}
+		}
+		return nil
+	})
+}
+
+// writeCustom persists a custom source's numeric metrics (the single-sample
+// path). Status fields are live-only and never stored.
+func (s *Store) writeCustom(sample collector.Sample, data collector.CustomSourceData) error {
+	if len(data.Metrics) == 0 {
+		return nil
+	}
+	return s.withTx(func(tx *sql.Tx) error {
+		stmt, err := tx.Prepare(`INSERT INTO custom_metrics (ts, source, metric, value) VALUES (?, ?, ?, ?)`)
+		if err != nil {
+			return fmt.Errorf("prepare: %w", err)
+		}
+		defer stmt.Close()
+		for _, m := range data.Metrics {
+			if _, err := stmt.Exec(sample.Timestamp, data.Source, m.Name, m.Value); err != nil {
+				return fmt.Errorf("insert custom %s/%s: %w", data.Source, m.Name, err)
+			}
+		}
+		return nil
+	})
+}
+
+// writeCustomAppender persists a custom source's numeric metrics via the slim
+// denormalized row (ts, source, metric, value) — the smart_metrics-style shape.
+func (s *Store) writeCustomAppender(driverConn driver.Conn, sample collector.Sample, data collector.CustomSourceData) error {
+	if len(data.Metrics) == 0 {
+		return nil
+	}
+	return withAppender(driverConn, "custom_metrics", func(a *duckdb.Appender) error {
+		for _, m := range data.Metrics {
+			if err := a.AppendRow(sample.Timestamp, data.Source, m.Name, m.Value); err != nil {
+				return fmt.Errorf("append custom %s/%s: %w", data.Source, m.Name, err)
 			}
 		}
 		return nil

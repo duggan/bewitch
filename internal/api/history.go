@@ -841,6 +841,11 @@ func historyCacheKey(r *http.Request) string {
 	if names := q.Get("names"); names != "" {
 		key += ":" + names
 	}
+	// Custom history is keyed by source+metric on a shared path; without these
+	// two different series would collide on the same cache entry.
+	if source := q.Get("source"); source != "" {
+		key += ":" + source + "/" + q.Get("metric")
+	}
 	return key
 }
 

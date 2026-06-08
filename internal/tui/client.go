@@ -34,6 +34,9 @@ type daemonClient interface {
 	GetTemperature() ([]api.TemperatureMetric, error)
 	GetPower() ([]api.PowerMetric, error)
 	GetGPU() ([]api.GPUMetric, []string, error)
+	GetCustom() ([]api.CustomMetric, []api.CustomStatus, error)
+	GetCustomSources() ([]api.CustomSourceInfo, error)
+	GetCustomHistory(source, metric string, start, end time.Time) ([]api.TimeSeries, error)
 	GetProcesses() (*api.ProcessResponse, error)
 	GetAlerts() ([]api.AlertMetric, error)
 	GetActiveAlerts() ([]api.AlertMetric, error)
@@ -219,6 +222,36 @@ func (c *DaemonClient) GetGPU() ([]api.GPUMetric, []string, error) {
 		return nil, nil, err
 	}
 	return resp.GPUs, resp.Hints, nil
+}
+
+func (c *DaemonClient) GetCustom() ([]api.CustomMetric, []api.CustomStatus, error) {
+	var resp api.CustomResponse
+	if err := c.getJSON("/api/metrics/custom", &resp); err != nil {
+		return nil, nil, err
+	}
+	return resp.Metrics, resp.Status, nil
+}
+
+func (c *DaemonClient) GetCustomSources() ([]api.CustomSourceInfo, error) {
+	var resp api.CustomCatalogResponse
+	if err := c.getJSON("/api/custom/sources", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Sources, nil
+}
+
+func (c *DaemonClient) GetCustomHistory(source, metric string, start, end time.Time) ([]api.TimeSeries, error) {
+	// Quantize to match the server-side cache boundaries (see GetHistory).
+	const q int64 = 10
+	qs := start.Unix() / q * q
+	qe := end.Unix() / q * q
+	path := fmt.Sprintf("/api/history/custom?source=%s&metric=%s&start=%d&end=%d",
+		url.QueryEscape(source), url.QueryEscape(metric), qs, qe)
+	var resp api.HistoryResponse
+	if err := c.getJSON(path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Series, nil
 }
 
 func (c *DaemonClient) GetProcesses() (*api.ProcessResponse, error) {

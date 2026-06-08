@@ -346,6 +346,27 @@ func main() {
 		log.Fatalf("invalid default_interval config: %v", err)
 	}
 
+	// Load user-defined custom HTTP data sources (inline [[custom_source]] +
+	// drop-in sources.d/*.toml). Registered as per-source collectors below so
+	// each gets its own interval and independent backoff.
+	var customSources []config.CustomSourceConfig
+	if cfg.Daemon.Mock {
+		customSources = collector.MockCustomSources()
+	} else {
+		warns, srcErr := []string(nil), error(nil)
+		customSources, warns, srcErr = config.LoadSources(cfg.CustomSources, cfg.Daemon.DefaultSourcesDir(*configPath))
+		if srcErr != nil {
+			log.Fatalf("loading custom sources: %v", srcErr)
+		}
+		for _, w := range warns {
+			log.Warn(w)
+		}
+	}
+	if len(customSources) > 0 {
+		apiServer.SetCustomCatalog(buildCustomCatalog(customSources))
+		log.Infof("custom sources: %d configured", len(customSources))
+	}
+
 	type scheduledCollector struct {
 		collector        collector.Collector
 		interval         time.Duration
@@ -409,6 +430,16 @@ func main() {
 		collector: procCollector,
 		interval:  cfg.Collectors.Process.GetInterval(defaultInterval),
 	})
+	for _, src := range customSources {
+		interval := src.GetInterval(defaultInterval)
+		var col collector.Collector
+		if cfg.Daemon.Mock {
+			col = collector.NewMockCustomSourceCollector(src)
+		} else {
+			col = collector.NewCustomSourceCollector(src, interval)
+		}
+		scheduled = append(scheduled, scheduledCollector{collector: col, interval: interval})
+	}
 
 	// Tick at the GCD of all collector intervals (floored — see computeTickInterval),
 	// firing each collector when tickCount % tickMod == 0.
@@ -894,7 +925,34 @@ func pushSampleToCache(srv *api.Server, procCol collector.ProcessCollectorI, s c
 		allBasic := procCol.AllProcessSnapshot()
 		snap := buildProcessSnapshot(&d, allBasic)
 		srv.SetProcessSnapshot(snap)
+	case collector.CustomSourceData:
+		metrics := make([]api.CustomMetric, len(d.Metrics))
+		for i, m := range d.Metrics {
+			metrics[i] = api.CustomMetric{Source: d.Source, Name: m.Name, Unit: m.Unit, Value: m.Value}
+		}
+		status := make([]api.CustomStatus, len(d.Status))
+		for i, st := range d.Status {
+			status[i] = api.CustomStatus{Source: d.Source, Label: st.Label, Value: st.Value, Badge: st.Badge}
+		}
+		srv.SetCustomSnapshot(d.Source, metrics, status)
 	}
+}
+
+// buildCustomCatalog projects source configs into the API catalog the TUI
+// renders the Services tab from. Auth/URLs are deliberately omitted.
+func buildCustomCatalog(sources []config.CustomSourceConfig) []api.CustomSourceInfo {
+	out := make([]api.CustomSourceInfo, 0, len(sources))
+	for _, src := range sources {
+		info := api.CustomSourceInfo{Name: src.Name}
+		for _, m := range src.Metrics {
+			info.Metrics = append(info.Metrics, api.CustomFieldInfo{Name: m.Name, Unit: m.Unit})
+		}
+		for _, st := range src.Status {
+			info.Status = append(info.Status, api.CustomFieldInfo{Name: st.Label})
+		}
+		out = append(out, info)
+	}
+	return out
 }
 
 // runScheduledJob starts a goroutine that checks if jobName is overdue,

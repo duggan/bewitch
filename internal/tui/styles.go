@@ -251,6 +251,7 @@ var tabInfo = map[view]struct {
 	viewHardware:  {"Hardware", "HW"},
 	viewProcess:   {"Procs", "Proc"},
 	viewAlerts:    {"Alerts", "Alert"},
+	viewServices:  {"Services", "Svc"},
 }
 
 func renderTabBar(active view, width int, visibleTabs []view) string {

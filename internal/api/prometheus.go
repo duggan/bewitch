@@ -133,6 +133,15 @@ func (s *Server) handlePrometheus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Custom HTTP-source metrics. source/metric are bounded by config, so safe
+	// as labels. Status fields are NOT exported (string values, unbounded).
+	if custom, _, _ := s.getCachedCustom(); len(custom) > 0 {
+		p.help("bewitch_custom_value", "Custom data-source metric value")
+		for _, m := range custom {
+			p.gauge("bewitch_custom_value", m.Value, "source", m.Source, "metric", m.Name)
+		}
+	}
+
 	// Process aggregates only — per-process series would be unbounded cardinality.
 	if procs, _ := s.getCachedProcess(); procs != nil {
 		p.help("bewitch_processes", "Process counts by state")

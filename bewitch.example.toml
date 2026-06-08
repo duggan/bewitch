@@ -106,3 +106,81 @@ refresh_interval = "2s"
 # network_io = true  # per-process network I/O via eBPF (TCP rx/tx); set false to skip loading
 #                    # the BPF programs entirely if the per-syscall/per-cycle overhead is unwanted.
 #                    # Requires CAP_BPF + CAP_PERFMON, BTF, and kernel >= 5.5; disk I/O is unaffected.
+
+# ---------------------------------------------------------------------------
+# Custom data sources
+# ---------------------------------------------------------------------------
+# Poll a local service's HTTP API and surface chosen fields as bewitch metrics
+# (charted + Prometheus-exported + alertable) and live status. No Go required.
+#
+# Define sources inline here as [[custom_source]] blocks, and/or drop one TOML
+# file per service into the sources.d/ directory (next to this config, or set
+# [daemon] sources_dir). Both are merged; a drop-in overrides an inline source
+# of the same name. Each source becomes a sub-section of the TUI "Services" tab.
+#
+# Auth and secrets stay on the daemon host and are never logged or returned by
+# the API. Targets are operator-trusted (same trust level as [[alerts.commands]]);
+# redirects are disabled and response bodies are capped at 1 MiB.
+
+# [[custom_source]]
+# name      = "qbittorrent"          # unique; [a-z0-9_-]; the `source` label/column
+# enabled   = true
+# interval  = "10s"
+# timeout   = "4s"                    # capped below interval; a hung poll can't stall the tick
+# base_url  = "http://127.0.0.1:8080"
+#
+#   [custom_source.request]
+#   method  = "GET"
+#   path    = "/api/v2/transfer/info"
+#   # headers = { Accept = "application/json" }
+#
+#   [custom_source.auth]
+#   type = "none"                     # none | bearer | basic | header
+#   # token = "..."                   # bearer
+#   # username = "..."                # basic
+#   # password = "..."
+#   # header_name  = "Cookie"         # header (e.g. qBittorrent's SID cookie)
+#   # header_value = "SID=..."
+#
+#   # Numeric fields -> stored time-series (charted, Prometheus, alertable).
+#   # path is a gjson path into the JSON response (dot notation, array index,
+#   # filters: see https://github.com/tidwall/gjson). unit is a display hint:
+#   # bytes | bits | percent | count | duration | raw
+#   [[custom_source.metric]]
+#   name = "dl_speed"
+#   path = "dl_info_speed"
+#   unit = "bytes"
+#   [[custom_source.metric]]
+#   name = "up_speed"
+#   path = "up_info_speed"
+#   unit = "bytes"
+#
+#   # Non-numeric fields -> live status strip only (never stored).
+#   [[custom_source.status]]
+#   label = "Connection"
+#   path  = "connection_status"
+#   # badges map an exact value to a style: ok | warn | crit
+#   [custom_source.status.badges]
+#   connected    = "ok"
+#   firewalled   = "warn"
+#   disconnected = "crit"
+
+# Docker over its unix socket (no TCP host needed):
+# [[custom_source]]
+# name        = "docker"
+# interval    = "15s"
+# unix_socket = "/var/run/docker.sock"
+# base_url    = "http://unix"          # placeholder host; the socket is dialed instead
+#   [custom_source.request]
+#   path = "/info"
+#   [[custom_source.metric]]
+#   name = "containers_running"
+#   path = "ContainersRunning"
+#   unit = "count"
+#   [[custom_source.metric]]
+#   name = "images"
+#   path = "Images"
+#   unit = "count"
+#   [[custom_source.status]]
+#   label = "Server"
+#   path  = "ServerVersion"

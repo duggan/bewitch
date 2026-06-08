@@ -19,13 +19,16 @@ type mockClient struct {
 	net    []api.NetworkMetric
 	temp   []api.TemperatureMetric
 	power  []api.PowerMetric
-	procs  *api.ProcessResponse
-	dash   *api.DashboardData
-	alerts []api.AlertMetric
-	rules  []api.AlertRuleMetric
-	prefs  map[string]string
-	hist   []api.TimeSeries
-	status map[string]any
+	procs         *api.ProcessResponse
+	dash          *api.DashboardData
+	alerts        []api.AlertMetric
+	rules         []api.AlertRuleMetric
+	prefs         map[string]string
+	hist          []api.TimeSeries
+	status        map[string]any
+	customSources []api.CustomSourceInfo
+	customMetrics []api.CustomMetric
+	customStatus  []api.CustomStatus
 
 	// Simulated daemon reachability (zero = reachable).
 	unreachableSince time.Time
@@ -81,6 +84,18 @@ func (m *mockClient) GetTemperature() ([]api.TemperatureMetric, error) { return 
 func (m *mockClient) GetPower() ([]api.PowerMetric, error) { return m.power, nil }
 
 func (m *mockClient) GetGPU() ([]api.GPUMetric, []string, error) { return nil, nil, nil }
+
+func (m *mockClient) GetCustom() ([]api.CustomMetric, []api.CustomStatus, error) {
+	return m.customMetrics, m.customStatus, nil
+}
+
+func (m *mockClient) GetCustomSources() ([]api.CustomSourceInfo, error) {
+	return m.customSources, nil
+}
+
+func (m *mockClient) GetCustomHistory(_, _ string, _, _ time.Time) ([]api.TimeSeries, error) {
+	return m.hist, nil
+}
 
 func (m *mockClient) GetProcesses() (*api.ProcessResponse, error) {
 	if m.procs != nil {
