@@ -61,9 +61,9 @@ inline one, the drop-in wins (and the daemon logs that it did).
 than dotted keys — array indices and filters work too:
 
 ```toml
-path = "torrents.0.downloaded"        # first element of an array
-path = "stats.#"                      # length of the stats array
-path = "peers.#(state==\"active\").ip" # first match of a query
+path = "containers.0.State"               # first element of an array
+path = "clients.#"                        # length of an array
+path = "containers.#(State==\"running\").Id" # first match of a query
 ```
 
 A field whose path isn't found is simply skipped — one missing key doesn't sink the whole poll.
