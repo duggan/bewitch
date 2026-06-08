@@ -7,6 +7,7 @@ bewitch is two small binaries: bewitchd, a daemon that quietly reads /proc and /
 ## Features
 
 - **Metrics collection** — CPU (per-core), memory, disk (space + I/O + SMART health), network, ECC errors, temperature sensors, power consumption (powercap/RAPL), process tracking (all processes visible, top N enriched with full details)
+- **Custom data sources** — point the daemon at a local service's HTTP API (qBittorrent, Plex, Docker, etc.) and chart its numbers alongside everything else; declared in TOML (gjson field extraction), no Go required, surfaced in a dedicated TUI "Services" tab and on `/metrics`
 - **Process pinning** — pin processes by glob pattern (config or TUI) to always collect full metrics, regardless of CPU/memory ranking
 - **Per-collector intervals** — each collector has a configurable collection interval (e.g., CPU at 1s, disk at 30s, ECC at 60s) with a global default; failing collectors automatically back off exponentially and recover on success
 - **Persistent storage** — embedded database with automatic WAL checkpointing, optional retention pruning, scheduled or on-demand compaction, and Parquet archival for long-term storage
@@ -220,6 +221,37 @@ pinned = ["nginx*", "postgres", "redis-server"]
 ```
 
 Pin interactively in the TUI: navigate to a process and press `*`. TUI pins are stored in the daemon's preferences DB and persist across restarts. A `*` indicator appears next to pinned processes in the process list.
+
+### Custom data sources
+
+Point the daemon at a local service's HTTP API and chart its numbers alongside the host metrics — no Go required. Define a source inline as a `[[custom_source]]` block, and/or drop one TOML file per service into a `sources.d/` directory (next to your config, or set `[daemon] sources_dir`); both are merged.
+
+```toml
+[[custom_source]]
+name     = "qbittorrent"
+interval = "10s"
+base_url = "http://127.0.0.1:8080"
+
+  [custom_source.request]
+  path = "/api/v2/transfer/info"
+
+  # Numeric fields → stored, charted, Prometheus-exported, alertable.
+  # `path` is a gjson path; `unit` is a display hint
+  # (bytes|bits|percent|count|duration|raw).
+  [[custom_source.metric]]
+  name = "dl_speed"
+  path = "dl_info_speed"
+  unit = "bytes"
+
+  # Non-numeric fields → live status strip only.
+  [[custom_source.status]]
+  label = "Connection"
+  path  = "connection_status"
+```
+
+Configure at least one source and a **Services** tab appears in the TUI (one sub-section per source, with a live status strip and a history chart per metric). Custom metrics also show up on `/metrics` as `bewitch_custom_value{source=...,metric=...}` and are queryable from the REPL (`SELECT … FROM custom_metrics`).
+
+Auth (`bearer` / `basic` / arbitrary header), custom request headers, and Docker's unix socket (`unix_socket = "/var/run/docker.sock"`) are all supported. Secrets stay on the daemon host — never logged, never returned by the API. See the [Custom Sources docs](https://bewitch.dev/docs/custom-sources/) for the full reference, or the commented examples in `bewitch.example.toml`.
 
 ## Usage
 
