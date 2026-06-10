@@ -86,7 +86,30 @@ func TestDaemonClientAlertContract(t *testing.T) {
 		t.Fatalf("expected no active alerts after ack, got %d", len(active))
 	}
 
-	// Delete (DELETE) — rule gone, and its fired alerts cleared.
+	// Delete a single fired alert (DELETE /api/alerts/{id}) — the TUI multi-select
+	// clear path. Distinct verb+URL from DeleteAlertRule, so exercise it directly to
+	// catch routing/serialization drift, including the non-2xx error branch.
+	if _, err := database.Exec(
+		"INSERT INTO alerts (ts, rule_name, severity, message) VALUES (now(), 'disk_40', 'warning', 'deltest')"); err != nil {
+		t.Fatalf("seed alert for delete: %v", err)
+	}
+	var delID int
+	if err := database.QueryRow("SELECT id FROM alerts WHERE message = 'deltest'").Scan(&delID); err != nil {
+		t.Fatalf("read seeded alert id: %v", err)
+	}
+	if err := client.DeleteAlert(delID); err != nil {
+		t.Fatalf("DeleteAlert: %v", err)
+	}
+	var gone int
+	database.QueryRow("SELECT count(*) FROM alerts WHERE id = ?", delID).Scan(&gone)
+	if gone != 0 {
+		t.Errorf("alert %d still present after DeleteAlert", delID)
+	}
+	if err := client.DeleteAlert(delID); err == nil {
+		t.Error("DeleteAlert on a missing id: want error (404), got nil")
+	}
+
+	// Delete the rule (DELETE) — rule gone, and its fired alerts cleared.
 	if err := client.DeleteAlertRule(id); err != nil {
 		t.Fatalf("DeleteAlertRule: %v", err)
 	}

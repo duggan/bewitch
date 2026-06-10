@@ -169,8 +169,14 @@ type Model struct {
 	alertFormErr       string // last create/update error, surfaced in the alerts view
 	alertConfirmDelete bool   // awaiting y/N confirmation to delete the rule under the cursor
 	alertConfirmName   string // name of the rule pending delete confirmation
-	notifyLog          []notifyLogEntry
-	notifySending      bool
+	// Fired-alerts multi-select (alerts panel, alertFocus == 1). Selection is keyed
+	// by alert ID, not row index, so it survives the periodic refresh (rows come and
+	// go, IDs are stable). alertClearIDs snapshots the delete targets at confirm time.
+	alertSelected     map[int]bool
+	alertConfirmClear bool
+	alertClearIDs     []int
+	notifyLog         []notifyLogEntry
+	notifySending     bool
 	// Process view state
 	procSortBy             procSortField
 	procCursor             int                  // selected row index into the displayed (ordered) process list
@@ -231,6 +237,7 @@ type Model struct {
 func NewModel(client daemonClient, interval time.Duration, historyRanges []config.HistoryRange, captureSettings CaptureSettings, enableDebug bool) Model {
 	// Initialize alert table
 	columns := []table.Column{
+		{Title: "", Width: 2}, // selection marker (✓) for multi-select clear
 		{Title: "Time", Width: 14},
 		{Title: "Severity", Width: 10},
 		{Title: "Rule", Width: 20},
@@ -269,6 +276,7 @@ func NewModel(client daemonClient, interval time.Duration, historyRanges []confi
 		historyRanges:       historyRanges,
 		historyRange:        defaultIdx,
 		alertTable:          t,
+		alertSelected:       make(map[int]bool),
 		procSearchInput:     procSearch,
 		debug:               dbg,
 		captureSettings:     captureSettings,
@@ -1083,6 +1091,9 @@ func (m *Model) switchView(v view) tea.Cmd {
 		m.alertConfirmDelete = false
 		m.alertConfirmName = ""
 		m.alertFormErr = ""
+		m.alertConfirmClear = false
+		m.alertClearIDs = nil
+		clear(m.alertSelected)
 	}
 	if m.current == viewProcess && v != viewProcess {
 		m.procSearchActive = false
@@ -1402,6 +1413,40 @@ func (m *Model) refreshAlertsData() {
 	m.d("refresh: alerts (%s)", time.Since(t))
 	m.alertsData = alerts
 	m.lastDataChange[viewAlerts] = time.Now()
+	// Prune selections whose alerts no longer exist (deleted/aged out), so the
+	// marker count and clear targets never reference stale IDs.
+	if len(m.alertSelected) > 0 {
+		live := make(map[int]bool, len(alerts))
+		for _, a := range alerts {
+			live[a.ID] = true
+		}
+		for id := range m.alertSelected {
+			if !live[id] {
+				delete(m.alertSelected, id)
+			}
+		}
+	}
+}
+
+// selectedAlertIDsOrCursor returns the IDs of the selected fired alerts in
+// display order, or — when none are selected — the single alert under the table
+// cursor. Used by the ack (enter) and clear (x) actions so both operate on the
+// multi-selection when present and the cursor row otherwise.
+func (m *Model) selectedAlertIDsOrCursor() []int {
+	if len(m.alertSelected) > 0 {
+		var ids []int
+		for _, a := range m.alertsData {
+			if m.alertSelected[a.ID] {
+				ids = append(ids, a.ID)
+			}
+		}
+		return ids
+	}
+	idx := m.alertTable.Cursor()
+	if idx >= 0 && idx < len(m.alertsData) {
+		return []int{m.alertsData[idx].ID}
+	}
+	return nil
 }
 
 // refreshActiveAlerts fetches the unacknowledged alerts and caches the count plus the
@@ -2717,11 +2762,13 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 				m.viewport, cmd = m.viewport.Update(msg)
 				return m, cmd
 			}
-			// While a delete confirmation is pending, only 'y' confirms; any other
-			// key cancels it and is otherwise ignored.
-			if m.alertConfirmDelete && msg.String() != "y" {
+			// While a delete/clear confirmation is pending, only 'y' confirms; any
+			// other key cancels it and is otherwise ignored.
+			if (m.alertConfirmDelete || m.alertConfirmClear) && msg.String() != "y" {
 				m.alertConfirmDelete = false
 				m.alertConfirmName = ""
+				m.alertConfirmClear = false
+				m.alertClearIDs = nil
 				return m, nil
 			}
 			switch msg.String() {
@@ -2767,6 +2814,19 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 					if m.alertRuleCursor >= len(m.alertRules) && m.alertRuleCursor > 0 {
 						m.alertRuleCursor--
 					}
+				} else if m.alertConfirmClear {
+					ids := m.alertClearIDs
+					m.alertConfirmClear = false
+					m.alertClearIDs = nil
+					// Synchronous per-id delete (mirrors the ack path) so the refresh below
+					// reflects the removals immediately. N is bounded (the list caps at 100)
+					// and the socket is local, so the loop is cheap.
+					for _, id := range ids {
+						m.client.DeleteAlert(id)
+						delete(m.alertSelected, id)
+					}
+					m.refreshAlertsData()
+					m.refreshActiveAlerts()
 				}
 				return m, nil
 			case " ":
@@ -2774,21 +2834,56 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 					id := m.alertRules[m.alertRuleCursor].ID
 					go m.client.ToggleAlertRule(id)
 					m.refreshAlertRules()
+				} else if m.alertFocus == 1 {
+					// Toggle multi-select for the fired alert under the cursor. Keyed by
+					// alert ID so it survives the periodic refresh (see refreshAlertsData).
+					idx := m.alertTable.Cursor()
+					if idx >= 0 && idx < len(m.alertsData) {
+						id := m.alertsData[idx].ID
+						if m.alertSelected[id] {
+							delete(m.alertSelected, id)
+						} else {
+							m.alertSelected[id] = true
+						}
+					}
+				}
+				return m, nil
+			case "a":
+				// Select all / none (fired-alerts panel only).
+				if m.alertFocus == 1 {
+					if len(m.alertSelected) > 0 {
+						clear(m.alertSelected)
+					} else {
+						for _, a := range m.alertsData {
+							m.alertSelected[a.ID] = true
+						}
+					}
+				}
+				return m, nil
+			case "x":
+				// Clear (delete) the selected fired alerts, or the cursor row if none are
+				// selected. Requires y/N confirmation (handled above + in "y").
+				if m.alertFocus == 1 {
+					ids := m.selectedAlertIDsOrCursor()
+					if len(ids) > 0 {
+						m.alertClearIDs = ids
+						m.alertConfirmClear = true
+					}
 				}
 				return m, nil
 			case "enter":
 				if m.alertFocus == 1 {
-					// The table rows are built from m.alertsData in order, so the table
-					// cursor indexes m.alertsData directly. (The previous code re-fetched
-					// GetAlerts() and re-indexed the fresh slice, which could ack the wrong
-					// row if the order changed between render and keypress.)
-					idx := m.alertTable.Cursor()
-					if idx >= 0 && idx < len(m.alertsData) {
-						// Synchronous (like the surrounding refresh* calls) so the
-						// follow-up refresh observes the ack and shows it immediately.
-						m.client.AckAlert(m.alertsData[idx].ID)
-						m.refreshAlertsData()
+					// Acknowledge the selected fired alerts (or the cursor row if none are
+					// selected). The table cursor indexes m.alertsData directly since rows
+					// are built from it in order. Synchronous (like the surrounding refresh*
+					// calls) so the follow-up refresh observes the acks immediately.
+					ids := m.selectedAlertIDsOrCursor()
+					for _, id := range ids {
+						m.client.AckAlert(id)
 					}
+					clear(m.alertSelected)
+					m.refreshAlertsData()
+					m.refreshActiveAlerts()
 				}
 				return m, nil
 			case "t":
@@ -3264,7 +3359,7 @@ func (m Model) viewFooter() string {
 		// always visible. The range is also shown in the chart's panel title.
 		line = normalHelpStyle.Render(fmt.Sprintf("< >:range [%s]  r:pick dates", m.historyRangeLabel()))
 	case viewAlerts:
-		line = renderAlertFooter(m.alertFocus, m.alertConfirmDelete, m.alertConfirmName, m.alertFormErr)
+		line = renderAlertFooter(m.alertFocus, m.alertConfirmDelete, m.alertConfirmName, m.alertFormErr, m.alertConfirmClear, len(m.alertClearIDs), len(m.alertSelected))
 	case viewProcess:
 		line = processFooter(m.procSearchActive, m.procSearchQuery, m.procSortBy, m.procPinnedOnly)
 	case viewNetwork:
@@ -3350,7 +3445,7 @@ func (m *Model) renderCurrentContent() string {
 		m.procFilteredLen = fl
 		return c
 	case viewAlerts:
-		return renderAlertView(m.alertsData, m.width, &m.alertTable, m.alertRules, m.alertRuleCursor, m.alertFocus, m.notifyLog, m.notifySending)
+		return renderAlertView(m.alertsData, m.width, &m.alertTable, m.alertRules, m.alertRuleCursor, m.alertFocus, m.notifyLog, m.notifySending, m.alertSelected)
 	case viewServices:
 		return renderCustomView(m.customSources, m.customMetrics, m.customStatus, m.width,
 			m.cachedHistoryCharts[m.current], m.servicesSection, m.servicesMetricCursor)

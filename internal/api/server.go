@@ -533,6 +533,7 @@ func NewServer(cfg *config.Config, dbFn func() *sql.DB) *Server {
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	mux.HandleFunc("GET /api/alerts", s.handleListAlerts)
 	mux.HandleFunc("POST /api/alerts/{id}/ack", s.handleAckAlert)
+	mux.HandleFunc("DELETE /api/alerts/{id}", s.handleDeleteAlert)
 	mux.HandleFunc("GET /api/config", s.handleGetConfig)
 	mux.HandleFunc("GET /api/metrics/cpu", s.handleMetricsCPU)
 	mux.HandleFunc("GET /api/metrics/memory", s.handleMetricsMemory)

@@ -287,6 +287,33 @@ func (s *Server) handleAckAlert(w http.ResponseWriter, r *http.Request) {
 	writeGenericStatus(w, http.StatusOK, "acknowledged")
 }
 
+// handleDeleteAlert deletes a single fired alert row by id. This is a bounded
+// maintenance operation — it can only remove a row from the `alerts` table
+// (notification history), never arbitrary data — so it is safe to expose on the
+// unauthenticated unix socket (unlike general write SQL). It lets the TUI clear
+// stuck/obsolete fired alerts (e.g. the reserved collection-stalled alert, or old
+// alerts on a rule the user wants to keep) without deleting the rule or taking the
+// daemon offline. Lifecycle-safe: if the rule is still breaching, the engine
+// re-fires on the next cycle (correct); if the condition cleared, it stays gone.
+func (s *Server) handleDeleteAlert(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, "invalid id")
+		return
+	}
+	result, err := s.dbFn().Exec("DELETE FROM alerts WHERE id = ?", id)
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		writeError(w, r, http.StatusNotFound, "alert not found")
+		return
+	}
+	writeGenericStatus(w, http.StatusOK, "deleted")
+}
+
 func (s *Server) handleListAlertRules(w http.ResponseWriter, r *http.Request) {
 	db := s.dbFn()
 

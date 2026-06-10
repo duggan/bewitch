@@ -48,6 +48,7 @@ type daemonClient interface {
 	DeleteAlertRule(id int) error
 	ToggleAlertRule(id int) error
 	AckAlert(id int) error
+	DeleteAlert(id int) error
 	GetPreferences() (map[string]string, error)
 	SetPreference(key, value string) error
 	Compact() error
@@ -320,6 +321,24 @@ func (c *DaemonClient) AckAlert(id int) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return extractPostError("POST", path, resp)
+	}
+	return nil
+}
+
+// DeleteAlert deletes a single fired alert row by id (TUI multi-select clear).
+func (c *DaemonClient) DeleteAlert(id int) error {
+	path := fmt.Sprintf("/api/alerts/%d", id)
+	req, err := http.NewRequest(http.MethodDelete, c.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return extractPostError("DELETE", path, resp)
 	}
 	return nil
 }

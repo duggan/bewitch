@@ -12,13 +12,13 @@ import (
 type mockClient struct {
 	mu sync.Mutex
 
-	cpu    []api.CPUCoreMetric
-	mem    *api.MemoryMetric
-	ecc    *api.ECCMetric
-	disk   []api.DiskMetric
-	net    []api.NetworkMetric
-	temp   []api.TemperatureMetric
-	power  []api.PowerMetric
+	cpu           []api.CPUCoreMetric
+	mem           *api.MemoryMetric
+	ecc           *api.ECCMetric
+	disk          []api.DiskMetric
+	net           []api.NetworkMetric
+	temp          []api.TemperatureMetric
+	power         []api.PowerMetric
 	procs         *api.ProcessResponse
 	dash          *api.DashboardData
 	alerts        []api.AlertMetric
@@ -37,9 +37,10 @@ type mockClient struct {
 	prefSets []struct{ key, value string }
 
 	// Track alert mutations (guarded by mu)
-	updatedRules   []api.AlertRuleMetric
-	deletedRuleIDs []int
-	ackedIDs       []int
+	updatedRules    []api.AlertRuleMetric
+	deletedRuleIDs  []int
+	ackedIDs        []int
+	deletedAlertIDs []int
 }
 
 func (m *mockClient) GetStatus() (map[string]any, error) {
@@ -148,6 +149,13 @@ func (m *mockClient) AckAlert(id int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ackedIDs = append(m.ackedIDs, id)
+	return nil
+}
+
+func (m *mockClient) DeleteAlert(id int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deletedAlertIDs = append(m.deletedAlertIDs, id)
 	return nil
 }
 

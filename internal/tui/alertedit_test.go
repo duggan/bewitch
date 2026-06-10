@@ -395,3 +395,144 @@ func TestAckUsesCachedRow(t *testing.T) {
 		t.Errorf("expected AckAlert(101) for the rendered row 0, got %v (re-fetch/re-index bug?)", mc.ackedIDs)
 	}
 }
+
+// TestAlertsMultiSelectClear: space-select two fired alerts, then x + y deletes
+// exactly those rows.
+func TestAlertsMultiSelectClear(t *testing.T) {
+	mc := newMockClient()
+	mc.alerts = []api.AlertMetric{
+		{ID: 101, RuleName: "disk_40", Severity: "warning", Message: "high", Timestamp: time.Now()},
+		{ID: 102, RuleName: "cpu_hot", Severity: "critical", Message: "hot", Timestamp: time.Now()},
+		{ID: 103, RuleName: "mem", Severity: "warning", Message: "m", Timestamp: time.Now()},
+	}
+	m := alertsModel(t, mc)
+	m.alertFocus = 1
+	m.viewport.SetContent(m.renderCurrentContent()) // build table rows, cursor at row 0
+
+	send := func(k tea.KeyMsg) { u, _ := m.Update(k); m = u.(Model) }
+	send(key(" "))                      // select 101 (cursor row 0)
+	send(tea.KeyMsg{Type: tea.KeyDown}) // cursor -> row 1
+	send(key(" "))                      // select 102
+
+	if len(m.alertSelected) != 2 || !m.alertSelected[101] || !m.alertSelected[102] {
+		t.Fatalf("selection = %v, want {101,102}", m.alertSelected)
+	}
+	// The selection is surfaced: ✓ markers on the rows and a count in the footer.
+	if got := m.View(); !strings.Contains(got, "✓") || !strings.Contains(got, "(2 selected)") {
+		t.Error("selection markers / count not shown in View()")
+	}
+
+	send(key("x")) // arm clear confirm
+	if !m.alertConfirmClear {
+		t.Fatal("clear not armed after 'x'")
+	}
+	if got := m.View(); !strings.Contains(got, "Clear 2 fired alerts?") {
+		t.Error("clear-confirm prompt missing/wrong in View()")
+	}
+
+	send(key("y")) // confirm
+
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	if len(mc.deletedAlertIDs) != 2 {
+		t.Fatalf("DeleteAlert calls = %v, want two (101,102)", mc.deletedAlertIDs)
+	}
+	deleted := map[int]bool{mc.deletedAlertIDs[0]: true, mc.deletedAlertIDs[1]: true}
+	if !deleted[101] || !deleted[102] {
+		t.Errorf("deleted = %v, want 101 and 102", mc.deletedAlertIDs)
+	}
+	if m.alertConfirmClear || m.alertClearIDs != nil || len(m.alertSelected) != 0 {
+		t.Error("confirm/selection state not reset after clear")
+	}
+}
+
+// TestAlertsSelectAllClear: 'a' toggles select-all; x + y clears all.
+func TestAlertsSelectAllClear(t *testing.T) {
+	mc := newMockClient()
+	mc.alerts = []api.AlertMetric{
+		{ID: 1, RuleName: "a", Severity: "warning", Message: "m", Timestamp: time.Now()},
+		{ID: 2, RuleName: "b", Severity: "warning", Message: "m", Timestamp: time.Now()},
+	}
+	m := alertsModel(t, mc)
+	m.alertFocus = 1
+	m.viewport.SetContent(m.renderCurrentContent())
+
+	send := func(k tea.KeyMsg) { u, _ := m.Update(k); m = u.(Model) }
+	send(key("a"))
+	if len(m.alertSelected) != 2 {
+		t.Fatalf("select-all selected %d, want 2", len(m.alertSelected))
+	}
+	send(key("a")) // toggle off
+	if len(m.alertSelected) != 0 {
+		t.Fatalf("select-all toggle off left %d, want 0", len(m.alertSelected))
+	}
+	send(key("a")) // all again
+	send(key("x"))
+	send(key("y"))
+
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	if len(mc.deletedAlertIDs) != 2 {
+		t.Errorf("deleted %v, want both rows", mc.deletedAlertIDs)
+	}
+}
+
+// TestAlertsClearCancel: x arms a clear of the cursor row (no selection); any
+// non-y key cancels with nothing deleted.
+func TestAlertsClearCancel(t *testing.T) {
+	mc := newMockClient()
+	mc.alerts = []api.AlertMetric{{ID: 9, RuleName: "a", Severity: "warning", Message: "m", Timestamp: time.Now()}}
+	m := alertsModel(t, mc)
+	m.alertFocus = 1
+	m.viewport.SetContent(m.renderCurrentContent())
+
+	send := func(k tea.KeyMsg) { u, _ := m.Update(k); m = u.(Model) }
+	send(key("x")) // arm: targets the cursor row (id 9) since nothing is selected
+	if !m.alertConfirmClear || len(m.alertClearIDs) != 1 || m.alertClearIDs[0] != 9 {
+		t.Fatalf("clear not armed for cursor row: confirm=%v ids=%v", m.alertConfirmClear, m.alertClearIDs)
+	}
+	send(key("n")) // cancel
+	if m.alertConfirmClear {
+		t.Error("confirm not cancelled by non-y key")
+	}
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+	if len(mc.deletedAlertIDs) != 0 {
+		t.Errorf("deleted %v on cancel, want none", mc.deletedAlertIDs)
+	}
+}
+
+// TestAlertSelectionPruneAndOrder covers two pieces of new logic nothing else
+// exercises: refreshAlertsData pruning selections whose alerts no longer exist,
+// and selectedAlertIDsOrCursor returning IDs in display order (not map order).
+func TestAlertSelectionPruneAndOrder(t *testing.T) {
+	mc := newMockClient()
+	mc.alerts = []api.AlertMetric{
+		{ID: 10, RuleName: "a", Severity: "warning", Message: "m", Timestamp: time.Now()},
+		{ID: 20, RuleName: "b", Severity: "warning", Message: "m", Timestamp: time.Now()},
+		{ID: 30, RuleName: "c", Severity: "warning", Message: "m", Timestamp: time.Now()},
+	}
+	m := alertsModel(t, mc)
+	m.alertFocus = 1
+
+	// Select 30 then 10 (reverse of display order) to prove ordering is by alertsData.
+	m.alertSelected[30] = true
+	m.alertSelected[10] = true
+	if got := m.selectedAlertIDsOrCursor(); len(got) != 2 || got[0] != 10 || got[1] != 30 {
+		t.Errorf("selectedAlertIDsOrCursor() = %v, want [10 30] (display order)", got)
+	}
+
+	// Drop alert 10 from the live set; refresh must prune the now-stale selection
+	// while retaining the still-live one.
+	mc.alerts = []api.AlertMetric{
+		{ID: 20, RuleName: "b", Severity: "warning", Message: "m", Timestamp: time.Now()},
+		{ID: 30, RuleName: "c", Severity: "warning", Message: "m", Timestamp: time.Now()},
+	}
+	m.refreshAlertsData()
+	if m.alertSelected[10] {
+		t.Error("stale selection 10 not pruned after refresh")
+	}
+	if !m.alertSelected[30] {
+		t.Error("live selection 30 was wrongly pruned")
+	}
+}

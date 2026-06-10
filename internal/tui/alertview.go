@@ -19,7 +19,7 @@ var (
 	notifyDimStyle  = lipgloss.NewStyle().Foreground(colorMuted)
 )
 
-func renderAlertView(alerts []api.AlertMetric, width int, alertTable *table.Model, rules []api.AlertRuleMetric, ruleCursor int, alertFocus int, notifyLog []notifyLogEntry, notifySending bool) string {
+func renderAlertView(alerts []api.AlertMetric, width int, alertTable *table.Model, rules []api.AlertRuleMetric, ruleCursor int, alertFocus int, notifyLog []notifyLogEntry, notifySending bool, selected map[int]bool) string {
 	var sections []string
 
 	// --- Rules section ---
@@ -43,7 +43,12 @@ func renderAlertView(alerts []api.AlertMetric, width int, alertTable *table.Mode
 			if a.Acknowledged {
 				status = "ack"
 			}
+			marker := ""
+			if selected[a.ID] {
+				marker = "✓"
+			}
 			rows[i] = table.Row{
+				marker,
 				a.Timestamp.Format("Jan 02 15:04"),
 				a.Severity,
 				a.RuleName,
@@ -72,9 +77,19 @@ func renderAlertView(alerts []api.AlertMetric, width int, alertTable *table.Mode
 // delete-confirmation prompt while one is pending, else a transient form error,
 // else the keyboard-shortcut help. It is a single line so the fixed-footer budget
 // (see View) holds even alongside the scroll indicator.
-func renderAlertFooter(alertFocus int, confirmDelete bool, confirmName, formErr string) string {
+func renderAlertFooter(alertFocus int, confirmDelete bool, confirmName, formErr string, confirmClear bool, clearCount, selCount int) string {
 	if confirmDelete {
 		return alertCritStyle.Render(fmt.Sprintf("Delete rule %q and its fired alerts?", confirmName)) +
+			normalHelpStyle.Render("   ") +
+			alertCritStyle.Bold(true).Render("y") + normalHelpStyle.Render(" / ") +
+			lipgloss.NewStyle().Foreground(colorPink).Bold(true).Render("N")
+	}
+	if confirmClear {
+		noun := "alert"
+		if clearCount != 1 {
+			noun += "s"
+		}
+		return alertCritStyle.Render(fmt.Sprintf("Clear %d fired %s?", clearCount, noun)) +
 			normalHelpStyle.Render("   ") +
 			alertCritStyle.Bold(true).Render("y") + normalHelpStyle.Render(" / ") +
 			lipgloss.NewStyle().Foreground(colorPink).Bold(true).Render("N")
@@ -92,10 +107,17 @@ func renderAlertFooter(alertFocus int, confirmDelete bool, confirmName, formErr 
 		{"e:edit", alertFocus == 0},
 		{"d:delete", alertFocus == 0},
 		{"space:toggle", alertFocus == 0},
+		{"space:select", alertFocus == 1},
+		{"a:all", alertFocus == 1},
 		{"enter:ack", alertFocus == 1},
+		{"x:clear", alertFocus == 1},
 		{"t:test", false},
 		{"tab:switch", true},
 		{"PgUp/Dn:scroll", false},
+	}
+	// Show the live selection count on the alerts panel.
+	if alertFocus == 1 && selCount > 0 {
+		helpItems = append(helpItems, helpItem{fmt.Sprintf("(%d selected)", selCount), true})
 	}
 	var helpParts []string
 	for _, item := range helpItems {
