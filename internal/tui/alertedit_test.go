@@ -536,3 +536,51 @@ func TestAlertSelectionPruneAndOrder(t *testing.T) {
 		t.Error("live selection 30 was wrongly pruned")
 	}
 }
+
+// TestAlertFooterFiltersByPanel verifies the footer shows only the focused panel's
+// shortcuts: rule actions (d:delete) in the rules panel, fired-alert actions
+// (x:clear) in the alerts panel — never both at once (the cross-panel confusion).
+func TestAlertFooterFiltersByPanel(t *testing.T) {
+	mc := newMockClient()
+	mc.rules = []api.AlertRuleMetric{
+		{ID: 1, Name: "disk_40", Type: "threshold", Severity: "warning", Enabled: true,
+			Metric: "disk.used_pct", Operator: ">", Value: 40, Duration: "1m", Mount: "/"},
+	}
+	mc.alerts = []api.AlertMetric{
+		{ID: 1, RuleName: "disk_40", Severity: "warning", Message: "m", Timestamp: time.Now()},
+	}
+	m := alertsModel(t, mc)
+
+	// Rules panel (focus 0): rule actions present, fired-alert actions absent.
+	m.alertFocus = 0
+	rv := m.View()
+	for _, want := range []string{"n:new", "d:delete"} {
+		if !strings.Contains(rv, want) {
+			t.Errorf("rules panel footer missing %q", want)
+		}
+	}
+	for _, notWant := range []string{"x:clear", "space:select", "a:all"} {
+		if strings.Contains(rv, notWant) {
+			t.Errorf("rules panel footer should not show fired-alert key %q", notWant)
+		}
+	}
+
+	// Fired-alerts panel (focus 1): fired-alert actions present, rule actions absent.
+	m.alertFocus = 1
+	av := m.View()
+	for _, want := range []string{"x:clear", "space:select", "a:all", "enter:ack"} {
+		if !strings.Contains(av, want) {
+			t.Errorf("alerts panel footer missing %q", want)
+		}
+	}
+	for _, notWant := range []string{"n:new", "e:edit", "d:delete"} {
+		if strings.Contains(av, notWant) {
+			t.Errorf("alerts panel footer should not show rule key %q", notWant)
+		}
+	}
+
+	// tab:switch is shared across both panels.
+	if !strings.Contains(rv, "tab:switch") || !strings.Contains(av, "tab:switch") {
+		t.Error("tab:switch should appear on both panels")
+	}
+}

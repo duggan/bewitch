@@ -98,29 +98,41 @@ func renderAlertFooter(alertFocus int, confirmDelete bool, confirmName, formErr 
 		return notifyErrStyle.Render("⚠ " + formErr)
 	}
 
+	// Only show shortcuts that apply to the focused panel — the rules list and the
+	// fired-alerts table act on different entities, so mixing "d:delete" (a rule)
+	// with "x:clear" (fired alerts) in one help line is confusing. Panel-specific
+	// keys (active=true, highlighted) appear only for their panel; the shared keys
+	// (t/tab/scroll) appear on both, dimmed.
 	type helpItem struct {
 		text   string
+		show   bool
 		active bool
 	}
 	helpItems := []helpItem{
-		{"n:new", alertFocus == 0},
-		{"e:edit", alertFocus == 0},
-		{"d:delete", alertFocus == 0},
-		{"space:toggle", alertFocus == 0},
-		{"space:select", alertFocus == 1},
-		{"a:all", alertFocus == 1},
-		{"enter:ack", alertFocus == 1},
-		{"x:clear", alertFocus == 1},
-		{"t:test", false},
-		{"tab:switch", true},
-		{"PgUp/Dn:scroll", false},
+		// Rules panel.
+		{"n:new", alertFocus == 0, true},
+		{"e:edit", alertFocus == 0, true},
+		{"d:delete", alertFocus == 0, true},
+		{"space:toggle", alertFocus == 0, true},
+		// Fired-alerts panel.
+		{"space:select", alertFocus == 1, true},
+		{"a:all", alertFocus == 1, true},
+		{"enter:ack", alertFocus == 1, true},
+		{"x:clear", alertFocus == 1, true},
+		// Shared (both panels).
+		{"t:test", true, false},
+		{"tab:switch", true, true},
+		{"PgUp/Dn:scroll", true, false},
 	}
 	// Show the live selection count on the alerts panel.
 	if alertFocus == 1 && selCount > 0 {
-		helpItems = append(helpItems, helpItem{fmt.Sprintf("(%d selected)", selCount), true})
+		helpItems = append(helpItems, helpItem{fmt.Sprintf("(%d selected)", selCount), true, true})
 	}
 	var helpParts []string
 	for _, item := range helpItems {
+		if !item.show {
+			continue
+		}
 		if item.active {
 			helpParts = append(helpParts, activeHelpStyle.Render(item.text))
 		} else {
