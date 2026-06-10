@@ -422,9 +422,9 @@ func TestAlertsMultiSelectClear(t *testing.T) {
 		t.Error("selection markers / count not shown in View()")
 	}
 
-	send(key("x")) // arm clear confirm
+	send(key("c")) // arm clear confirm
 	if !m.alertConfirmClear {
-		t.Fatal("clear not armed after 'x'")
+		t.Fatal("clear not armed after 'c'")
 	}
 	if got := m.View(); !strings.Contains(got, "Clear 2 fired alerts?") {
 		t.Error("clear-confirm prompt missing/wrong in View()")
@@ -467,7 +467,7 @@ func TestAlertsSelectAllClear(t *testing.T) {
 		t.Fatalf("select-all toggle off left %d, want 0", len(m.alertSelected))
 	}
 	send(key("a")) // all again
-	send(key("x"))
+	send(key("c"))
 	send(key("y"))
 
 	mc.mu.Lock()
@@ -487,7 +487,7 @@ func TestAlertsClearCancel(t *testing.T) {
 	m.viewport.SetContent(m.renderCurrentContent())
 
 	send := func(k tea.KeyMsg) { u, _ := m.Update(k); m = u.(Model) }
-	send(key("x")) // arm: targets the cursor row (id 9) since nothing is selected
+	send(key("c")) // arm: targets the cursor row (id 9) since nothing is selected
 	if !m.alertConfirmClear || len(m.alertClearIDs) != 1 || m.alertClearIDs[0] != 9 {
 		t.Fatalf("clear not armed for cursor row: confirm=%v ids=%v", m.alertConfirmClear, m.alertClearIDs)
 	}
@@ -559,7 +559,7 @@ func TestAlertFooterFiltersByPanel(t *testing.T) {
 			t.Errorf("rules panel footer missing %q", want)
 		}
 	}
-	for _, notWant := range []string{"x:clear", "space:select", "a:all"} {
+	for _, notWant := range []string{"c:clear", "space:select", "a:all"} {
 		if strings.Contains(rv, notWant) {
 			t.Errorf("rules panel footer should not show fired-alert key %q", notWant)
 		}
@@ -568,7 +568,7 @@ func TestAlertFooterFiltersByPanel(t *testing.T) {
 	// Fired-alerts panel (focus 1): fired-alert actions present, rule actions absent.
 	m.alertFocus = 1
 	av := m.View()
-	for _, want := range []string{"x:clear", "space:select", "a:all", "enter:ack"} {
+	for _, want := range []string{"c:clear", "space:select", "a:all", "enter:ack"} {
 		if !strings.Contains(av, want) {
 			t.Errorf("alerts panel footer missing %q", want)
 		}

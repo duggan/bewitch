@@ -1428,6 +1428,19 @@ func (m *Model) refreshAlertsData() {
 	}
 }
 
+// startCapture arms the screenshot-capture form for the current view, snapshotting
+// the rendered content. Shared by the global `x` shortcut and the alerts view (whose
+// default key case would otherwise swallow `x`).
+func (m *Model) startCapture() tea.Cmd {
+	m.capturedContent = m.captureViewContent()
+	m.captureFormState = &captureFormState{
+		path: defaultCapturePath(m.current, m.captureSettings.Directory),
+	}
+	m.captureForm = buildCaptureForm(m.captureFormState)
+	m.captureFormActive = true
+	return m.captureForm.Init()
+}
+
 // selectedAlertIDsOrCursor returns the IDs of the selected fired alerts in
 // display order, or — when none are selected — the single alert under the table
 // cursor. Used by the ack (enter) and clear (x) actions so both operate on the
@@ -2861,16 +2874,9 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 				}
 				return m, nil
 			case "x":
-				// Clear (delete) the selected fired alerts, or the cursor row if none are
-				// selected. Requires y/N confirmation (handled above + in "y").
-				if m.alertFocus == 1 {
-					ids := m.selectedAlertIDsOrCursor()
-					if len(ids) > 0 {
-						m.alertClearIDs = ids
-						m.alertConfirmClear = true
-					}
-				}
-				return m, nil
+				// Screenshot capture — `x` is the global capture shortcut; honour it on
+				// the alerts view too (the view's default case would otherwise swallow it).
+				return m, m.startCapture()
 			case "enter":
 				if m.alertFocus == 1 {
 					// Acknowledge the selected fired alerts (or the cursor row if none are
@@ -2896,7 +2902,18 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 					return notifyTestResultMsg{results: results, err: err, sentAt: sentAt}
 				}
 			case "c":
-				m.notifyLog = nil
+				// Clear: on the fired-alerts panel, delete the selected alerts (or the
+				// cursor row when none are selected) with a y/N confirm; on the rules
+				// panel, dismiss the notification test log.
+				if m.alertFocus == 1 {
+					ids := m.selectedAlertIDsOrCursor()
+					if len(ids) > 0 {
+						m.alertClearIDs = ids
+						m.alertConfirmClear = true
+					}
+				} else {
+					m.notifyLog = nil
+				}
 				return m, nil
 			case "tab":
 				m.alertFocus = (m.alertFocus + 1) % 2
@@ -2987,13 +3004,7 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 				m.datePickerActive = true
 			}
 		case "x":
-			m.capturedContent = m.captureViewContent()
-			m.captureFormState = &captureFormState{
-				path: defaultCapturePath(m.current, m.captureSettings.Directory),
-			}
-			m.captureForm = buildCaptureForm(m.captureFormState)
-			m.captureFormActive = true
-			return m, m.captureForm.Init()
+			return m, m.startCapture()
 		default:
 			// Pass to viewport for scrolling
 			var cmd tea.Cmd

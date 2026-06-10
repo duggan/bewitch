@@ -118,7 +118,7 @@ func renderAlertFooter(alertFocus int, confirmDelete bool, confirmName, formErr 
 		{"space:select", alertFocus == 1, true},
 		{"a:all", alertFocus == 1, true},
 		{"enter:ack", alertFocus == 1, true},
-		{"x:clear", alertFocus == 1, true},
+		{"c:clear", alertFocus == 1, true},
 		// Shared (both panels).
 		{"t:test", true, false},
 		{"tab:switch", true, true},
