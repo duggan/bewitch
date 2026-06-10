@@ -889,46 +889,96 @@ func TestLoadMalformedConfigErrors(t *testing.T) {
 	}
 }
 
-// TestLoadClientToleratesUnreadableConfig verifies the client loader degrades to
-// defaults (not a fatal error) when the system config can't be read — the
-// regression from installing /etc/bewitch.toml root:bewitch 0640, which a user
-// not in the bewitch group can't read.
-func TestLoadClientToleratesUnreadableConfig(t *testing.T) {
+// withClientPaths overrides the client config resolution vars for a test and
+// restores them afterward.
+func withClientPaths(t *testing.T, userPath, sysPath string) {
+	t.Helper()
+	origUser, origSys := userConfigPathFn, systemConfigPath
+	userConfigPathFn = func() (string, error) { return userPath, nil }
+	systemConfigPath = sysPath
+	t.Cleanup(func() { userConfigPathFn, systemConfigPath = origUser, origSys })
+}
+
+// TestLoadClientUnreadableSystemConfig verifies the client silently degrades to
+// defaults when the system config can't be read — the regression from installing
+// /etc/bewitch.toml root:bewitch 0640, which a user not in the bewitch group
+// can't read. No -config, no user config, so it falls through to the system path.
+func TestLoadClientUnreadableSystemConfig(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses file permissions; cannot simulate EACCES")
 	}
-	path := filepath.Join(t.TempDir(), "bewitch.toml")
-	if err := os.WriteFile(path, []byte("[daemon]\nsocket = \"/tmp/custom.sock\"\n"), 0o000); err != nil {
+	dir := t.TempDir()
+	sys := filepath.Join(dir, "bewitch.toml")
+	if err := os.WriteFile(sys, []byte("[daemon]\nsocket = \"/tmp/sys.sock\"\n"), 0o000); err != nil {
 		t.Fatalf("writing config: %v", err)
 	}
+	withClientPaths(t, filepath.Join(dir, "nonexistent-user.toml"), sys)
 
-	// Strict Load must fail on an unreadable file.
-	if _, err := Load(path); err == nil {
+	// Strict Load must fail on the unreadable file.
+	if _, err := Load(sys); err == nil {
 		t.Fatal("Load() = nil error on unreadable config, want permission error")
 	}
 
-	// LoadClient must succeed with defaults.
-	cfg, err := LoadClient(path)
+	cfg, err := LoadClient("") // no explicit -config
 	if err != nil {
-		t.Fatalf("LoadClient() = %v, want nil (degrade to defaults)", err)
+		t.Fatalf("LoadClient() = %v, want nil (silent defaults)", err)
 	}
 	if cfg.Daemon.Socket != "/run/bewitch/bewitch.sock" {
-		t.Errorf("LoadClient() socket = %q, want the default (config was unreadable)", cfg.Daemon.Socket)
+		t.Errorf("LoadClient() socket = %q, want the default", cfg.Daemon.Socket)
 	}
 }
 
-// TestLoadClientReadsReadableConfig verifies LoadClient still honors a config it
-// can read (it must only relax the permission-denied case).
-func TestLoadClientReadsReadableConfig(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "bewitch.toml")
-	if err := os.WriteFile(path, []byte("[daemon]\nsocket = \"/tmp/custom.sock\"\n"), 0o644); err != nil {
-		t.Fatalf("writing config: %v", err)
+// TestLoadClientPrefersUserConfig verifies a per-user ~/.config/bewitch/config.toml
+// is used (over the system config) when present.
+func TestLoadClientPrefersUserConfig(t *testing.T) {
+	dir := t.TempDir()
+	user := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(user, []byte("[daemon]\nsocket = \"/tmp/user.sock\"\n"), 0o644); err != nil {
+		t.Fatalf("writing user config: %v", err)
 	}
-	cfg, err := LoadClient(path)
+	sys := filepath.Join(dir, "system.toml")
+	if err := os.WriteFile(sys, []byte("[daemon]\nsocket = \"/tmp/sys.sock\"\n"), 0o644); err != nil {
+		t.Fatalf("writing system config: %v", err)
+	}
+	withClientPaths(t, user, sys)
+
+	cfg, err := LoadClient("")
 	if err != nil {
 		t.Fatalf("LoadClient() = %v", err)
 	}
-	if cfg.Daemon.Socket != "/tmp/custom.sock" {
-		t.Errorf("LoadClient() socket = %q, want /tmp/custom.sock", cfg.Daemon.Socket)
+	if cfg.Daemon.Socket != "/tmp/user.sock" {
+		t.Errorf("LoadClient() socket = %q, want /tmp/user.sock (user config wins)", cfg.Daemon.Socket)
+	}
+}
+
+// TestLoadClientExplicitPath verifies an explicit -config is honored strictly
+// (and takes precedence over the user/system locations).
+func TestLoadClientExplicitPath(t *testing.T) {
+	dir := t.TempDir()
+	explicit := filepath.Join(dir, "explicit.toml")
+	if err := os.WriteFile(explicit, []byte("[daemon]\nsocket = \"/tmp/explicit.sock\"\n"), 0o644); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+	// Point the user/system fallbacks elsewhere to prove explicit wins.
+	withClientPaths(t, filepath.Join(dir, "nope-user.toml"), filepath.Join(dir, "nope-sys.toml"))
+
+	cfg, err := LoadClient(explicit)
+	if err != nil {
+		t.Fatalf("LoadClient() = %v", err)
+	}
+	if cfg.Daemon.Socket != "/tmp/explicit.sock" {
+		t.Errorf("LoadClient() socket = %q, want /tmp/explicit.sock", cfg.Daemon.Socket)
+	}
+
+	// An explicit path that doesn't exist is NOT silently defaulted — Load treats
+	// a missing file as defaults, but an explicit unreadable one is fatal.
+	if os.Geteuid() != 0 {
+		bad := filepath.Join(dir, "unreadable.toml")
+		if err := os.WriteFile(bad, []byte("x=1\n"), 0o000); err != nil {
+			t.Fatalf("writing config: %v", err)
+		}
+		if _, err := LoadClient(bad); err == nil {
+			t.Error("LoadClient(explicit unreadable) = nil, want error (explicit path is strict)")
+		}
 	}
 }

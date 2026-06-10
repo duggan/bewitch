@@ -527,25 +527,55 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// LoadClient is the loader for client tools (the `bewitch` TUI/REPL and
-// subcommands). It behaves like Load, except an *unreadable* config file
-// (permission denied) degrades to defaults with a warning instead of being
-// fatal. The system config (/etc/bewitch.toml) is installed root:bewitch 0640
-// so it isn't world-readable, which means a user not in the bewitch group can't
-// read it — but a client only needs the socket path (defaulted), or -addr/-token
-// for a remote daemon (passable via flags). The daemon must NOT use this (it runs
-// as the owning user and genuinely needs the config, including its secrets), so
-// it keeps the strict Load.
-func LoadClient(path string) (*Config, error) {
-	cfg, err := Load(path)
+// Overridable in tests.
+var (
+	// userConfigPathFn returns the per-user client config path
+	// (<UserConfigDir>/bewitch/config.toml, e.g. ~/.config/bewitch/config.toml).
+	userConfigPathFn = func() (string, error) {
+		dir, err := os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(dir, "bewitch", "config.toml"), nil
+	}
+	// systemConfigPath is the system-wide config location.
+	systemConfigPath = DefaultConfigPath
+)
+
+// LoadClient resolves configuration for client tools (the `bewitch` TUI/REPL and
+// subcommands), which are run by ordinary users — not by the daemon's service
+// account. Resolution order:
+//
+//  1. explicitPath (the user passed -config): loaded strictly — an error there is
+//     fatal, since they named that file on purpose.
+//  2. A per-user config at <UserConfigDir>/bewitch/config.toml, if it exists:
+//     loaded strictly. This is the place for client-specific settings (custom
+//     socket, default -addr/-token, TUI refresh) without touching the daemon's
+//     secrets.
+//  3. The system config (/etc/bewitch.toml), if readable.
+//  4. Built-in defaults.
+//
+// The system config is installed root:bewitch 0640 (it holds the daemon's
+// secrets), so an ordinary user can't read it — that is the EXPECTED case and
+// degrades SILENTLY to defaults (a client only needs the socket path, which is
+// defaulted, or -addr/-token for a remote daemon). The daemon never uses this; it
+// keeps the strict Load because it genuinely needs its config and runs as the
+// owning user.
+func LoadClient(explicitPath string) (*Config, error) {
+	if explicitPath != "" {
+		return Load(explicitPath)
+	}
+	// Per-user client config, if the user created one.
+	if p, err := userConfigPathFn(); err == nil && p != "" {
+		if _, statErr := os.Stat(p); statErr == nil {
+			return Load(p)
+		}
+	}
+	// Fall back to the system config; an unreadable one (the common case for a
+	// non-bewitch-group user) is not an error — use defaults silently.
+	cfg, err := Load(systemConfigPath)
 	if err != nil && errors.Is(err, fs.ErrPermission) {
-		fmt.Fprintf(os.Stderr,
-			"warning: cannot read %s (permission denied); using defaults. "+
-				"For a custom socket, or a remote daemon's auth token from config, "+
-				"run as root, add your user to the 'bewitch' group, or pass -addr/-token.\n",
-			path)
-		// Load defaults by reading an empty file (os.DevNull unmarshals to zero cfg).
-		return Load(os.DevNull)
+		return Load(os.DevNull) // os.DevNull unmarshals to a zero config → defaults
 	}
 	return cfg, err
 }

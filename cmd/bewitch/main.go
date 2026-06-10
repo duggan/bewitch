@@ -43,10 +43,19 @@ func main() {
 		return
 	}
 
-	// LoadClient (not Load): the client tolerates an unreadable system config
-	// (/etc/bewitch.toml is root:bewitch 0640) and degrades to defaults, since a
-	// local client only needs the default socket path. The daemon uses strict Load.
-	cfg, err := config.LoadClient(*configPath)
+	// LoadClient (not Load): the client is run by ordinary users. It honors an
+	// explicit -config, then a per-user ~/.config/bewitch/config.toml, then the
+	// system config if readable, else silent defaults — so a user who can't read
+	// the secret-bearing /etc/bewitch.toml (root:bewitch 0640) still gets a working
+	// default socket path. Pass the path only when -config was given explicitly so
+	// the default location stays part of the resolution order.
+	explicitConfig := ""
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "config" {
+			explicitConfig = *configPath
+		}
+	})
+	cfg, err := config.LoadClient(explicitConfig)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "loading config: %v\n", err)
 		os.Exit(1)
