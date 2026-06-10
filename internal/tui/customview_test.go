@@ -103,6 +103,62 @@ func TestSelectedCustomSeries(t *testing.T) {
 	}
 }
 
+// TestServicesChartReselectFromCache guards the bug where selecting a Services
+// metric blanked the chart: a 304 (no body) on reselection left the just-cleared
+// chart slot empty. The series is now cached per source+metric and re-rendered on
+// selection, and a 304 keeps it.
+func TestServicesChartReselectFromCache(t *testing.T) {
+	m := NewModel(mockClientWithSources(), time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
+	m.current = viewServices
+	m.width, m.height, m.ready = 120, 40, true
+
+	now := time.Now()
+	series := func(v float64) []api.TimeSeries {
+		return []api.TimeSeries{{Label: "v", Points: []api.TimeSeriesPoint{
+			{TimestampNS: now.Add(-time.Minute).UnixNano(), Value: v},
+			{TimestampNS: now.UnixNano(), Value: v + 1},
+		}}}
+	}
+
+	// Full fetch for throughput (cursor 0) → chart rendered + cached.
+	mAny, _ := m.Update(historyResultMsg{
+		forView: viewServices, source: "homeassistant", metric: "throughput",
+		series: series(10), start: now.Add(-time.Hour), end: now,
+	})
+	m = mAny.(Model)
+	if m.cachedHistoryCharts[viewServices] == "" {
+		t.Fatal("chart empty after full fetch")
+	}
+	if _, ok := m.servicesHist[servicesHistKey("homeassistant", "throughput")]; !ok {
+		t.Fatal("throughput not cached in servicesHist")
+	}
+
+	// Select automations (uncached) → chart blanks pending fetch.
+	m.servicesMetricCursor = 1
+	m.showSelectedCustomChart()
+	if m.cachedHistoryCharts[viewServices] != "" {
+		t.Fatal("chart should blank when selecting an uncached metric")
+	}
+
+	// Reselect throughput → chart re-renders instantly from cache (the regression).
+	m.servicesMetricCursor = 0
+	m.showSelectedCustomChart()
+	if m.cachedHistoryCharts[viewServices] == "" {
+		t.Fatal("chart should re-render from cache on reselect, not stay blank")
+	}
+
+	// A 304 for the selected metric must not blank the chart.
+	before := m.cachedHistoryCharts[viewServices]
+	mAny, _ = m.Update(historyResultMsg{
+		forView: viewServices, source: "homeassistant", metric: "throughput",
+		err: ErrNotModified, start: now.Add(-time.Hour), end: now,
+	})
+	m = mAny.(Model)
+	if m.cachedHistoryCharts[viewServices] != before {
+		t.Fatal("304 should leave the chart intact")
+	}
+}
+
 func TestFormatCustomValue(t *testing.T) {
 	tests := []struct {
 		v    float64

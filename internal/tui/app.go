@@ -58,6 +58,10 @@ type historyResultMsg struct {
 	duration    time.Duration
 	incremental bool      // true if this was a narrow tail fetch
 	windowStart time.Time // left edge of rolling window (for trim)
+	// Services only: the source/metric this result is for. Carried so a result
+	// arriving after the selection moved on is keyed/discarded correctly.
+	source string
+	metric string
 }
 type pinnedHistoryResultMsg struct {
 	series      []api.TimeSeries
@@ -112,6 +116,27 @@ type viewHistoryCache struct {
 	topNLastFullAt time.Time // when the last full Top-N query ran
 }
 
+// customHistEntry is the per-(source+metric) Services history cache value:
+// the last-fetched series plus the window it covers, re-rendered on demand at
+// the current width/range.
+type customHistEntry struct {
+	series []api.TimeSeries
+	start  time.Time
+	end    time.Time
+}
+
+// servicesHistKey keys servicesHist by source and metric name.
+func servicesHistKey(source, metric string) string {
+	return source + "\x00" + metric
+}
+
+// resetServicesHist drops all cached Services series. Called alongside
+// historyCache invalidation (range/date change) since the cached series cover
+// the old window.
+func (m *Model) resetServicesHist() {
+	m.servicesHist = make(map[string]customHistEntry)
+}
+
 type Model struct {
 	historyRanges    []config.HistoryRange
 	client           daemonClient
@@ -159,6 +184,12 @@ type Model struct {
 	customStatus         []api.CustomStatus
 	servicesSection      int // active source sub-section index (persisted)
 	servicesMetricCursor int // selected metric within the active source (drives the chart)
+	// Per-(source+metric) history series, keyed by servicesHistKey. Lets selecting a
+	// metric re-render its chart instantly from the last fetch instead of blanking
+	// until the next fetch returns — and keeps the chart correct on a 304 (which
+	// carries no body), where the generic "keep existing chart" path would otherwise
+	// leave the just-cleared slot empty. Invalidated on range change.
+	servicesHist map[string]customHistEntry
 	// Alert view state
 	alertRules         []api.AlertRuleMetric
 	alertRuleCursor    int
@@ -283,6 +314,7 @@ func NewModel(client daemonClient, interval time.Duration, historyRanges []confi
 		lastDataChange:      make(map[view]time.Time),
 		cachedHistoryCharts: make(map[view]string),
 		historyFetching:     make(map[view]bool),
+		servicesHist:        make(map[string]customHistEntry),
 	}
 	m.loadHistoryRange()
 	m.loadSelections()
@@ -644,9 +676,9 @@ func (m *Model) fetchCustomHistoryCmd() tea.Cmd {
 		series, err := client.GetCustomHistory(source, metric, start, end)
 		d := time.Since(t)
 		if errors.Is(err, ErrNotModified) || err != nil {
-			return historyResultMsg{forView: viewServices, err: err, start: start, end: end, duration: d}
+			return historyResultMsg{forView: viewServices, err: err, start: start, end: end, duration: d, source: source, metric: metric}
 		}
-		return historyResultMsg{forView: viewServices, series: series, start: start, end: end, duration: d}
+		return historyResultMsg{forView: viewServices, series: series, start: start, end: end, duration: d, source: source, metric: metric}
 	}
 }
 
@@ -983,6 +1015,25 @@ func (m *Model) activeCustomSource() *api.CustomSourceInfo {
 		return nil
 	}
 	return &m.customSources[m.servicesSection]
+}
+
+// showSelectedCustomChart re-renders the Services chart for the currently-selected
+// source/metric from servicesHist. If that pair has been fetched before, the chart
+// reappears instantly with the right data; otherwise the slot is cleared (blank
+// until the dispatched fetch returns). Called when the metric/source selection
+// changes so a pending fetch — or a 304 with no body — never leaves a stale or
+// empty chart on screen.
+func (m *Model) showSelectedCustomChart() {
+	source, metric, _ := m.selectedCustomSeries()
+	if entry, ok := m.servicesHist[servicesHistKey(source, metric)]; ok && source != "" {
+		m.historySeries = entry.series
+		m.historyStart = entry.start
+		m.historyEnd = entry.end
+		m.regenerateHistoryChart()
+		return
+	}
+	m.historySeries = nil
+	m.cachedHistoryCharts[viewServices] = ""
 }
 
 // selectedCustomSeries returns the source, metric name and unit currently
@@ -2363,6 +2414,7 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 					m.customEnd = &end
 				}
 				m.historyCache = nil
+				m.resetServicesHist()
 				m.procPinnedLastFetchEnd = time.Time{}
 				m.d("datePicker: range=%s", m.historyRangeLabel())
 				m.historyFetching[m.current] = true
@@ -2636,7 +2688,7 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 				if len(m.customSources) > 0 {
 					m.servicesSection = (m.servicesSection + 1) % len(m.customSources)
 					m.servicesMetricCursor = 0
-					m.cachedHistoryCharts[m.current] = ""
+					m.showSelectedCustomChart()
 					go m.client.SetPreference("services_section", fmt.Sprintf("%d", m.servicesSection))
 					return m, m.fetchHistoryCmd()
 				}
@@ -2645,7 +2697,7 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 				if len(m.customSources) > 0 {
 					m.servicesSection = (m.servicesSection - 1 + len(m.customSources)) % len(m.customSources)
 					m.servicesMetricCursor = 0
-					m.cachedHistoryCharts[m.current] = ""
+					m.showSelectedCustomChart()
 					go m.client.SetPreference("services_section", fmt.Sprintf("%d", m.servicesSection))
 					return m, m.fetchHistoryCmd()
 				}
@@ -2653,14 +2705,14 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 			case "down", "j":
 				if src := m.activeCustomSource(); src != nil && len(src.Metrics) > 0 {
 					m.servicesMetricCursor = (m.servicesMetricCursor + 1) % len(src.Metrics)
-					m.cachedHistoryCharts[m.current] = ""
+					m.showSelectedCustomChart()
 					return m, m.fetchHistoryCmd()
 				}
 				return m, nil
 			case "up", "k":
 				if src := m.activeCustomSource(); src != nil && len(src.Metrics) > 0 {
 					m.servicesMetricCursor = (m.servicesMetricCursor - 1 + len(src.Metrics)) % len(src.Metrics)
-					m.cachedHistoryCharts[m.current] = ""
+					m.showSelectedCustomChart()
 					return m, m.fetchHistoryCmd()
 				}
 				return m, nil
@@ -2981,6 +3033,7 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 				m.customStart = nil
 				m.customEnd = nil
 				m.historyCache = nil
+				m.resetServicesHist()
 				m.procPinnedLastFetchEnd = time.Time{}
 				m.historyFetching[m.current] = true
 				m.saveHistoryRange()
@@ -2993,6 +3046,7 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 				m.customStart = nil
 				m.customEnd = nil
 				m.historyCache = nil
+				m.resetServicesHist()
 				m.procPinnedLastFetchEnd = time.Time{}
 				m.historyFetching[m.current] = true
 				m.saveHistoryRange()
@@ -3095,6 +3149,21 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.forView != m.current {
 			m.d("historyResult(%s): stale (now on %s), discarding (%s)", vn, viewName(m.current), msg.duration)
 			return m, nil
+		}
+
+		// Services: always cache the result under its own source+metric key, but
+		// only update the live chart if it's still the selected pair (the user may
+		// have moved the cursor while this fetch was in flight).
+		if msg.forView == viewServices {
+			if msg.source != "" {
+				m.servicesHist[servicesHistKey(msg.source, msg.metric)] = customHistEntry{
+					series: msg.series, start: msg.start, end: msg.end,
+				}
+			}
+			if curSrc, curMetric, _ := m.selectedCustomSeries(); curSrc != msg.source || curMetric != msg.metric {
+				m.d("historyResult(services): stale metric %s/%s (now %s/%s), cached only", msg.source, msg.metric, curSrc, curMetric)
+				return m, nil
+			}
 		}
 
 		// Incremental merge: merge tail data into existing cache.
