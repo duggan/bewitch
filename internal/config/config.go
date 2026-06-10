@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -523,4 +525,27 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// LoadClient is the loader for client tools (the `bewitch` TUI/REPL and
+// subcommands). It behaves like Load, except an *unreadable* config file
+// (permission denied) degrades to defaults with a warning instead of being
+// fatal. The system config (/etc/bewitch.toml) is installed root:bewitch 0640
+// so it isn't world-readable, which means a user not in the bewitch group can't
+// read it — but a client only needs the socket path (defaulted), or -addr/-token
+// for a remote daemon (passable via flags). The daemon must NOT use this (it runs
+// as the owning user and genuinely needs the config, including its secrets), so
+// it keeps the strict Load.
+func LoadClient(path string) (*Config, error) {
+	cfg, err := Load(path)
+	if err != nil && errors.Is(err, fs.ErrPermission) {
+		fmt.Fprintf(os.Stderr,
+			"warning: cannot read %s (permission denied); using defaults. "+
+				"For a custom socket, or a remote daemon's auth token from config, "+
+				"run as root, add your user to the 'bewitch' group, or pass -addr/-token.\n",
+			path)
+		// Load defaults by reading an empty file (os.DevNull unmarshals to zero cfg).
+		return Load(os.DevNull)
+	}
+	return cfg, err
 }

@@ -43,7 +43,10 @@ func main() {
 		return
 	}
 
-	cfg, err := config.Load(*configPath)
+	// LoadClient (not Load): the client tolerates an unreadable system config
+	// (/etc/bewitch.toml is root:bewitch 0640) and degrades to defaults, since a
+	// local client only needs the default socket path. The daemon uses strict Load.
+	cfg, err := config.LoadClient(*configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "loading config: %v\n", err)
 		os.Exit(1)

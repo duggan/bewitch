@@ -24,7 +24,7 @@ func TestParseDuration(t *testing.T) {
 		{"", 0, true},
 		{"bad", 0, true},
 		{"1x", 0, true},
-		{"d", 0, true},   // no number before d
+		{"d", 0, true}, // no number before d
 		{"abc", 0, true},
 	}
 	for _, tt := range tests {
@@ -886,5 +886,49 @@ func TestLoadMalformedConfigErrors(t *testing.T) {
 	}
 	if _, err := Load(path); err == nil {
 		t.Error("Load(malformed) = nil, want parse error")
+	}
+}
+
+// TestLoadClientToleratesUnreadableConfig verifies the client loader degrades to
+// defaults (not a fatal error) when the system config can't be read — the
+// regression from installing /etc/bewitch.toml root:bewitch 0640, which a user
+// not in the bewitch group can't read.
+func TestLoadClientToleratesUnreadableConfig(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root bypasses file permissions; cannot simulate EACCES")
+	}
+	path := filepath.Join(t.TempDir(), "bewitch.toml")
+	if err := os.WriteFile(path, []byte("[daemon]\nsocket = \"/tmp/custom.sock\"\n"), 0o000); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	// Strict Load must fail on an unreadable file.
+	if _, err := Load(path); err == nil {
+		t.Fatal("Load() = nil error on unreadable config, want permission error")
+	}
+
+	// LoadClient must succeed with defaults.
+	cfg, err := LoadClient(path)
+	if err != nil {
+		t.Fatalf("LoadClient() = %v, want nil (degrade to defaults)", err)
+	}
+	if cfg.Daemon.Socket != "/run/bewitch/bewitch.sock" {
+		t.Errorf("LoadClient() socket = %q, want the default (config was unreadable)", cfg.Daemon.Socket)
+	}
+}
+
+// TestLoadClientReadsReadableConfig verifies LoadClient still honors a config it
+// can read (it must only relax the permission-denied case).
+func TestLoadClientReadsReadableConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bewitch.toml")
+	if err := os.WriteFile(path, []byte("[daemon]\nsocket = \"/tmp/custom.sock\"\n"), 0o644); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+	cfg, err := LoadClient(path)
+	if err != nil {
+		t.Fatalf("LoadClient() = %v", err)
+	}
+	if cfg.Daemon.Socket != "/tmp/custom.sock" {
+		t.Errorf("LoadClient() socket = %q, want /tmp/custom.sock", cfg.Daemon.Socket)
 	}
 }

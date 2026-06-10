@@ -12,7 +12,9 @@ Group=bewitch
 StateDirectory=bewitch
 StateDirectoryMode=0700
 RuntimeDirectory=bewitch
-RuntimeDirectoryMode=0750
+# 0755 (default): keep the unix socket reachable by all local users for the
+# TUI/REPL. Tighten to 0750 + bewitch group to restrict who can connect.
+RuntimeDirectoryMode=0755
 UMask=0077
 
 # --- Sandboxing -------------------------------------------------------------

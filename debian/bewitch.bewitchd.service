@@ -15,9 +15,13 @@ StateDirectory=bewitch
 # systemd re-applies the dir mode on every start, overriding any manual chmod.
 StateDirectoryMode=0700
 RuntimeDirectory=bewitch
-# 0750 so only the bewitch group can traverse to the unix socket.
-RuntimeDirectoryMode=0750
-# Files the daemon creates (DB, archives, TLS key) are owner-only.
+# 0755 (default): the unix socket is intentionally reachable by all local users
+# so they can run the TUI/REPL (the socket is 0666 and not a privilege boundary —
+# its dangerous primitives are neutralized at the handler level). Tighten to 0750
+# and add trusted users to the bewitch group if you want to restrict who connects.
+RuntimeDirectoryMode=0755
+# Files the daemon creates (DB, archives, TLS key) are owner-only — but NOT the
+# socket, which Start() chmods to 0666 after bind.
 UMask=0077
 # CAP_SYS_RAWIO: SMART device access. CAP_PERFMON: perf-event GPU/RAPL access AND
 # attaching the eBPF tracing (fentry) programs. CAP_BPF: loading those BPF programs and
