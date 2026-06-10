@@ -5,8 +5,11 @@ on:
     tags:
       - 'v*'
 
+# Least privilege by default; only the job that creates the GitHub Release is
+# granted write. The apt-repo / docs-snapshot jobs hold the GPG signing key and
+# Cloudflare token, so they must not also be able to write to the repository.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -19,13 +22,13 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Build artifacts
         run: docker build -f Dockerfile.build -o dist .
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist-${{ matrix.arch }}
           path: dist/
@@ -33,12 +36,17 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist/
           merge-multiple: true
+
+      - name: Generate checksums
+        run: ( cd dist && sha256sum *.deb *.tar.gz > SHA256SUMS )
 
       - name: Create GitHub Release
         env:
@@ -46,7 +54,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: >-
           gh release create "${{ github.ref_name }}"
-          dist/*.deb dist/*.tar.gz
+          dist/*.deb dist/*.tar.gz dist/SHA256SUMS
           --title "${{ github.ref_name }}"
           --generate-notes
 
@@ -54,16 +62,16 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist/
           merge-multiple: true
 
       - name: Install wrangler
-        run: npm install -g wrangler
+        run: npm install -g wrangler@4.99.0
 
       - name: Upload artifacts to R2
         env:
@@ -75,6 +83,20 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: printenv GPG_PRIVATE_KEY > /tmp/signing.key
+
+      # Publish a GPG-signed SHA256SUMS alongside the tarballs so the
+      # `curl | sh` installer can verify integrity+authenticity (HTTPS alone
+      # doesn't defend against an origin/CDN compromise). install.sh verifies
+      # the signature with the same public key it already uses for APT.
+      - name: Publish signed checksums to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          ( cd dist && sha256sum *.deb *.tar.gz > SHA256SUMS )
+          gpg --batch --import /tmp/signing.key
+          gpg --batch --yes --armor --detach-sign --output dist/SHA256SUMS.asc dist/SHA256SUMS
+          scripts/upload-pool.sh dist/SHA256SUMS dist/SHA256SUMS.asc
 
       - name: Build APT repo image
         run: docker build -f Dockerfile.repo -t bewitch-repo .
@@ -128,7 +150,7 @@ jobs:
     env:
       ZOLA_VERSION: 0.22.1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Install Zola
         run: |
@@ -154,7 +176,7 @@ jobs:
         run: zola build
 
       - name: Install wrangler
-        run: npm install -g wrangler
+        run: npm install -g wrangler@4.99.0
 
       - name: Upload docs snapshot to R2
         env:

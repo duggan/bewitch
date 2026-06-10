@@ -19,11 +19,15 @@ case "$1" in
         chown bewitch:bewitch /var/lib/bewitch
         chmod 750 /var/lib/bewitch
 
-        # Install default config if none exists
+        # Install default config if none exists. It holds secrets (auth_token,
+        # SMTP password, shoutrrr/Discord/Telegram URLs, custom-source auth), so
+        # it is root-owned and only the bewitch group can read it (0640) — never
+        # world-readable.
         if [ ! -f /etc/bewitch.toml ]; then
             cp /usr/share/bewitch/bewitch.example.toml /etc/bewitch.toml
-            chmod 644 /etc/bewitch.toml
         fi
+        chown root:bewitch /etc/bewitch.toml
+        chmod 640 /etc/bewitch.toml
         ;;
 esac
 

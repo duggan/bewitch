@@ -23,6 +23,18 @@ func NewEmailNotifier(cfg config.EmailDest) *EmailNotifier {
 	return &EmailNotifier{cfg: cfg}
 }
 
+// sanitizeHeader strips CR, LF, and other control characters so a value can be
+// safely interpolated into an email Subject header without allowing header
+// injection (RFC822 header smuggling via embedded newlines).
+func sanitizeHeader(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' || r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+}
+
 func (n *EmailNotifier) Name() string   { return "email:" + strings.Join(n.cfg.To, ",") }
 func (n *EmailNotifier) Method() string { return "email" }
 
@@ -38,7 +50,10 @@ func (n *EmailNotifier) Send(a *Alert) NotifyResult {
 		statusPrefix = "RESOLVED "
 		statusLine = "RESOLVED"
 	}
-	subject := fmt.Sprintf("[bewitch] %s%s: %s", statusPrefix, a.Severity, a.RuleName)
+	// Sanitize the severity and rule name: both are caller-supplied (settable via
+	// the alert-rule API / persisted rules) and a CR/LF here would inject extra
+	// RFC822 headers (e.g. Bcc:) into the SMTP message or the mail-cmd subject.
+	subject := fmt.Sprintf("[bewitch] %s%s: %s", statusPrefix, sanitizeHeader(a.Severity), sanitizeHeader(a.RuleName))
 	body := fmt.Sprintf("%s\n\nRule: %s\nSeverity: %s\nStatus: %s\nTime: %s\n",
 		a.Message,
 		a.RuleName,

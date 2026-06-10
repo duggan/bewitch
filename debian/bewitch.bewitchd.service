@@ -11,7 +11,14 @@ User=bewitch
 Group=bewitch
 SupplementaryGroups=disk video render
 StateDirectory=bewitch
+# 0700 so the metrics DB (process cmdlines/UIDs/history) isn't world-readable;
+# systemd re-applies the dir mode on every start, overriding any manual chmod.
+StateDirectoryMode=0700
 RuntimeDirectory=bewitch
+# 0750 so only the bewitch group can traverse to the unix socket.
+RuntimeDirectoryMode=0750
+# Files the daemon creates (DB, archives, TLS key) are owner-only.
+UMask=0077
 # CAP_SYS_RAWIO: SMART device access. CAP_PERFMON: perf-event GPU/RAPL access AND
 # attaching the eBPF tracing (fentry) programs. CAP_BPF: loading those BPF programs and
 # creating their map (per-process network I/O via tcp_sendmsg/tcp_cleanup_rbuf fentry
@@ -27,6 +34,36 @@ RuntimeDirectory=bewitch
 # perf_event_open() are not blocked; adding one must allowlist the @bpf set.
 AmbientCapabilities=CAP_SYS_RAWIO CAP_PERFMON CAP_SYS_PTRACE CAP_BPF
 CapabilityBoundingSet=CAP_SYS_RAWIO CAP_PERFMON CAP_SYS_PTRACE CAP_BPF
+
+# --- Sandboxing -------------------------------------------------------------
+# Containment for a capability-rich daemon: confine all writes to the state dir
+# so the export/snapshot file-write paths (and any code-exec foothold) cannot
+# touch /etc, /usr, or other homes. These are kernel-enforced and independent of
+# the in-process access controls.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/bewitch
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictNamespaces=true
+# AF_NETLINK is kept for the eBPF/netlink paths; AF_UNIX/INET/INET6 cover the
+# socket, TCP listener, custom-source polling, and SMTP.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+# Deliberately NOT set, because they would break core features:
+#   PrivateDevices  — needs raw block-device access for SMART (CAP_SYS_RAWIO).
+#   PrivatePID / ProcSubset=pid — process collector reads other PIDs under /proc;
+#                     eBPF attribution also keys on the host PID namespace.
+#   SystemCallFilter — must not block bpf()/perf_event_open() (see note above).
+#   MemoryDenyWriteExecute — incompatible with the CGO DuckDB engine.
 
 [Install]
 WantedBy=multi-user.target

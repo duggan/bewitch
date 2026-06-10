@@ -172,14 +172,26 @@ func TestCustomSourceRedactedURL(t *testing.T) {
 	}
 	c := NewCustomSourceCollector(cfg, 5*time.Second)
 	red := c.redactedURL()
+	// Only scheme+host should survive: path/query (where secrets often live) and
+	// userinfo are dropped entirely.
+	if red != "http://host:8080" {
+		t.Errorf("redactedURL = %q, want %q (scheme+host only)", red, "http://host:8080")
+	}
 	if strings.Contains(red, "deadbeef") {
 		t.Errorf("redactedURL leaked token: %q", red)
 	}
 	if strings.Contains(red, "pass") {
 		t.Errorf("redactedURL leaked userinfo: %q", red)
 	}
-	if !strings.Contains(red, "plain=ok") {
-		t.Errorf("redactedURL dropped non-secret param: %q", red)
+	// A secret embedded in the path must not survive either.
+	pc := config.CustomSourceConfig{
+		Name:    "y",
+		BaseURL: "https://api.example.com",
+		Request: config.CustomRequestConfig{Path: "/v1/SUPERSECRETKEY/states"},
+		Metrics: []config.CustomMetricSpec{{Name: "a", Path: "a", Unit: "count"}},
+	}
+	if red := NewCustomSourceCollector(pc, 5*time.Second).redactedURL(); strings.Contains(red, "SUPERSECRETKEY") {
+		t.Errorf("redactedURL leaked path secret: %q", red)
 	}
 }
 

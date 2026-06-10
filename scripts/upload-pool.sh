@@ -42,6 +42,10 @@ for file in "$@"; do
         *.tar.gz)
             r2_key="releases/${name}"
             ;;
+        SHA256SUMS|SHA256SUMS.asc)
+            # Signed checksum manifest for the tarball installer to verify.
+            r2_key="releases/${name}"
+            ;;
         *)
             echo "Warning: skipping unknown file type: $name" >&2
             continue

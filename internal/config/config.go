@@ -45,6 +45,7 @@ type DaemonConfig struct {
 	TLSDisabled         bool   `toml:"tls_disabled"`         // set true to disable TLS on TCP listener
 	AuthToken           string `toml:"auth_token"`           // bearer token for TCP client authentication; empty = no auth
 	SourcesDir          string `toml:"sources_dir"`          // directory of drop-in custom-source *.toml files; default <configdir>/sources.d
+	ExportDir           string `toml:"export_dir"`           // directory that /api/export and /api/snapshot output is confined to; empty = the db_path directory
 }
 
 type AlertsConfig struct {

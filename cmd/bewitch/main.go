@@ -66,6 +66,17 @@ func main() {
 		effectiveToken = cfg.Daemon.AuthToken
 	}
 
+	// Warn loudly if connecting to a remote daemon without TLS: the bearer token
+	// (if any) and all traffic go over the wire in cleartext. -tls defaults to true,
+	// so reaching here means the operator explicitly disabled it.
+	if *addr != "" && !*useTLS {
+		msg := "warning: connecting to " + *addr + " without TLS; traffic is sent in cleartext"
+		if effectiveToken != "" {
+			msg += " (including the bearer token)"
+		}
+		fmt.Fprintln(os.Stderr, msg)
+	}
+
 	// Handle subcommands
 	if flag.NArg() > 0 {
 		switch flag.Arg(0) {

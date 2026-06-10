@@ -1,10 +1,10 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +16,125 @@ import (
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/duggan/bewitch/internal/alert"
 )
+
+const (
+	// queryTimeout bounds an ad-hoc /api/query or /api/export statement so a
+	// runaway SELECT (cross join, generate_series, recursive CTE) can't peg CPU,
+	// spill the disk, or hold a connection-pool slot indefinitely.
+	queryTimeout = 30 * time.Second
+	// maxQueryRows caps the rows /api/query materializes into memory before
+	// encoding. Results buffer into a [][]any *outside* DuckDB's memory_limit, so
+	// without this a wide SELECT could OOM the daemon on a small host.
+	maxQueryRows = 1_000_000
+	// minMaintenanceInterval rate-limits the heavyweight maintenance endpoints
+	// (compact/archive/unarchive) so a caller can't loop them and keep the DB
+	// perpetually rebuilding (which stalls writes and silently drops samples).
+	minMaintenanceInterval = 30 * time.Second
+)
+
+// validRuleField reports whether s is free of control characters. Alert rule
+// names and severities are caller-supplied and flow into the email notifier's
+// subject line, so a newline would allow SMTP/header injection — reject it at
+// the source in addition to sanitizing at send time.
+func validRuleField(s string) bool {
+	for _, r := range s {
+		if r == '\n' || r == '\r' || r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// exportBaseDir returns the directory that /api/export and /api/snapshot output
+// is confined to. It defaults to the database file's directory (bewitch-owned,
+// not world-writable) and is overridable via [daemon] export_dir. An empty
+// result means file output is unavailable.
+func (s *Server) exportBaseDir() string {
+	if s.cfg == nil {
+		return ""
+	}
+	if s.cfg.Daemon.ExportDir != "" {
+		return s.cfg.Daemon.ExportDir
+	}
+	if s.cfg.Daemon.DBPath != "" {
+		return filepath.Dir(s.cfg.Daemon.DBPath)
+	}
+	return ""
+}
+
+// confineOutputPath validates that an export/snapshot destination is a new
+// regular-file path inside baseDir. It resolves symlinks on baseDir and on the
+// requested file's parent before the containment check, so neither a "../"
+// traversal nor a pre-planted symlinked parent can redirect the write outside
+// baseDir, and refuses to overwrite or write through an existing symlink. The
+// returned path is absolute and cleaned.
+func confineOutputPath(baseDir, requested string) (string, error) {
+	if requested == "" {
+		return "", fmt.Errorf("path field is required")
+	}
+	if !filepath.IsAbs(requested) {
+		return "", fmt.Errorf("path must be absolute")
+	}
+	if baseDir == "" {
+		return "", fmt.Errorf("file output is not configured (set [daemon] export_dir)")
+	}
+	base, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return "", fmt.Errorf("output directory %q unavailable", baseDir)
+	}
+	clean := filepath.Clean(requested)
+	realParent, err := filepath.EvalSymlinks(filepath.Dir(clean))
+	if err != nil {
+		return "", fmt.Errorf("parent directory does not exist")
+	}
+	rel, err := filepath.Rel(base, realParent)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path must be within %s", baseDir)
+	}
+	dest := filepath.Join(realParent, filepath.Base(clean))
+	if fi, err := os.Lstat(dest); err == nil {
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("refusing to write through an existing symlink")
+		}
+		return "", fmt.Errorf("output file already exists")
+	}
+	return dest, nil
+}
+
+// beginMaintenance gates the heavyweight maintenance endpoints. It returns a
+// non-zero HTTP status + message to refuse the request when another maintenance
+// op is already running (409) or one finished too recently (429); otherwise it
+// marks an op in flight and the caller must pair it with endMaintenance.
+func (s *Server) beginMaintenance() (int, string) {
+	s.maintMu.Lock()
+	defer s.maintMu.Unlock()
+	if s.maintRunning {
+		return http.StatusConflict, "a maintenance operation is already in progress"
+	}
+	if !s.lastMaint.IsZero() && time.Since(s.lastMaint) < minMaintenanceInterval {
+		return http.StatusTooManyRequests, "maintenance operations are rate-limited; try again shortly"
+	}
+	s.maintRunning = true
+	return 0, ""
+}
+
+// endMaintenance clears the in-flight flag and records completion time (used by
+// the minMaintenanceInterval rate limit).
+func (s *Server) endMaintenance() {
+	s.maintMu.Lock()
+	s.maintRunning = false
+	s.lastMaint = time.Now()
+	s.maintMu.Unlock()
+}
+
+// queryErr maps a cancelled/timed-out ad-hoc query to a clear message, otherwise
+// returns the driver error string.
+func queryErr(ctx context.Context, err error) string {
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Sprintf("query exceeded the %s time limit", queryTimeout)
+	}
+	return err.Error()
+}
 
 func truncateSQL(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
@@ -251,6 +370,10 @@ func (s *Server) handleCreateAlertRule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "name is required")
 		return
 	}
+	if !validRuleField(rule.Name) || !validRuleField(rule.Severity) {
+		writeError(w, r, http.StatusBadRequest, "name and severity must not contain control characters")
+		return
+	}
 
 	db := s.dbFn()
 
@@ -353,6 +476,10 @@ func (s *Server) handleUpdateAlertRule(w http.ResponseWriter, r *http.Request) {
 	}
 	if rule.Name == "" {
 		writeError(w, r, http.StatusBadRequest, "name is required")
+		return
+	}
+	if !validRuleField(rule.Name) || !validRuleField(rule.Severity) {
+		writeError(w, r, http.StatusBadRequest, "name and severity must not contain control characters")
 		return
 	}
 
@@ -538,22 +665,16 @@ func (s *Server) handleToggleAlertRule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTestNotifications(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	var testAlert alert.Alert
-	if len(body) > 0 {
-		if err := json.Unmarshal(body, &testAlert); err != nil {
-			writeError(w, r, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-	}
-	if testAlert.RuleName == "" {
-		testAlert.RuleName = "test"
-		testAlert.Severity = "info"
-		testAlert.Message = "Test notification from bewitch"
+	// Deliberately ignore any caller-supplied payload. This endpoint is reachable
+	// unauthenticated on the local socket and triggers real delivery to every
+	// configured notifier (email/command/shoutrrr). Letting the caller set the
+	// alert fields would (a) feed attacker-controlled values into the command
+	// notifier's BEWITCH_* env vars and (b) let it spray forged alerts to the
+	// operator's external channels. A fixed canned alert removes both vectors.
+	testAlert := alert.Alert{
+		RuleName: "test",
+		Severity: "info",
+		Message:  "Test notification from bewitch",
 	}
 	results, err := alert.SendTestNotifications(s.notifiers, &testAlert)
 	if err != nil {
@@ -578,18 +699,20 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 			RefreshInterval: cfg.TUI.RefreshInterval,
 		},
 	}
+	// Redact details that aid abuse or are PII. /api/config is readable by any
+	// local socket client; the configured command line directly aids abuse of the
+	// command notifier, and From/To are addresses. Expose only enough to confirm a
+	// notifier of each kind is configured.
 	for _, e := range cfg.Alerts.Email {
 		resp.Alerts.Email = append(resp.Alerts.Email, EmailDestResponse{
 			UseMailCmd: e.UseMailCmd,
 			SMTPHost:   e.SMTPHost,
 			SMTPPort:   e.GetSMTPPort(),
-			From:       e.From,
-			To:         e.To,
 		})
 	}
-	for _, c := range cfg.Alerts.Commands {
+	for range cfg.Alerts.Commands {
 		resp.Alerts.Commands = append(resp.Alerts.Commands, CommandDestResponse{
-			Cmd: c.Cmd,
+			Cmd: "[redacted]",
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -600,6 +723,11 @@ func (s *Server) handleCompact(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusServiceUnavailable, "compaction not available")
 		return
 	}
+	if code, msg := s.beginMaintenance(); code != 0 {
+		writeError(w, r, code, msg)
+		return
+	}
+	defer s.endMaintenance()
 	if err := s.compactFn(); err != nil {
 		writeError(w, r, http.StatusInternalServerError, err.Error())
 		return
@@ -652,6 +780,11 @@ func (s *Server) handleArchive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusServiceUnavailable, "archiving not configured")
 		return
 	}
+	if code, msg := s.beginMaintenance(); code != 0 {
+		writeError(w, r, code, msg)
+		return
+	}
+	defer s.endMaintenance()
 	if err := s.archiveFn(); err != nil {
 		writeError(w, r, http.StatusInternalServerError, err.Error())
 		return
@@ -664,6 +797,11 @@ func (s *Server) handleUnarchive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusServiceUnavailable, "archiving not configured")
 		return
 	}
+	if code, msg := s.beginMaintenance(); code != 0 {
+		writeError(w, r, code, msg)
+		return
+	}
+	defer s.endMaintenance()
 	if err := s.unarchiveFn(); err != nil {
 		writeError(w, r, http.StatusInternalServerError, err.Error())
 		return
@@ -714,10 +852,15 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Bound the statement: cancel a runaway query at queryTimeout (also cancels if
+	// the client disconnects, since the request context is the parent).
+	ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
+	defer cancel()
+
 	queryStart := time.Now()
-	rows, err := s.dbFn().Query(req.SQL)
+	rows, err := s.dbFn().QueryContext(ctx, req.SQL)
 	if err != nil {
-		writeJSON(w, http.StatusOK, QueryResponse{Error: err.Error()})
+		writeJSON(w, http.StatusOK, QueryResponse{Error: queryErr(ctx, err)})
 		return
 	}
 	defer rows.Close()
@@ -730,6 +873,12 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	var data [][]any
 	for rows.Next() {
+		// Cap the materialized result so a wide SELECT can't OOM the daemon: the
+		// rows buffer into Go memory, outside DuckDB's memory_limit.
+		if len(data) >= maxQueryRows {
+			writeJSON(w, http.StatusOK, QueryResponse{Error: fmt.Sprintf("result exceeds %d rows; add a LIMIT or narrow the query", maxQueryRows)})
+			return
+		}
 		values := make([]any, len(cols))
 		ptrs := make([]any, len(cols))
 		for i := range values {
@@ -773,13 +922,12 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, ExportResponse{Error: err.Error()})
 		return
 	}
-	if !filepath.IsAbs(req.Path) {
-		writeJSON(w, http.StatusBadRequest, ExportResponse{Error: "path must be absolute"})
-		return
-	}
-	cleanPath := filepath.Clean(req.Path)
-	if _, err := os.Stat(filepath.Dir(cleanPath)); err != nil {
-		writeJSON(w, http.StatusBadRequest, ExportResponse{Error: "parent directory does not exist"})
+	// Confine the destination to the export base dir (refuses traversal, symlinked
+	// parents, and overwrite). The daemon runs with elevated privileges, so an
+	// unconfined path here is an arbitrary-file-write-as-bewitch primitive.
+	cleanPath, err := confineOutputPath(s.exportBaseDir(), req.Path)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, ExportResponse{Error: err.Error()})
 		return
 	}
 
@@ -815,10 +963,13 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	}
 	copySQL := fmt.Sprintf("COPY (%s) TO '%s' (%s)", req.SQL, strings.ReplaceAll(cleanPath, "'", "''"), options)
 
+	ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
+	defer cancel()
+
 	queryStart := time.Now()
-	result, err := s.dbFn().Exec(copySQL)
+	result, err := s.dbFn().ExecContext(ctx, copySQL)
 	if err != nil {
-		writeJSON(w, http.StatusOK, ExportResponse{Error: err.Error()})
+		writeJSON(w, http.StatusOK, ExportResponse{Error: queryErr(ctx, err)})
 		return
 	}
 
@@ -833,35 +984,26 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, SnapshotResponse{Error: "invalid request body"})
 		return
 	}
-	if req.Path == "" {
-		writeJSON(w, http.StatusBadRequest, SnapshotResponse{Error: "path field is required"})
-		return
-	}
-	if !filepath.IsAbs(req.Path) {
-		writeJSON(w, http.StatusBadRequest, SnapshotResponse{Error: "path must be absolute"})
-		return
-	}
-	if _, err := os.Stat(filepath.Dir(req.Path)); err != nil {
-		writeJSON(w, http.StatusBadRequest, SnapshotResponse{Error: "parent directory does not exist"})
-		return
-	}
-	if _, err := os.Stat(req.Path); err == nil {
-		writeJSON(w, http.StatusBadRequest, SnapshotResponse{Error: "output file already exists"})
+	// Confine the destination to the export base dir (refuses traversal, symlinked
+	// parents, and overwrite) — same arbitrary-file-creation concern as export.
+	destPath, err := confineOutputPath(s.exportBaseDir(), req.Path)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, SnapshotResponse{Error: err.Error()})
 		return
 	}
 	if s.snapshotFn == nil {
 		writeError(w, r, http.StatusServiceUnavailable, "snapshot not available")
 		return
 	}
-	if err := s.snapshotFn(req.Path, req.WithSystemTables); err != nil {
+	if err := s.snapshotFn(destPath, req.WithSystemTables); err != nil {
 		writeJSON(w, http.StatusInternalServerError, SnapshotResponse{Error: err.Error()})
 		return
 	}
 	var sizeBytes int64
-	if info, err := os.Stat(req.Path); err == nil {
+	if info, err := os.Stat(destPath); err == nil {
 		sizeBytes = info.Size()
 	}
-	writeJSON(w, http.StatusOK, SnapshotResponse{Path: req.Path, SizeBytes: sizeBytes})
+	writeJSON(w, http.StatusOK, SnapshotResponse{Path: destPath, SizeBytes: sizeBytes})
 }
 
 // toJSONSafe converts DuckDB driver types to JSON-serializable values.

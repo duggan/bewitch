@@ -24,9 +24,9 @@ jobs:
       # The DuckDB driver is CGO (bundled libduckdb); ubuntu-latest ships gcc.
       CGO_ENABLED: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
           cache: true
@@ -42,3 +42,35 @@ jobs:
 
       - name: Integration tests
         run: make test-integration
+
+      - name: Vulnerability scan
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
+  # Verify the committed eBPF object/wrapper match their C source. The kernel-
+  # loaded bytecode (run under CAP_BPF) is the one artifact human review can't
+  # read, so regenerate it from netio.c and fail if it drifts from what's checked
+  # in (supply-chain / review integrity).
+  bpf-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install eBPF toolchain
+        run: sudo apt-get update && sudo apt-get install -y clang llvm libbpf-dev
+
+      - name: Regenerate eBPF objects
+        run: go generate ./internal/collector/
+
+      - name: Fail if committed eBPF artifacts drift from source
+        run: |
+          if ! git diff --exit-code -- internal/collector/netio_bpfel.go internal/collector/netio_bpfel.o; then
+            echo "::error::committed eBPF artifacts differ from 'go generate' output; run 'go generate ./internal/collector/' and commit the result"
+            exit 1
+          fi

@@ -10,7 +10,34 @@ RestartSec=5
 User=bewitch
 Group=bewitch
 StateDirectory=bewitch
+StateDirectoryMode=0700
 RuntimeDirectory=bewitch
+RuntimeDirectoryMode=0750
+UMask=0077
+
+# --- Sandboxing -------------------------------------------------------------
+# Confine all writes to the state dir. See debian/bewitch.bewitchd.service for the
+# full rationale and the directives deliberately left unset (PrivateDevices,
+# PrivatePID, SystemCallFilter, MemoryDenyWriteExecute) that would break SMART,
+# eBPF, or the CGO DuckDB engine. This minimal unit omits the elevated
+# capabilities; add the AmbientCapabilities / SupplementaryGroups from the Debian
+# unit if you need SMART / GPU / per-process disk+network I/O.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/bewitch
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

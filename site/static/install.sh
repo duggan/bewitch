@@ -216,19 +216,37 @@ else
 
     curl -fsSL "$TARBALL_URL" -o "${TMP_DIR}/${TARBALL}"
 
+    # Verify the tarball against the GPG-signed SHA256SUMS manifest. HTTPS alone
+    # doesn't protect against an origin/CDN compromise. Fail closed if the
+    # manifest is present but verification fails; if the manifest is absent (older
+    # release) or the tools aren't installed, warn and continue (best effort).
+    if curl -fsSL "${BASE_URL}/releases/SHA256SUMS" -o "${TMP_DIR}/SHA256SUMS" 2>/dev/null \
+       && curl -fsSL "${BASE_URL}/releases/SHA256SUMS.asc" -o "${TMP_DIR}/SHA256SUMS.asc" 2>/dev/null; then
+        if command -v gpg >/dev/null 2>&1 && command -v sha256sum >/dev/null 2>&1; then
+            info "verify" "checking signature and checksum..."
+            GNUPGHOME="$(mktemp -d)"; export GNUPGHOME
+            curl -fsSL "$GPG_URL" | gpg --import >/dev/null 2>&1 || error "could not import signing key for verification"
+            gpg --batch --verify "${TMP_DIR}/SHA256SUMS.asc" "${TMP_DIR}/SHA256SUMS" >/dev/null 2>&1 \
+                || error "SHA256SUMS signature verification FAILED — refusing to install (possible tampering)"
+            ( cd "$TMP_DIR" && grep " ${TARBALL}\$" SHA256SUMS | sha256sum -c - >/dev/null 2>&1 ) \
+                || error "tarball checksum does NOT match SHA256SUMS — refusing to install (possible tampering)"
+            rm -rf "$GNUPGHOME"; unset GNUPGHOME
+            info "verify" "signature and checksum OK"
+        else
+            info "verify" "gpg/sha256sum not available — skipping integrity verification"
+        fi
+    else
+        info "verify" "no SHA256SUMS published for this release — skipping integrity verification"
+    fi
+
     info "extract" "installing to /usr/local/bin/..."
     tar -xzf "${TMP_DIR}/${TARBALL}" -C "$TMP_DIR"
 
     install -m 755 "${TMP_DIR}/bewitch-${VERSION}-linux-${ARCH}/bewitchd" /usr/local/bin/bewitchd
     install -m 755 "${TMP_DIR}/bewitch-${VERSION}-linux-${ARCH}/bewitch" /usr/local/bin/bewitch
 
-    # Install example config if none exists
-    if [ ! -f /etc/bewitch.toml ]; then
-        install -m 644 "${TMP_DIR}/bewitch-${VERSION}-linux-${ARCH}/bewitch.example.toml" /etc/bewitch.toml
-        info "config" "installed example config to /etc/bewitch.toml"
-    fi
-
-    # Create system user if it doesn't exist
+    # Create system user (and its group) first, so the config can be installed
+    # group-readable by it.
     if ! id bewitch >/dev/null 2>&1; then
         useradd -r -s /usr/sbin/nologin bewitch 2>/dev/null || \
             useradd -r -s /sbin/nologin bewitch 2>/dev/null || \
@@ -236,9 +254,20 @@ else
         info "user" "created bewitch system user"
     fi
 
-    # Create data directory
+    # Install example config if none exists. It holds secrets (auth_token, SMTP
+    # password, shoutrrr URLs, custom-source auth), so it must not be world-readable:
+    # install/keep it root-owned and group-readable by bewitch only (0640).
+    if [ ! -f /etc/bewitch.toml ]; then
+        install -m 640 "${TMP_DIR}/bewitch-${VERSION}-linux-${ARCH}/bewitch.example.toml" /etc/bewitch.toml
+        info "config" "installed example config to /etc/bewitch.toml"
+    fi
+    chown root:bewitch /etc/bewitch.toml 2>/dev/null || true
+    chmod 640 /etc/bewitch.toml 2>/dev/null || true
+
+    # Create data directory (owner-accessible only; it holds the metrics DB)
     mkdir -p /var/lib/bewitch
     chown bewitch:bewitch /var/lib/bewitch 2>/dev/null || true
+    chmod 750 /var/lib/bewitch 2>/dev/null || true
 
     # Install systemd service if systemd is available
     if command -v systemctl >/dev/null 2>&1; then

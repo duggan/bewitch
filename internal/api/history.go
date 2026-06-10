@@ -14,6 +14,17 @@ import (
 	"github.com/duggan/bewitch/internal/store"
 )
 
+const (
+	// maxHistorySpan caps the requested time range so an absurd start/end can't
+	// force a full table + full-Parquet-union scan that holds a connection-pool
+	// slot. Comfortably wider than any realistic retention window.
+	maxHistorySpan = 400 * 24 * time.Hour
+	// maxProcessNames bounds the ?names list on the process-history endpoint so a
+	// huge comma-separated value (in the request line, outside the body cap) can't
+	// build a multi-MB SQL string and placeholder/arg slice per request.
+	maxProcessNames = 64
+)
+
 // querySource determines where to query data from based on archive configuration.
 type querySource int
 
@@ -187,6 +198,15 @@ func parseTimeRange(r *http.Request) (time.Time, time.Time) {
 		if sec, err := strconv.ParseInt(v, 10, 64); err == nil {
 			end = time.Unix(sec, 0)
 		}
+	}
+	// Normalize attacker-supplied ranges: a reversed range would scan everything,
+	// and an unbounded span forces a full table/Parquet scan. Swap if reversed and
+	// clamp to maxHistorySpan.
+	if end.Before(start) {
+		start, end = end, start
+	}
+	if end.Sub(start) > maxHistorySpan {
+		start = end.Add(-maxHistorySpan)
 	}
 	return start, end
 }
@@ -586,7 +606,17 @@ func (s *Server) handleHistoryProcess(w http.ResponseWriter, r *http.Request) {
 	namesParam := r.URL.Query().Get("names")
 	var filterNames []string
 	if namesParam != "" {
-		filterNames = strings.Split(namesParam, ",")
+		// Drop empties and cap the count: each name becomes a placeholder + bound
+		// arg, and the value lives in the (uncapped) request line.
+		for _, n := range strings.Split(namesParam, ",") {
+			if n = strings.TrimSpace(n); n == "" {
+				continue
+			}
+			filterNames = append(filterNames, n)
+			if len(filterNames) >= maxProcessNames {
+				break
+			}
+		}
 	}
 
 	var query string

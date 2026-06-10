@@ -45,6 +45,12 @@ type Server struct {
 	collectorIntervals map[string]string // collector name → interval string (set once at startup)
 	done               chan struct{}     // closed on Shutdown to stop background goroutines
 
+	// Maintenance gate: serializes/rate-limits the heavyweight compact/archive/
+	// unarchive endpoints so a caller can't loop them and keep the DB rebuilding.
+	maintMu      sync.Mutex
+	maintRunning bool
+	lastMaint    time.Time
+
 	// Live process snapshot (all processes from collector, served instead of DB query)
 	procSnapshot   *ProcessResponse
 	procGen        uint64 // incremented on each SetProcessSnapshot call
@@ -483,18 +489,31 @@ const (
 	readHeaderTimeout = 10 * time.Second
 	// idleTimeout closes idle keep-alive connections.
 	idleTimeout = 120 * time.Second
+	// bodyReadTimeout bounds how long the request *body* may take to arrive once
+	// headers are in. ReadHeaderTimeout covers only headers and IdleTimeout never
+	// fires on a connection that is actively (slowly) sending — so without this a
+	// client could dribble a sub-1-MiB body one byte at a time and pin a goroutine
+	// + FD indefinitely (the slow-body / R-U-Dead-Yet attack).
+	bodyReadTimeout = 30 * time.Second
 	// Note: ReadTimeout/WriteTimeout are deliberately left unset. Export, snapshot,
 	// and wide history queries can legitimately run for many seconds, and a write
-	// deadline would truncate their responses.
+	// deadline would truncate their responses. bodyReadTimeout bounds only the
+	// read phase via a per-request deadline.
 )
 
 // limitBody caps each request body at maxRequestBody so a large or stalled POST
-// can't force the daemon to buffer unbounded memory.
+// can't force the daemon to buffer unbounded memory, and sets a read deadline on
+// the body phase to defeat slow-body connection exhaustion.
 func limitBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Body != nil {
 			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 		}
+		// Bound the body-read phase. SetReadDeadline may be unsupported on some
+		// ResponseWriters (e.g. httptest); the error is intentionally ignored so
+		// the middleware degrades to size-capping only. WriteTimeout stays unset so
+		// long export/snapshot responses aren't truncated.
+		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(bodyReadTimeout))
 		next.ServeHTTP(w, r)
 	})
 }
@@ -642,7 +661,13 @@ func (s *Server) Start() error {
 	}
 	s.listener = ln
 
-	// Make socket world-accessible (read-only API, no auth needed)
+	// The unix socket is world-accessible so any local user can run the TUI/REPL.
+	// It is NOT a privilege boundary and NOT read-only: it serves the full mux. The
+	// dangerous primitives are neutralized at the handler level instead — ad-hoc
+	// SQL cannot touch the filesystem/network (query_validate.go), export/snapshot
+	// writes are confined to export_dir, test-notifications ignores its payload, and
+	// the maintenance endpoints are rate-limited. Restrict the socket's directory
+	// permissions (RuntimeDirectoryMode) if you need to limit which users connect.
 	os.Chmod(s.cfg.Daemon.Socket, 0666)
 
 	log.Infof("API listening on %s", s.cfg.Daemon.Socket)

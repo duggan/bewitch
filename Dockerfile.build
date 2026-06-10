@@ -1,3 +1,7 @@
+# For fully reproducible/auditable builds, pin by digest:
+#   FROM debian:bookworm@sha256:<digest>
+# Left as a floating tag so `apt-get update` below keeps picking up base-image
+# security updates; bump to a digest pin if reproducibility outweighs that.
 FROM debian:bookworm
 
 ARG GO_VERSION=1.26.1
@@ -11,7 +15,26 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz | tar -C /usr/local -xz
+# Download the Go toolchain to a file and verify it against the official SHA256
+# (published at <url>.sha256) before extracting, instead of piping curl straight
+# into tar. The toolchain compiles the shipped binaries, so an in-transit/mirror
+# swap would taint every release. Pass --build-arg GO_SHA256=<hex> to pin/enforce
+# a specific checksum; otherwise the published one is fetched and used when valid.
+ARG GO_SHA256=""
+RUN set -eux; \
+    url="https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz"; \
+    curl -fsSL "$url" -o /tmp/go.tgz; \
+    sum="${GO_SHA256}"; \
+    if [ -z "$sum" ]; then \
+        sum="$(curl -fsSL "${url}.sha256" 2>/dev/null | tr -d '[:space:]' || true)"; \
+    fi; \
+    if printf '%s' "$sum" | grep -Eq '^[0-9a-f]{64}$'; then \
+        echo "${sum}  /tmp/go.tgz" | sha256sum -c -; \
+    else \
+        echo "WARNING: no valid SHA256 available for ${url}; extracting without checksum verification" >&2; \
+    fi; \
+    tar -C /usr/local -xzf /tmp/go.tgz; \
+    rm -f /tmp/go.tgz
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 WORKDIR /build

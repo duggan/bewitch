@@ -178,29 +178,15 @@ func (c *CustomSourceCollector) applyAuth(req *http.Request) {
 	}
 }
 
-// redactedURL returns the request URL with userinfo and any secret-looking query
-// parameters scrubbed, safe for logs (precedent: shoutrrr URL redaction). Auth
-// headers/tokens/passwords are never logged.
+// redactedURL returns only the scheme and host of the request URL, safe for logs
+// (precedent: shoutrrr URL redaction). API keys are commonly embedded in the path
+// (e.g. https://host/v1/<apikey>/states) or query string, so scrubbing only
+// userinfo/known-secret params would still leak them on a collector error — drop
+// the path and query entirely. Auth headers/tokens/passwords are never logged.
 func (c *CustomSourceCollector) redactedURL() string {
 	u, err := url.Parse(c.reqURL)
-	if err != nil {
+	if err != nil || u.Host == "" {
 		return c.cfg.Name
 	}
-	u.User = nil
-	if q := u.Query(); len(q) > 0 {
-		changed := false
-		for k := range q {
-			lk := strings.ToLower(k)
-			if strings.Contains(lk, "token") || strings.Contains(lk, "key") ||
-				strings.Contains(lk, "pass") || strings.Contains(lk, "secret") ||
-				strings.Contains(lk, "sig") {
-				q.Set(k, "***")
-				changed = true
-			}
-		}
-		if changed {
-			u.RawQuery = q.Encode()
-		}
-	}
-	return u.String()
+	return u.Scheme + "://" + u.Host
 }

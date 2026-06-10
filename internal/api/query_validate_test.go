@@ -53,6 +53,17 @@ func TestCheckReadOnly(t *testing.T) {
 		{"attach", "ATTACH ':memory:' AS mem", true},
 		{"set", "SET memory_limit = '2GB'", true},
 
+		// File/network functions: classified as SELECT by DuckDB but rejected so a
+		// read-only query can't read arbitrary files or perform SSRF.
+		{"read_text file", "SELECT content FROM read_text('/etc/passwd')", true},
+		{"read_blob device", "SELECT * FROM read_blob('/dev/sda')", true},
+		{"read_csv ssrf", "SELECT * FROM read_csv('http://169.254.169.254/latest/meta-data/')", true},
+		{"read_parquet path", "SELECT * FROM read_parquet('/var/lib/bewitch/tls-key.pem')", true},
+		{"glob fs", "SELECT * FROM glob('/etc/*')", true},
+		{"read_text case/space", "select * from READ_TEXT ('/etc/hosts')", true},
+		{"read_json", "SELECT * FROM read_json_auto('/etc/passwd')", true},
+		{"sniff_csv", "SELECT * FROM sniff_csv('/etc/passwd')", true},
+
 		// Comment-based bypass attempts (the key advantage over keyword matching)
 		{"comment then insert", "-- harmless\nINSERT INTO test_table VALUES (1, 'a')", true},
 		{"cte wrapping insert", "WITH cte AS (SELECT 1) INSERT INTO test_table SELECT * FROM cte", true},

@@ -1,3 +1,8 @@
+# NOTE: this file holds secrets (auth_token, SMTP password, shoutrrr URLs,
+# custom-source auth). Keep it non-world-readable — the Debian package and
+# install.sh install it as root:bewitch mode 0640. If you create it by hand, run:
+#   sudo chown root:bewitch /etc/bewitch.toml && sudo chmod 640 /etc/bewitch.toml
+
 [daemon]
 # mock = false  # synthetic data for macOS TUI development
 # socket = "/run/bewitch/bewitch.sock"  # default; requires RuntimeDirectory=bewitch in systemd
@@ -7,6 +12,9 @@
 # tls_disabled = false                     # set true to disable TLS on TCP listener
 # auth_token = ""                          # bearer token for TCP client authentication; empty = no auth
 db_path = "/var/lib/bewitch/bewitch.duckdb"
+# export_dir = "/var/lib/bewitch"  # confines /api/export and /api/snapshot output to this
+#                                  # directory; default = the db_path directory. Output cannot
+#                                  # be written outside it, traverse symlinks, or overwrite.
 # log_level = "info"  # log level: debug, info, warn, error; default "info"
 # default_interval = "5s"  # default collection interval for all collectors; minimum 100ms
 # retention = "30d"  # delete metrics older than this; empty = keep forever
