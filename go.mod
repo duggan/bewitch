@@ -1,6 +1,6 @@
 module github.com/duggan/bewitch
 
-go 1.26.1
+go 1.26.4
 
 require (
 	github.com/BurntSushi/toml v1.6.0
@@ -20,8 +20,8 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/prometheus/procfs v0.19.2
 	github.com/tidwall/gjson v1.19.0
-	golang.org/x/image v0.38.0
-	golang.org/x/sys v0.41.0
+	golang.org/x/image v0.39.0
+	golang.org/x/sys v0.42.0
 	golang.org/x/term v0.40.0
 )
 
@@ -74,10 +74,10 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
-	golang.org/x/mod v0.33.0 // indirect
+	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260209163413-e7419c687ee4 // indirect
-	golang.org/x/text v0.35.0 // indirect
-	golang.org/x/tools v0.42.0 // indirect
+	golang.org/x/telemetry v0.0.0-20260311193753-579e4da9a98c // indirect
+	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/tools v0.43.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 )

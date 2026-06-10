@@ -4,7 +4,7 @@
 # security updates; bump to a digest pin if reproducibility outweighs that.
 FROM debian:bookworm
 
-ARG GO_VERSION=1.26.1
+ARG GO_VERSION=1.26.4
 ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y \
