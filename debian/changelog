@@ -1,3 +1,24 @@
+bewitch (0.8.0-1) unstable; urgency=medium
+
+  * Add custom HTTP data sources -- a new Services tab that polls local services (Pi-hole, Home Assistant, Docker, etc.) and surfaces chosen numeric metrics and status badges, with history charts and Prometheus export
+  * Add per-process disk I/O (read/write bytes-per-second) and per-process network I/O via eBPF (TCP rx/tx bytes-per-second, toggleable via config)
+  * Add a tool-free AMD GPU backend reading amdgpu sysfs directly (no external tool required)
+  * Add ECC memory alerting with ECC presence detection
+  * Add a cpu.steal alert metric -- per-core steal time is now persisted and alertable
+  * Add a notification send-failure count to daemon self-metrics
+  * Redesign the process tab as a bounded, scrolling table over an always-visible chart, with coloured process states and pin/lightweight row markers
+  * Add fired-alert multi-select clear (DELETE /api/alerts/{id}); the alerts footer now shows only the focused panel's shortcuts; clear rebound to c (x stays the screenshot key)
+  * Match process pin patterns against the full cmdline, not just comm
+  * Pin chart-range help to a fixed footer for CPU/Memory/Disk views
+  * Harden the local API surface, packaging, and CI
+  * Client config falls back to defaults silently and supports a per-user config file
+  * Floor the scheduler tick to avoid runaway wakeups on coprime collector intervals
+  * Cache the runtime-pins preference read off the collection path
+  * Fix the Services chart blanking on metric (re)select and long Services metric names wrapping the list
+  * Fix client lockout caused by the config/socket-dir tightening
+
+ -- Ross Duggan <ross@duggan.ie>  Thu, 11 Jun 2026 10:59:17 +0100
+
 bewitch (0.7.0-1) unstable; urgency=medium
 
   * Add a Prometheus /metrics endpoint exposing hardware/ECC/power/SMART/GPU metrics in OpenMetrics format (honours bearer auth on TCP)

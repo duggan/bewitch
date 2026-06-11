@@ -6,6 +6,35 @@ weight = 100
 
 All notable changes to bewitch are documented here. See the full [CHANGELOG.md](https://github.com/duggan/bewitch/blob/main/CHANGELOG.md) on GitHub.
 
+## 0.8.0
+
+2026-06-11
+
+### Added
+
+- **Custom HTTP data sources** — a new "Services" tab that polls local services (Pi-hole, Home Assistant, Docker, etc.) and surfaces chosen numeric metrics and status badges, with history charts and Prometheus export
+- **Per-process disk I/O** (read/write bytes-per-second) and **per-process network I/O** via eBPF (TCP rx/tx bytes-per-second, toggleable via config)
+- **Tool-free AMD GPU backend** reading `amdgpu` sysfs directly (no external tool required)
+- **ECC memory alerting** with ECC presence detection
+- **`cpu.steal` alert metric** — per-core steal time is now persisted and alertable
+- Notification send-failure count in daemon self-metrics
+
+### Changed
+
+- **Redesigned the process tab** as a bounded, scrolling table over an always-visible chart, with coloured process states and pin/lightweight row markers
+- **Fired-alert multi-select clear** (`DELETE /api/alerts/{id}`); the alerts footer now shows only the focused panel's shortcuts; clear rebound to `c` (`x` stays the screenshot key)
+- Process pin patterns now match against the full cmdline, not just `comm`
+- Chart-range help pinned to a fixed footer for CPU/Memory/Disk views
+- **Security hardening** of the local API surface, packaging, and CI
+- Client config falls back to defaults silently and supports a per-user config file
+- Floored the scheduler tick to avoid runaway wakeups on coprime collector intervals
+- Cached the runtime-pins preference read off the collection path
+
+### Fixed
+
+- Services chart no longer blanks on metric (re)select; long Services metric names no longer wrap the list
+- Client lockout caused by the config/socket-dir tightening
+
 ## 0.7.0
 
 2026-06-07
