@@ -12,9 +12,18 @@
   var siteBase = thisScript
     ? thisScript.src.replace(/\/js\/search\.js(?:\?.*)?$/, "")
     : "";
+  // The index only ever holds canonical /docs/<page>/ refs (built once). When this
+  // page is served under a docs namespace (/docs/dev/ or /docs/v<X.Y.Z>/), keep
+  // results within it — mirrors docs-version.js so search doesn't bounce the reader
+  // out to stable. Stable pages (no namespace) re-home unchanged.
+  var nsMatch = window.location.pathname.match(/^\/docs\/(v[0-9][^\/]*|dev)(\/|$)/);
+  var nsSeg = nsMatch ? nsMatch[1] : "";
   function localHref(ref) {
     var at = ref.indexOf("/docs/");
-    return at === -1 ? ref : siteBase + ref.slice(at);
+    if (at === -1) return ref;
+    var path = ref.slice(at); // "/docs/installation/"
+    if (nsSeg) path = "/docs/" + nsSeg + path.slice(5); // "/docs/dev" + "/installation/"
+    return siteBase + path;
   }
 
   var input = document.getElementById("docs-search");

@@ -178,8 +178,19 @@ jobs:
       - name: Install wrangler
         run: npm install -g wrangler@4.99.0
 
-      - name: Upload docs snapshot to R2
+      - name: Upload docs snapshot to R2 (versioned + stable)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: scripts/upload-docs.sh site/dist/docs "${{ github.ref_name }}"
+        # Always upload the frozen per-tag snapshot. Mirror it to docs/stable/ —
+        # what the canonical /docs/ serves (functions/docs/[[path]].js) — only when
+        # this tag is the repo's declared LATEST_STABLE, so a pre-release or an old
+        # back-patch tag never silently takes over the stable docs.
+        run: |
+          scripts/upload-docs.sh site/dist/docs "${{ github.ref_name }}"
+          if [ "${{ github.ref_name }}" = "v$(cat LATEST_STABLE)" ]; then
+            echo "Tag matches LATEST_STABLE — mirroring to docs/stable/"
+            scripts/upload-docs.sh site/dist/docs stable
+          else
+            echo "Tag ${{ github.ref_name }} != v$(cat LATEST_STABLE) — not updating docs/stable/"
+          fi

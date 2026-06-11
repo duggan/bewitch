@@ -1,13 +1,15 @@
 #!/bin/sh
 # upload-docs.sh — snapshot the built docs to Cloudflare R2 for versioned serving.
 #
-# Usage: scripts/upload-docs.sh <docs-dir> <version-tag>
-#   e.g. scripts/upload-docs.sh site/dist/docs v0.8.0
+# Usage: scripts/upload-docs.sh <docs-dir> <target>
+#   e.g. scripts/upload-docs.sh site/dist/docs v0.8.0   (a frozen per-release snapshot)
+#        scripts/upload-docs.sh site/dist/docs stable   (the canonical /docs/ mirror)
 #
-# Uploads every file under <docs-dir> to the R2 bucket under docs/<version-tag>/,
-# preserving the relative path. functions/docs/[[path]].js then serves them at
-# /docs/<version-tag>/**. Assets (CSS/JS/images) are NOT included — versioned
-# pages share the latest deploy's static assets at the site root.
+# <target> is either a vX.Y.Z tag or the literal "stable". Uploads every file under
+# <docs-dir> to the R2 bucket under docs/<target>/, preserving the relative path.
+# functions/docs/[[path]].js then serves a tag at /docs/<tag>/** and "stable" at the
+# canonical /docs/**. Assets (CSS/JS/images) are NOT included — pages share the
+# latest deploy's static assets at the site root.
 #
 # Requires: wrangler (npm install -g wrangler)
 # Environment: BEWITCH_R2_BUCKET (default: "bewitch-apt")
@@ -30,8 +32,8 @@ if [ ! -d "$DOCS_DIR" ]; then
 fi
 
 case "$VERSION_TAG" in
-    v*) ;;
-    *) echo "Error: version tag must start with 'v' (got '$VERSION_TAG')" >&2; exit 1 ;;
+    v*|stable) ;;
+    *) echo "Error: target must be a 'vX.Y.Z' tag or 'stable' (got '$VERSION_TAG')" >&2; exit 1 ;;
 esac
 
 if ! command -v wrangler >/dev/null 2>&1; then

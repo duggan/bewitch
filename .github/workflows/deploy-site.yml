@@ -60,6 +60,19 @@ jobs:
             zola build
           fi
 
+      - name: Relocate docs to the /docs/dev/ namespace
+        if: github.event_name != 'pull_request'
+        # The canonical /docs/ serves the current STABLE release from R2
+        # (functions/docs/[[path]].js → docs/stable/). This Pages build is the
+        # development docs, so move them under /docs/dev/ and leave /docs/ for the
+        # Function. docs-version.js shows the dev banner there and keeps in-page nav
+        # within /docs/dev/. PR previews skip this (the host-guarded Function steps
+        # aside on *.pages.dev, so previews serve their docs at /docs/ as before).
+        run: |
+          cd site/dist/docs
+          mkdir -p dev
+          find . -mindepth 1 -maxdepth 1 ! -name dev -exec mv {} dev/ \;
+
       - name: Stamp install scripts with VERSION
         run: |
           VERSION=$(cat VERSION)

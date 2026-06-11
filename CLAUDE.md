@@ -188,7 +188,17 @@ To release a new version (use the `/release` skill, which orchestrates this):
 2. Update `debian/changelog` with new version and changes
 3. Bump `VERSION` (dev) and `LATEST_STABLE` (released) at the repo root — these drive the docs "development docs" banner (`site/data/versions.json` is generated from them by `scripts/gen-site-versions.sh` during the site build; never hand-edit it). No manual version list to maintain.
 4. Run `make deb` on a Debian/Ubuntu system; test with `sudo dpkg -i ../bewitch_<version>_<arch>.deb`
-5. Tag `v<version>` and push — CI (`release.yml`) builds packages, the APT repo, and snapshots the docs to R2 at `/docs/v<version>/` (`docs-snapshot` job → `scripts/upload-docs.sh`), served by `site/functions/docs/[[path]].js`. The default `/docs/` keeps tracking `main` via `deploy-site.yml`. (A version switcher over the accrued `/docs/v*` snapshots can be layered on later; the banner + per-version URLs work without it.)
+5. Tag `v<version>` and push — CI (`release.yml`) builds packages, the APT repo, and snapshots the docs to R2 (`docs-snapshot` job → `scripts/upload-docs.sh`), served by `site/functions/docs/[[path]].js`. See "Docs versioning" below for the three-tree layout.
+
+### Docs versioning (three trees, one built HTML)
+
+The `/docs/` namespace is split by `site/functions/docs/[[path]].js` (R2 bucket `bewitch-apt` bound as `BUCKET`), and the Zola build is the same for all three — only the serving path differs:
+
+- **`/docs/`** — the **canonical current stable release**, what ordinary users see. Served transparently from R2 `docs/stable/`. The `docs-snapshot` job mirrors the release build to `docs/stable/` **only when the tag equals `v$(cat LATEST_STABLE)`** (so a pre-release or back-patch tag never takes over stable). Stable docs are built with the normal `base_url`, so their absolute links already point at `/docs/<page>/` — no rewriting, no redirect, clean URLs, and the dev banner is suppressed (at tag time `VERSION == LATEST_STABLE`, see `dev_banner()` in `macros.html`).
+- **`/docs/dev/`** — the **development docs** built from `main`. `deploy-site.yml` builds the site and **relocates `dist/docs/*` into `dist/docs/dev/`** (production pushes only) so the Pages deploy serves them there; the Function `context.next()`s `/docs/dev/**` to that static tree. `docs-version.js` keeps the dev banner, adds `<meta robots noindex>`, and rewrites in-page nav to stay under `/docs/dev/` (the built HTML links to `/docs/<page>/`).
+- **`/docs/v<X.Y.Z>/`** — **frozen per-release snapshots** (every tag, via `upload-docs.sh … v<tag>`). Served from R2 `docs/v<tag>/`; `docs-version.js` hides the dev banner and rewrites nav to stay in-version.
+
+The Function is **host-guarded**: on non-`bewitch.dev` hosts (PR previews on `*.pages.dev`) it steps aside entirely, so a docs PR previews its own `/docs/` content instead of production stable. **Bootstrap**: until `docs/stable/` is first populated, `/docs/**` 302-redirects to `/docs/dev/`. After deploying this scheme the first time, seed `docs/stable/` once — re-run the `docs-snapshot` job for the current `LATEST_STABLE` tag, or `scripts/upload-docs.sh site/dist/docs stable` with wrangler creds. The docs search (`search.js`) is namespace-aware too — on `/docs/dev/` or `/docs/v<X>/` it re-homes results into that namespace (the index only holds canonical `/docs/<page>/` refs).
 
 ## Documentation
 

@@ -24,14 +24,19 @@
 
 {# Banner shown atop docs pages built from `main` (the default deploy), warning that
    these are next-release docs. docs-version.js hides it on /docs/vX.Y.Z/ snapshots
-   (which are released docs). #}
+   (which are released docs). Only rendered when the dev version is actually ahead of
+   the latest stable release — right after a release VERSION == LATEST_STABLE (main is
+   sitting at the released state with no unreleased features), and the banner would
+   nonsensically claim "next release vX" where X is also the current stable. #}
 {% macro dev_banner() %}
 {% set versions = load_data(path="data/versions.json") %}
+{% if versions.dev != versions.stable %}
 <div id="docs-dev-banner" class="dev-banner">
   <strong>Development docs.</strong> You’re reading the docs for the next release
   (v{{ versions.dev }}); some features here may not have shipped yet. The current
-  stable release is v{{ versions.stable }} — see <a href="/docs/installation/">installation</a>.
+  stable release is v{{ versions.stable }} — see <a href="/docs/installation/" data-docs-stable>installation</a>.
 </div>
+{% endif %}
 {% endmacro dev_banner %}
 
 {# Right-hand "On this page" TOC from Zola's page.toc (H2s + one nested level of H3s). #}
