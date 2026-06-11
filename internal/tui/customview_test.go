@@ -68,6 +68,26 @@ func TestRenderCustomView(t *testing.T) {
 	}
 }
 
+// TestRenderCustomViewLongMetricNoWrap guards against the shared labelStyle's
+// Width(14) wrapping a long, unselected metric name (e.g. containers_running)
+// across two lines and breaking the metrics-list layout.
+func TestRenderCustomViewLongMetricNoWrap(t *testing.T) {
+	sources := []api.CustomSourceInfo{{
+		Name:    "docker",
+		Metrics: []api.CustomFieldInfo{{Name: "containers_running", Unit: "count"}, {Name: "images", Unit: "count"}},
+	}}
+	metrics := []api.CustomMetric{
+		{Source: "docker", Name: "containers_running", Unit: "count", Value: 3},
+		{Source: "docker", Name: "images", Unit: "count", Value: 16},
+	}
+	// Render with the long name unselected (cursor on "images") — the case that
+	// previously wrapped "containers_running" into "containers_run" / "ning".
+	out := renderCustomView(sources, metrics, nil, 190, "", 0, 1)
+	if !strings.Contains(out, "containers_running") {
+		t.Errorf("long metric name wrapped (not intact on one line):\n%s", out)
+	}
+}
+
 func TestSelectedCustomSeries(t *testing.T) {
 	m := NewModel(mockClientWithSources(), time.Second, config.DefaultHistoryRanges, DefaultCaptureSettings(), false)
 	m.current = viewServices

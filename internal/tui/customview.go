@@ -75,7 +75,9 @@ func renderCustomView(
 			if i == metricCursor {
 				lines = append(lines, selectedMetricStyle.Render("▸ "+padRight(f.Name, 14))+" "+valStr)
 			} else {
-				lines = append(lines, "  "+labelStyle.Render(f.Name)+" "+valStr)
+				// Pad like the selected row (don't use the shared labelStyle, whose
+				// Width(14) wraps names longer than 14 chars, e.g. containers_running).
+				lines = append(lines, "  "+metricLabelStyle.Render(padRight(f.Name, 14))+" "+valStr)
 			}
 		}
 		b.WriteString(renderPanel("Metrics", strings.Join(lines, "\n"), width))
@@ -93,6 +95,11 @@ func renderCustomView(
 }
 
 var selectedMetricStyle = lipgloss.NewStyle().Bold(true).Foreground(colorPink)
+
+// metricLabelStyle styles an unselected metric name. Unlike the shared
+// labelStyle it has no fixed Width, so long names (e.g. containers_running)
+// aren't wrapped — alignment is handled by padRight in the caller instead.
+var metricLabelStyle = lipgloss.NewStyle().Foreground(colorMagenta)
 
 // renderServiceSubTabs renders the per-source sub-tab bar, mirroring the
 // Hardware tab's renderHardwareSubTabs.
