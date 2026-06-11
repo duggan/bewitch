@@ -1,0 +1,70 @@
+name: Docs Snapshot
+
+# Manually (re)build and upload the docs to R2 for one target, without cutting a
+# full release (release.yml's docs-snapshot job only runs on a tag push). Use it to
+# seed/refresh the canonical /docs/ ("stable") or re-snapshot a past release.
+#
+# Pick the git ref to build from in the "Run workflow" dropdown:
+#   - target=stable from `main` (or the LATEST_STABLE tag) → refreshes /docs/
+#   - target=v0.7.0 from the `v0.7.0` tag                  → re-snapshots /docs/v0.7.0/
+# The build is stamped from the checked-out ref's VERSION, so build a tag's docs
+# from that tag.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'R2 target: "stable" or a "vX.Y.Z" tag'
+        required: true
+        default: stable
+
+permissions:
+  contents: read
+
+env:
+  ZOLA_VERSION: 0.22.1
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Validate target
+        run: |
+          case "${{ inputs.target }}" in
+            stable|v[0-9]*) ;;
+            *) echo "Error: target must be 'stable' or a vX.Y.Z tag (got '${{ inputs.target }}')"; exit 1 ;;
+          esac
+
+      - name: Install Zola
+        run: |
+          curl -sSL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz
+          sudo mv zola /usr/local/bin/
+
+      - name: Stamp docs version from VERSION
+        # Match deploy-site.yml / release.yml: pin version-specific download URLs in
+        # the installation docs before building.
+        run: |
+          V=$(cat VERSION)
+          sed -i \
+            -e "s|bewitch-[0-9][0-9.]*-linux|bewitch-${V}-linux|g" \
+            -e "s|bewitch_[0-9][0-9.]*-1_|bewitch_${V}-1_|g" \
+            site/content/docs/installation.md
+
+      - name: Generate docs version data
+        run: scripts/gen-site-versions.sh
+
+      - name: Build site
+        working-directory: site
+        run: zola build
+
+      - name: Install wrangler
+        run: npm install -g wrangler@4.99.0
+
+      - name: Upload docs snapshot to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: scripts/upload-docs.sh site/dist/docs "${{ inputs.target }}"
