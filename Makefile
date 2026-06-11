@@ -106,6 +106,9 @@ deploy: docgen
 	    -e 's/BEWITCH_CHANNEL:-stable/BEWITCH_CHANNEL:-dev/' \
 	    site/static/install.sh > site/dist/install-dev.sh
 	@mv site/content/docs/installation.md.bak site/content/docs/installation.md
+	# The .bak existed in content/ during the build, so Zola copied it into dist —
+	# drop the stray before it gets deployed/relocated.
+	@rm -f site/dist/docs/installation.md.bak
 	# Relocate the main-built docs under /docs/dev/ (mirrors deploy-site.yml); the
 	# canonical /docs/ is served from R2 docs/stable/ by functions/docs/[[path]].js.
 	cd site/dist/docs && mkdir -p dev && \
