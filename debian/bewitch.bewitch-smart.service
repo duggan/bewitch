@@ -21,6 +21,9 @@ Type=oneshot
 ExecStart=/usr/bin/bewitchd smart-dump -out /var/lib/bewitch/smart
 User=bewitch
 Group=bewitch
+# NVMe namespaces are root:disk 0660, and capabilities don't bypass file
+# permissions (no CAP_DAC_OVERRIDE) — without the group, open() fails EACCES.
+SupplementaryGroups=disk
 # smart-dump writes only here; it is NOT given write access to the database.
 StateDirectory=bewitch/smart
 StateDirectoryMode=0700

@@ -73,6 +73,7 @@ type DiskCollector struct {
 	smartctlPath   string            // full path to smartctl binary
 	transportCache map[string]string // keyed by physical device path → "nvme", "sata", "usb", etc.
 	helperDir      string            // where bewitch-smart drops NVMe snapshots; "" = disabled
+	dumpMode       bool              // running as `bewitchd smart-dump` (the helper itself)
 }
 
 func NewDiskCollector(excludeMounts []string, smartInterval time.Duration) (*DiskCollector, error) {
@@ -277,7 +278,9 @@ func (c *DiskCollector) readSMARTDevice(devPath string) *SMARTInfo {
 
 	// All paths failed.
 	if !c.smartLoggedErr[devPath] {
-		if isNVMeDevice(devPath) {
+		if c.dumpMode {
+			log.Warnf("smart-dump: cannot read %s: %v", devPath, err)
+		} else if isNVMeDevice(devPath) {
 			// Usually expected: recent kernels need CAP_SYS_ADMIN for the NVMe
 			// health log, which comes from the bewitch-smart helper instead. Right
 			// after install/upgrade the daemon can start before the helper's first

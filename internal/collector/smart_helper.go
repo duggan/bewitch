@@ -119,6 +119,7 @@ func DumpNVMeSMART(outDir string) error {
 		smartLoggedErr: make(map[string]bool),
 		useSmartctl:    smartctlPath != "",
 		smartctlPath:   smartctlPath,
+		dumpMode:       true,
 		// helperDir stays empty: the helper must read the device, not itself.
 	}
 
