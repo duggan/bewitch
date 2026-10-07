@@ -72,6 +72,7 @@ type DiskCollector struct {
 	useSmartctl    bool              // true if smartctl binary was found at startup
 	smartctlPath   string            // full path to smartctl binary
 	transportCache map[string]string // keyed by physical device path → "nvme", "sata", "usb", etc.
+	helperDir      string            // where bewitch-smart drops NVMe snapshots; "" = disabled
 }
 
 func NewDiskCollector(excludeMounts []string, smartInterval time.Duration) (*DiskCollector, error) {
@@ -109,6 +110,10 @@ func NewDiskCollector(excludeMounts []string, smartInterval time.Duration) (*Dis
 }
 
 func (c *DiskCollector) Name() string { return "disk" }
+
+// SetSMARTHelperDir points the collector at the directory the privileged
+// bewitch-smart helper writes NVMe snapshots to. Empty disables the lookup.
+func (c *DiskCollector) SetSMARTHelperDir(dir string) { c.helperDir = dir }
 
 func (c *DiskCollector) Collect() (Sample, error) {
 	now := time.Now()
@@ -148,7 +153,7 @@ func (c *DiskCollector) Collect() (Sample, error) {
 		free := stat.Bavail * uint64(stat.Bsize)
 		used := total - (stat.Bfree * uint64(stat.Bsize))
 
-		devName := deviceBaseName(mt.device)
+		devName := ioDeviceName(mt.device)
 		var readBps, writeBps, readIOPS, writeIOPS float64
 		if cur, ok := curIO[devName]; ok {
 			if prev, ok2 := c.prevIO[devName]; ok2 {
@@ -207,7 +212,13 @@ func (c *DiskCollector) Collect() (Sample, error) {
 func (c *DiskCollector) refreshSMARTCache(mounts []mountEntry) {
 	physDevs := make(map[string]bool)
 	for _, mt := range mounts {
-		physDevs[physicalDevice(mt.device)] = true
+		dev := physicalDevice(mt.device)
+		// Skip mount sources that aren't block devices (e.g. Proxmox's /etc/pve is
+		// mounted from /dev/fuse, a char device) — there is no disk to query.
+		if !isBlockDevice(dev) {
+			continue
+		}
+		physDevs[dev] = true
 	}
 
 	newCache := make(map[string]*SMARTInfo, len(physDevs))
@@ -221,9 +232,15 @@ func (c *DiskCollector) refreshSMARTCache(mounts []mountEntry) {
 }
 
 // readSMARTDevice tries to read SMART data from a physical device.
-// It tries smartctl first (if available), then the smart.go library, then
-// direct SAT passthrough as a last resort.
+// A fresh snapshot from the privileged SMART helper (NVMe only) wins; otherwise
+// it tries smartctl (if available), then the smart.go library, then direct SAT
+// passthrough as a last resort.
 func (c *DiskCollector) readSMARTDevice(devPath string) *SMARTInfo {
+	if info := c.readHelperSMART(devPath); info != nil {
+		delete(c.smartLoggedErr, devPath)
+		return info
+	}
+
 	// Try smartctl first — broadest hardware support.
 	if c.useSmartctl {
 		info, smartctlErr := readSMARTFromSmartctl(c.smartctlPath, devPath)
@@ -243,21 +260,27 @@ func (c *DiskCollector) readSMARTDevice(devPath string) *SMARTInfo {
 		if closeErr := dev.Close(); closeErr != nil {
 			log.Warnf("smart: error closing %s: %v", devPath, closeErr)
 		}
-		return info
+		if info.Available {
+			delete(c.smartLoggedErr, devPath)
+			return info
+		}
+		err = fmt.Errorf("device opened but no health data could be read")
 	}
 
 	// Library failed — try direct SAT passthrough for SATA drives with
 	// broken vendor ident detection.
 	if info, satErr := satSMARTInfo(devPath); satErr == nil {
-		if c.smartLoggedErr[devPath] {
-			delete(c.smartLoggedErr, devPath)
-		}
+		delete(c.smartLoggedErr, devPath)
 		return info
 	}
 
 	// All paths failed.
 	if !c.smartLoggedErr[devPath] {
 		log.Warnf("smart: cannot read %s: %v", devPath, err)
+		if isNVMeDevice(devPath) {
+			log.Warnf("smart: reading the NVMe health log needs CAP_SYS_ADMIN on recent kernels; " +
+				"enable the privileged helper with: systemctl enable --now bewitch-smart.timer")
+		}
 		c.smartLoggedErr[devPath] = true
 	}
 	return &SMARTInfo{} // Available=false
@@ -313,11 +336,16 @@ func readSMARTFromLib(dev smart.Device) *SMARTInfo {
 			info.Healthy = info.ReallocatedSectors == 0 && info.PendingSectors == 0 && info.UncorrectableErrs == 0
 		}
 	case *smart.NVMeDevice:
-		if smartLog, err := sd.ReadSMART(); err == nil {
-			info.AvailableSpare = smartLog.AvailSpare
-			info.PercentUsed = smartLog.PercentUsed
-			info.Healthy = smartLog.CritWarning == 0
+		smartLog, err := sd.ReadSMART()
+		if err != nil {
+			// The health log is the whole point for NVMe (and the generic attrs
+			// come from the same log). Typically EPERM without CAP_SYS_ADMIN —
+			// report unavailable rather than a "healthy" all-zero reading.
+			return &SMARTInfo{} // Available=false
 		}
+		info.AvailableSpare = smartLog.AvailSpare
+		info.PercentUsed = smartLog.PercentUsed
+		info.Healthy = smartLog.CritWarning == 0
 	default:
 		// Unknown device type (e.g., SCSI/USB mass storage) — the library
 		// could open it but can't read protocol-specific health data.
@@ -498,6 +526,26 @@ func (c *DiskCollector) parseMounts() ([]mountEntry, error) {
 		mounts = append(mounts, mountEntry{device: fields[0], mountPoint: mountPoint})
 	}
 	return mounts, nil
+}
+
+// ioDeviceName returns the /proc/diskstats name for a mount source. Sources are
+// often symlinks (/dev/mapper/pve-root → /dev/dm-1, /dev/disk/by-uuid/… →
+// /dev/sda1), but diskstats only lists kernel names, so resolve first.
+func ioDeviceName(dev string) string {
+	if resolved, err := filepath.EvalSymlinks(dev); err == nil {
+		dev = resolved
+	}
+	return deviceBaseName(dev)
+}
+
+// isBlockDevice reports whether path is a block device node.
+func isBlockDevice(path string) bool {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	m := fi.Mode()
+	return m&os.ModeDevice != 0 && m&os.ModeCharDevice == 0
 }
 
 func deviceBaseName(dev string) string {

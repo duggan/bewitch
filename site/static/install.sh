@@ -271,14 +271,25 @@ else
 
     # Install systemd service if systemd is available
     if command -v systemctl >/dev/null 2>&1; then
-        install -m 644 "${TMP_DIR}/bewitch-${VERSION}-linux-${ARCH}/bewitchd.service" \
-            /etc/systemd/system/bewitchd.service
+        # The units are shared with the Debian package (binaries in /usr/bin);
+        # this installer puts them in /usr/local/bin, so rewrite ExecStart.
+        for unit in bewitchd.service bewitch-smart.service bewitch-smart.timer; do
+            [ -f "${TMP_DIR}/bewitch-${VERSION}-linux-${ARCH}/${unit}" ] || continue
+            sed 's#/usr/bin/bewitchd#/usr/local/bin/bewitchd#' \
+                "${TMP_DIR}/bewitch-${VERSION}-linux-${ARCH}/${unit}" > "/etc/systemd/system/${unit}"
+            chmod 644 "/etc/systemd/system/${unit}"
+        done
         systemctl daemon-reload
         info "service" "installed bewitchd.service"
         if systemctl enable --now bewitchd 2>/dev/null; then
             info "service" "bewitchd enabled and started"
         else
             info "note" "start manually with: sudo systemctl enable --now bewitchd"
+        fi
+        # Privileged NVMe SMART helper (only does anything on hosts with NVMe).
+        if [ -f /etc/systemd/system/bewitch-smart.timer ] && \
+            systemctl enable --now bewitch-smart.timer 2>/dev/null; then
+            info "service" "bewitch-smart.timer enabled (NVMe SMART helper)"
         fi
     fi
 fi

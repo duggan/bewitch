@@ -146,6 +146,17 @@ func runSmartctl(smartctlPath, devPath, devType string) (*SMARTInfo, error) {
 
 	switch result.Device.Type {
 	case "nvme":
+		// smartctl can identify an NVMe device unprivileged but still fail to
+		// read its health log (EPERM without CAP_SYS_ADMIN on recent kernels).
+		// Without the log there's nothing to report — don't fabricate a
+		// "healthy" all-zero reading.
+		if result.NVMEHealth == nil {
+			msg := smartctlErrorMsg(result.Smartctl.Messages)
+			if msg == "" {
+				msg = fmt.Sprintf("exit %d", result.Smartctl.ExitStatus)
+			}
+			return nil, fmt.Errorf("smartctl: no NVMe health log for %s (%s)", devPath, msg)
+		}
 		return parseSmartctlNVMe(&result), nil
 	case "ata", "sat":
 		return parseSmartctlATA(&result), nil

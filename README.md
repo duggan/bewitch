@@ -185,9 +185,11 @@ no_default_excludes = true
 
 ### SMART disk health
 
-The disk collector reads SMART health data directly from physical block devices using `smart.Open()` (via the `anatol/smart.go` library). SMART data is live-only — it is not stored in the database since it changes slowly.
+The disk collector reads SMART health data from physical block devices via `smartctl` when installed, falling back to the `anatol/smart.go` library and direct SAT passthrough. Snapshots are stored in the `smart_metrics` table at the `smart_interval` cadence.
 
 SMART reads require `CAP_SYS_RAWIO` capability (the Debian package configures this automatically). When the capability is not available, SMART fields are simply absent and the disk view renders identically to before.
+
+On recent kernels the NVMe health log additionally needs `CAP_SYS_ADMIN`, which the daemon intentionally doesn't hold. A sandboxed helper (`bewitch-smart.timer` → `bewitchd smart-dump`) reads NVMe drives every 5 minutes and writes snapshots to `/var/lib/bewitch/smart/`, which the daemon reads. The Debian package and install script enable it; on other installs run `sudo systemctl enable --now bewitch-smart.timer`.
 
 Each disk panel in the TUI gains up to 3 extra lines when SMART is available: health status (OK/FAILING), temperature, NVMe spare/used percentages, power-on hours, power cycles, and error counters (reallocated/pending/uncorrectable sectors). Non-zero error counters are highlighted in orange.
 

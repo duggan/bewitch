@@ -34,20 +34,36 @@ Three data sources per mount: space usage (via `statfs`), I/O rates (via `/proc/
 
 - **Metrics:** read/write bytes per second per device
 - Delta-based: keeps previous reading, computes rate. First sample discarded.
+- Symlinked mount sources (`/dev/mapper/*` for LVM/LUKS, `/dev/disk/by-*`) are resolved to their kernel name (`dm-1`, `sda1`) before matching `/proc/diskstats`.
 
 ### SMART Health
 
-Reads SMART data per physical device (not per partition). Multiple mounts from the same disk share one SMART read. SMART data is **live-only** — not stored in the database since it changes slowly.
+Reads SMART data per physical device (not per partition). Multiple mounts from the same disk share one SMART read. Snapshots are stored in the `smart_metrics` table at the `smart_interval` cadence. Mount sources that aren't block devices (e.g. Proxmox's `/etc/pve`, mounted from `/dev/fuse`) are skipped.
 
 - **NVMe:** available spare %, percent used, critical warning, temperature, power-on hours, power cycles
 - **SATA:** reallocated sectors, pending sectors, uncorrectable errors, temperature, power-on hours
 - **Fallback chain:** smartctl (preferred) → smart.go library → direct SAT passthrough
 - **Requires:** `CAP_SYS_RAWIO` capability (configured by Debian package)
 
+If health data can't be read, the device is reported as SMART-unavailable rather than as a healthy all-zero reading.
+
+#### NVMe and `CAP_SYS_ADMIN`
+
+On recent kernels, reading the NVMe health log requires `CAP_SYS_ADMIN`. bewitchd deliberately does **not** hold that capability. Instead, a small privileged helper — `bewitch-smart.service`, run every 5 minutes by `bewitch-smart.timer` — executes `bewitchd smart-dump`, which reads each NVMe namespace and writes a JSON snapshot to `/var/lib/bewitch/smart/`. The daemon picks those up (snapshots older than `max(2 × smart_interval, 15m)` are ignored) and falls back to reading the device itself when none is available.
+
+The helper takes no input, has no network access, can only open NVMe devices, and can write only to its snapshot directory. The Debian package and the install script enable the timer automatically; it does nothing on hosts without NVMe. For a manual install:
+
+```sh
+sudo systemctl enable --now bewitch-smart.timer
+```
+
+If you change `db_path`, either set `smart_helper_dir` to match the helper's `-out` directory or edit the helper unit.
+
 ```toml
 [collectors.disk]
 interval = "30s"
 smart_interval = "5m"  # min 30s, "0" to disable
+# smart_helper_dir = "/var/lib/bewitch/smart"  # NVMe helper snapshots (default: "smart" next to db_path)
 exclude_mounts = ["/boot/efi"]
 ```
 

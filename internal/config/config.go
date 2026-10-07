@@ -285,6 +285,18 @@ type DiskCollectorConfig struct {
 	ExcludeMounts     []string `toml:"exclude_mounts"`
 	NoDefaultExcludes bool     `toml:"no_default_excludes"`
 	SMARTInterval     string   `toml:"smart_interval"`
+	// SMARTHelperDir is where the privileged bewitch-smart helper writes NVMe SMART
+	// snapshots (empty = "smart" next to db_path). Must match the helper's -out.
+	SMARTHelperDir string `toml:"smart_helper_dir"`
+}
+
+// GetSMARTHelperDir returns the NVMe SMART helper snapshot directory, defaulting
+// to a "smart" directory alongside the database (/var/lib/bewitch/smart).
+func (c *DiskCollectorConfig) GetSMARTHelperDir(dbPath string) string {
+	if c.SMARTHelperDir != "" {
+		return c.SMARTHelperDir
+	}
+	return filepath.Join(filepath.Dir(dbPath), "smart")
 }
 
 func (c *DiskCollectorConfig) GetInterval(defaultInterval time.Duration) time.Duration {

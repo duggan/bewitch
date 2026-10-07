@@ -1,0 +1,58 @@
+[Unit]
+Description=Bewitch NVMe SMART reader (privileged helper)
+Documentation=https://bewitch.dev/docs/collectors/
+# Nothing to do on hosts without NVMe controllers.
+ConditionPathExistsGlob=/dev/nvme*
+
+# Why this exists: on recent kernels reading the NVMe health log (an admin
+# Get Log Page command) requires CAP_SYS_ADMIN. Rather than grant that to the
+# network-facing daemon, this oneshot unit runs `bewitchd smart-dump`, which
+# takes no input beyond its output directory, reads each NVMe namespace, and
+# writes one JSON snapshot per device into /var/lib/bewitch/smart. bewitchd
+# reads those snapshots (see [collectors.disk] smart_helper_dir) and keeps its
+# own, narrower capability set.
+#
+# CAP_SYS_ADMIN still permits any NVMe admin command (including format), and
+# that cannot be narrowed by open mode. The protection here is that this unit
+# has no input surface, no network, and can write nowhere but its snapshot dir.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bewitchd smart-dump -out /var/lib/bewitch/smart
+User=bewitch
+Group=bewitch
+# smart-dump writes only here; it is NOT given write access to the database.
+StateDirectory=bewitch/smart
+StateDirectoryMode=0700
+UMask=0077
+AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_RAWIO
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
+
+# --- Sandboxing -------------------------------------------------------------
+NoNewPrivileges=true
+# Only NVMe devices are visible to open(): namespaces (block, major "blkext")
+# and controllers (char "nvme"). Read-only — smartctl and smart.go open O_RDONLY.
+DevicePolicy=closed
+DeviceAllow=block-blkext r
+DeviceAllow=char-nvme r
+PrivateNetwork=true
+IPAddressDeny=any
+RestrictAddressFamilies=AF_UNIX
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+# Allowlist: excludes @mount, @module, @reboot, @swap, @raw-io, @clock, @debug, …
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM

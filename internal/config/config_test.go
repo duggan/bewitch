@@ -982,3 +982,14 @@ func TestLoadClientExplicitPath(t *testing.T) {
 		}
 	}
 }
+
+func TestGetSMARTHelperDir(t *testing.T) {
+	var c DiskCollectorConfig
+	if got := c.GetSMARTHelperDir("/var/lib/bewitch/bewitch.duckdb"); got != "/var/lib/bewitch/smart" {
+		t.Errorf("default = %q, want /var/lib/bewitch/smart", got)
+	}
+	c.SMARTHelperDir = "/srv/smart"
+	if got := c.GetSMARTHelperDir("/var/lib/bewitch/bewitch.duckdb"); got != "/srv/smart" {
+		t.Errorf("override = %q, want /srv/smart", got)
+	}
+}

@@ -39,6 +39,13 @@ const (
 func main() {
 	log.SetReportTimestamp(true)
 
+	// `bewitchd smart-dump` is the privileged NVMe SMART helper run by
+	// bewitch-smart.service; it must not load config or touch the database.
+	if len(os.Args) > 1 && os.Args[1] == "smart-dump" {
+		runSmartDump(os.Args[2:])
+		return
+	}
+
 	configPath := flag.String("config", config.DefaultConfigPath, "path to config file")
 	logLevel := flag.String("log-level", "", "log level: debug, info, warn, error (overrides config)")
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -142,6 +149,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("initializing disk collector: %v", err)
 		}
+		disk.SetSMARTHelperDir(cfg.Collectors.Disk.GetSMARTHelperDir(cfg.Daemon.DBPath))
 		diskCollector = disk
 		net, err := collector.NewNetworkCollector()
 		if err != nil {
@@ -1042,4 +1050,14 @@ func selfRSSBytes(ms runtime.MemStats) uint64 {
 		}
 	}
 	return ms.Sys
+}
+
+// runSmartDump implements `bewitchd smart-dump [-out dir]`.
+func runSmartDump(args []string) {
+	fs := flag.NewFlagSet("smart-dump", flag.ExitOnError)
+	out := fs.String("out", "/var/lib/bewitch/smart", "directory to write NVMe SMART snapshots to")
+	_ = fs.Parse(args)
+	if err := collector.DumpNVMeSMART(*out); err != nil {
+		log.Fatalf("smart-dump: %v", err)
+	}
 }

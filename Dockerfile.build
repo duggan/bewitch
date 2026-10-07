@@ -55,6 +55,8 @@ RUN VERSION=$(cat VERSION) && \
     cp bin/bewitchd bin/bewitch /tarball/bewitch-${VERSION}-linux-${ARCH}/ && \
     cp bewitch.example.toml /tarball/bewitch-${VERSION}-linux-${ARCH}/ && \
     cp debian/bewitch.bewitchd.service /tarball/bewitch-${VERSION}-linux-${ARCH}/bewitchd.service && \
+    cp debian/bewitch.bewitch-smart.service /tarball/bewitch-${VERSION}-linux-${ARCH}/bewitch-smart.service && \
+    cp debian/bewitch.bewitch-smart.timer /tarball/bewitch-${VERSION}-linux-${ARCH}/bewitch-smart.timer && \
     tar -czf /bewitch-${VERSION}-linux-${ARCH}.tar.gz \
         -C /tarball bewitch-${VERSION}-linux-${ARCH}
 

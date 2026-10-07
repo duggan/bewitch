@@ -23,7 +23,8 @@ UMask=0077
 # PrivatePID, SystemCallFilter, MemoryDenyWriteExecute) that would break SMART,
 # eBPF, or the CGO DuckDB engine. This minimal unit omits the elevated
 # capabilities; add the AmbientCapabilities / SupplementaryGroups from the Debian
-# unit if you need SMART / GPU / per-process disk+network I/O.
+# unit if you need SMART / GPU / per-process disk+network I/O, and install
+# debian/bewitch.bewitch-smart.{service,timer} for NVMe SMART on recent kernels.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
