@@ -19,6 +19,15 @@ type netioNetioVal struct {
 	TxBytes uint64
 }
 
+// Names of all BPF objects in the ELF.
+//
+// Used for safe lookups in a Collection or CollectionSpec.
+const (
+	netioMapNetioCounters         = "netio_counters"
+	netioProgFentryTcpCleanupRbuf = "fentry_tcp_cleanup_rbuf"
+	netioProgFentryTcpSendmsg     = "fentry_tcp_sendmsg"
+)
+
 // loadNetio returns the embedded CollectionSpec for netio.
 func loadNetio() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_NetioBytes)
@@ -39,7 +48,7 @@ func loadNetio() (*ebpf.CollectionSpec, error) {
 //	*netioMaps
 //
 // See ebpf.CollectionSpec.LoadAndAssign documentation for details.
-func loadNetioObjects(obj interface{}, opts *ebpf.CollectionOptions) error {
+func loadNetioObjects(obj any, opts *ebpf.CollectionOptions) error {
 	spec, err := loadNetio()
 	if err != nil {
 		return err
