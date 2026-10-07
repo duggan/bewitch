@@ -248,7 +248,8 @@ func (c *DiskCollector) readSMARTDevice(devPath string) *SMARTInfo {
 			delete(c.smartLoggedErr, devPath)
 			return info
 		}
-		if !c.smartLoggedErr[devPath] {
+		// NVMe permission failures are summarised once below; don't double-log.
+		if !c.smartLoggedErr[devPath] && !isNVMeDevice(devPath) {
 			log.Warnf("smart: smartctl failed for %s: %v", devPath, smartctlErr)
 		}
 	}
@@ -276,10 +277,16 @@ func (c *DiskCollector) readSMARTDevice(devPath string) *SMARTInfo {
 
 	// All paths failed.
 	if !c.smartLoggedErr[devPath] {
-		log.Warnf("smart: cannot read %s: %v", devPath, err)
 		if isNVMeDevice(devPath) {
-			log.Warnf("smart: reading the NVMe health log needs CAP_SYS_ADMIN on recent kernels; " +
-				"enable the privileged helper with: systemctl enable --now bewitch-smart.timer")
+			// Usually expected: recent kernels need CAP_SYS_ADMIN for the NVMe
+			// health log, which comes from the bewitch-smart helper instead. Right
+			// after install/upgrade the daemon can start before the helper's first
+			// run, so word this as "waiting", not as a misconfiguration.
+			log.Warnf("smart: cannot read NVMe health log for %s directly (%v); "+
+				"it will appear once the bewitch-smart helper runs (every 5m). "+
+				"If it never does, check: systemctl status bewitch-smart.timer", devPath, err)
+		} else {
+			log.Warnf("smart: cannot read %s: %v", devPath, err)
 		}
 		c.smartLoggedErr[devPath] = true
 	}
