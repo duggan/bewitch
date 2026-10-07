@@ -88,6 +88,23 @@ func (s *Server) hasAnyParquetFiles() bool {
 	return false
 }
 
+// archiveScan reads every archived Parquet file for table with the table's
+// current schema (see store.ArchiveScan for why plain read_parquet breaks once
+// a migration has added columns).
+func (s *Server) archiveScan(table string) string {
+	return store.ArchiveScan(table, store.ParquetLiteral(s.parquetPath(table)))
+}
+
+// archiveScanForRange is archiveScan limited to files overlapping [start, end].
+func (s *Server) archiveScanForRange(table string, start, end time.Time) string {
+	return store.ArchiveScan(table, s.parquetPathForRange(table, start, end))
+}
+
+// archiveScanFile reads a single archived Parquet file (the dimension snapshots).
+func (s *Server) archiveScanFile(table, path string) string {
+	return store.ArchiveScan(table, store.ParquetLiteral(path))
+}
+
 // parquetPath returns the glob path for a table's Parquet files.
 func (s *Server) parquetPath(table string) string {
 	return filepath.Join(s.archivePath, table, "*.parquet")
@@ -234,15 +251,15 @@ func (s *Server) handleHistoryCPU(w http.ResponseWriter, r *http.Request) {
 		query = fmt.Sprintf(`%s FROM cpu_metrics %s %s ORDER BY bucket`, baseSelect, baseWhere, baseGroup)
 		args = []interface{}{start, end}
 	case querySourceParquet:
-		query = fmt.Sprintf(`%s FROM read_parquet('%s') %s %s ORDER BY bucket`,
-			baseSelect, s.parquetPath("cpu_metrics"), baseWhere, baseGroup)
+		query = fmt.Sprintf(`%s FROM %s %s %s ORDER BY bucket`,
+			baseSelect, s.archiveScan("cpu_metrics"), baseWhere, baseGroup)
 		args = []interface{}{start, end}
 	case querySourceBoth:
 		query = fmt.Sprintf(`%s FROM (
 			SELECT ts, user_pct, system_pct, iowait_pct, core FROM cpu_metrics WHERE core = -1 AND ts BETWEEN ? AND ?
 			UNION ALL
-			SELECT ts, user_pct, system_pct, iowait_pct, core FROM read_parquet('%s') WHERE core = -1 AND ts BETWEEN ? AND ?
-		) %s ORDER BY bucket`, baseSelect, s.parquetPath("cpu_metrics"), baseGroup)
+			SELECT ts, user_pct, system_pct, iowait_pct, core FROM %s WHERE core = -1 AND ts BETWEEN ? AND ?
+		) %s ORDER BY bucket`, baseSelect, s.archiveScan("cpu_metrics"), baseGroup)
 		args = []interface{}{start, end, start, end}
 	}
 
@@ -301,15 +318,15 @@ func (s *Server) handleHistoryMemory(w http.ResponseWriter, r *http.Request) {
 		query = fmt.Sprintf(`%s FROM memory_metrics %s %s ORDER BY bucket`, baseSelect, baseWhere, baseGroup)
 		args = []interface{}{start.Unix(), end.Unix()}
 	case querySourceParquet:
-		query = fmt.Sprintf(`%s FROM read_parquet('%s') %s %s ORDER BY bucket`,
-			baseSelect, s.parquetPath("memory_metrics"), baseWhere, baseGroup)
+		query = fmt.Sprintf(`%s FROM %s %s %s ORDER BY bucket`,
+			baseSelect, s.archiveScan("memory_metrics"), baseWhere, baseGroup)
 		args = []interface{}{start.Unix(), end.Unix()}
 	case querySourceBoth:
 		query = fmt.Sprintf(`%s FROM (
 			SELECT * FROM memory_metrics WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			UNION ALL
-			SELECT * FROM read_parquet('%s') WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-		) %s ORDER BY bucket`, baseSelect, s.parquetPath("memory_metrics"), baseGroup)
+			UNION ALL BY NAME
+			SELECT * FROM %s WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+		) %s ORDER BY bucket`, baseSelect, s.archiveScan("memory_metrics"), baseGroup)
 		args = []interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
 	}
 
@@ -397,20 +414,20 @@ func (s *Server) handleDimHistory(w http.ResponseWriter, r *http.Request, spec d
 			selectFrag, spec.table, joinFrag, whereFrag, groupFrag)
 		args = []interface{}{start.Unix(), end.Unix()}
 	case querySourceParquet:
-		pqJoin := fmt.Sprintf(`JOIN read_parquet('%s') d ON d.category = '%s' AND d.id = m.%s`,
-			s.dimensionParquetPath(), spec.dimCat, spec.dimFK)
-		query = fmt.Sprintf(`%s FROM read_parquet('%s') m %s %s %s`,
-			selectFrag, s.parquetPath(spec.table), pqJoin, whereFrag, groupFrag)
+		pqJoin := fmt.Sprintf(`JOIN %s d ON d.category = '%s' AND d.id = m.%s`,
+			s.archiveScanFile("dimension_values", s.dimensionParquetPath()), spec.dimCat, spec.dimFK)
+		query = fmt.Sprintf(`%s FROM %s m %s %s %s`,
+			selectFrag, s.archiveScan(spec.table), pqJoin, whereFrag, groupFrag)
 		args = []interface{}{start.Unix(), end.Unix()}
 	case querySourceBoth:
 		query = fmt.Sprintf(`%s FROM (
 			SELECT %s FROM %s WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
 			UNION ALL
-			SELECT %s FROM read_parquet('%s') WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			SELECT %s FROM %s WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
 		) m %s %s`,
 			selectFrag,
 			spec.unionCols, spec.table,
-			spec.unionCols, s.parquetPath(spec.table),
+			spec.unionCols, s.archiveScan(spec.table),
 			joinFrag, groupFrag)
 		args = []interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
 	}
@@ -511,18 +528,18 @@ func (s *Server) handleHistoryNetwork(w http.ResponseWriter, r *http.Request) {
 			selectFrag, joinFrag, whereFrag, groupFrag)
 		args = []interface{}{start.Unix(), end.Unix()}
 	case querySourceParquet:
-		pqJoin := fmt.Sprintf(`JOIN read_parquet('%s') d ON d.category = 'interface' AND d.id = m.interface_id`,
-			s.dimensionParquetPath())
-		query = fmt.Sprintf(`%s FROM read_parquet('%s') m %s %s %s`,
-			selectFrag, s.parquetPath("network_metrics"), pqJoin, whereFrag, groupFrag)
+		pqJoin := fmt.Sprintf(`JOIN %s d ON d.category = 'interface' AND d.id = m.interface_id`,
+			s.archiveScanFile("dimension_values", s.dimensionParquetPath()))
+		query = fmt.Sprintf(`%s FROM %s m %s %s %s`,
+			selectFrag, s.archiveScan("network_metrics"), pqJoin, whereFrag, groupFrag)
 		args = []interface{}{start.Unix(), end.Unix()}
 	case querySourceBoth:
 		query = fmt.Sprintf(`%s FROM (
 			SELECT ts, interface_id, rx_bytes_sec, tx_bytes_sec FROM network_metrics WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
 			UNION ALL
-			SELECT ts, interface_id, rx_bytes_sec, tx_bytes_sec FROM read_parquet('%s') WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			SELECT ts, interface_id, rx_bytes_sec, tx_bytes_sec FROM %s WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
 		) m %s %s`,
-			selectFrag, s.parquetPath("network_metrics"), joinFrag, groupFrag)
+			selectFrag, s.archiveScan("network_metrics"), joinFrag, groupFrag)
 		args = []interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
 	}
 
@@ -710,7 +727,7 @@ func (s *Server) buildProcessHistoryTopCPU(start, end time.Time, bucket string, 
 		return fmt.Sprintf(`WITH bucketed AS (
 			SELECT time_bucket(INTERVAL '%s', pm.ts) AS bucket, pm.pid,
 				AVG(pm.cpu_user_pct + pm.cpu_system_pct) AS cpu_avg
-			FROM read_parquet(%s) pm
+			FROM %s pm
 			WHERE pm.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
 			GROUP BY bucket, pm.pid
 		),
@@ -721,9 +738,9 @@ func (s *Server) buildProcessHistoryTopCPU(start, end time.Time, bucket string, 
 			COALESCE(pi.name, CAST(b.pid AS VARCHAR)) AS name, b.cpu_avg
 		FROM bucketed b
 		JOIN pid_total pt ON b.pid = pt.pid
-		LEFT JOIN (SELECT DISTINCT ON (pid) pid, name FROM read_parquet('%s') ORDER BY pid, first_seen DESC) pi
+		LEFT JOIN (SELECT DISTINCT ON (pid) pid, name FROM %s ORDER BY pid, first_seen DESC) pi
 			ON b.pid = pi.pid
-		ORDER BY b.bucket`, bucket, s.parquetPathForRange("process_metrics", start, end), s.processInfoParquetPath()),
+		ORDER BY b.bucket`, bucket, s.archiveScanForRange("process_metrics", start, end), s.archiveScanFile("process_info", s.processInfoParquetPath())),
 			[]interface{}{start.Unix(), end.Unix()}
 	default: // querySourceBoth
 		// Aggregate each source independently then combine. This avoids
@@ -738,7 +755,7 @@ func (s *Server) buildProcessHistoryTopCPU(start, end time.Time, bucket string, 
 			UNION ALL
 			SELECT time_bucket(INTERVAL '%s', ts) AS bucket, pid,
 				AVG(cpu_user_pct + cpu_system_pct) AS cpu_avg
-			FROM read_parquet(%s)
+			FROM %s
 			WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
 			GROUP BY bucket, pid
 		),
@@ -751,7 +768,7 @@ func (s *Server) buildProcessHistoryTopCPU(start, end time.Time, bucket string, 
 		JOIN pid_total pt ON b.pid = pt.pid
 		LEFT JOIN (SELECT DISTINCT ON (pid) pid, name FROM process_info ORDER BY pid, first_seen DESC) pi
 			ON b.pid = pi.pid
-		ORDER BY b.bucket`, bucket, bucket, s.parquetPathForRange("process_metrics", start, end)),
+		ORDER BY b.bucket`, bucket, bucket, s.archiveScanForRange("process_metrics", start, end)),
 			[]interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
 	}
 }
@@ -792,13 +809,13 @@ func (s *Server) buildProcessHistoryByName(names []string, start, end time.Time,
 	case querySourceParquet:
 		args := append(nameArgs, start.Unix(), end.Unix())
 		return fmt.Sprintf(`WITH target_pids AS (
-			SELECT DISTINCT pid FROM read_parquet('%s')
+			SELECT DISTINCT pid FROM %s
 			WHERE name IN (%s)
 		),
 		bucketed AS (
 			SELECT time_bucket(INTERVAL '%s', pm.ts) AS bucket, pm.pid,
 				AVG(pm.cpu_user_pct + pm.cpu_system_pct) AS cpu_avg
-			FROM read_parquet(%s) pm
+			FROM %s pm
 			WHERE pm.pid IN (SELECT pid FROM target_pids)
 				AND pm.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
 			GROUP BY bucket, pm.pid
@@ -806,9 +823,9 @@ func (s *Server) buildProcessHistoryByName(names []string, start, end time.Time,
 		SELECT b.bucket, b.pid,
 			COALESCE(pi.name, CAST(b.pid AS VARCHAR)) AS name, b.cpu_avg
 		FROM bucketed b
-		LEFT JOIN (SELECT DISTINCT ON (pid) pid, name FROM read_parquet('%s') ORDER BY pid, first_seen DESC) pi
+		LEFT JOIN (SELECT DISTINCT ON (pid) pid, name FROM %s ORDER BY pid, first_seen DESC) pi
 			ON b.pid = pi.pid
-		ORDER BY b.bucket`, s.processInfoParquetPath(), inClause, bucket, s.parquetPathForRange("process_metrics", start, end), s.processInfoParquetPath()), args
+		ORDER BY b.bucket`, s.archiveScanFile("process_info", s.processInfoParquetPath()), inClause, bucket, s.archiveScanForRange("process_metrics", start, end), s.archiveScanFile("process_info", s.processInfoParquetPath())), args
 	default: // querySourceBoth
 		// Aggregate each source independently then combine (same pattern
 		// as buildProcessHistoryTopCPU — avoids all_metrics CTE).
@@ -829,7 +846,7 @@ func (s *Server) buildProcessHistoryByName(names []string, start, end time.Time,
 			UNION ALL
 			SELECT time_bucket(INTERVAL '%s', ts) AS bucket, pid,
 				AVG(cpu_user_pct + cpu_system_pct) AS cpu_avg
-			FROM read_parquet(%s)
+			FROM %s
 			WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
 				AND pid IN (SELECT pid FROM target_pids)
 			GROUP BY bucket, pid
@@ -839,7 +856,7 @@ func (s *Server) buildProcessHistoryByName(names []string, start, end time.Time,
 		FROM bucketed b
 		LEFT JOIN (SELECT DISTINCT ON (pid) pid, name FROM process_info ORDER BY pid, first_seen DESC) pi
 			ON b.pid = pi.pid
-		ORDER BY b.bucket`, inClause, bucket, bucket, s.parquetPathForRange("process_metrics", start, end)), args
+		ORDER BY b.bucket`, inClause, bucket, bucket, s.archiveScanForRange("process_metrics", start, end)), args
 	}
 }
 

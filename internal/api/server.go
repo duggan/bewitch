@@ -436,8 +436,8 @@ func (s *Server) CreateArchiveViews() {
 
 		if store.HasParquetFiles(s.archivePath, table) {
 			query := fmt.Sprintf(
-				`CREATE OR REPLACE VIEW %s AS SELECT * FROM %s UNION ALL SELECT * FROM read_parquet('%s')`,
-				viewName, table, parquetGlob)
+				`CREATE OR REPLACE VIEW %s AS SELECT * FROM %s UNION ALL BY NAME SELECT * FROM %s`,
+				viewName, table, store.ArchiveScan(table, store.ParquetLiteral(parquetGlob)))
 			if _, err := db.Exec(query); err != nil {
 				log.Warnf("failed to create view %s: %v", viewName, err)
 			}
@@ -462,8 +462,8 @@ func (s *Server) CreateArchiveViews() {
 
 		if _, err := os.Stat(parquetFile); err == nil {
 			query := fmt.Sprintf(
-				`CREATE OR REPLACE VIEW %s AS SELECT * FROM %s UNION ALL SELECT * FROM read_parquet('%s')`,
-				viewName, item.table, parquetFile)
+				`CREATE OR REPLACE VIEW %s AS SELECT * FROM %s UNION ALL BY NAME SELECT * FROM %s`,
+				viewName, item.table, store.ArchiveScan(item.table, store.ParquetLiteral(parquetFile)))
 			if _, err := db.Exec(query); err != nil {
 				log.Warnf("failed to create view %s: %v", viewName, err)
 			}

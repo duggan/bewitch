@@ -159,15 +159,15 @@ func (s *Server) handleHistoryCustom(w http.ResponseWriter, r *http.Request) {
 	var args []interface{}
 	switch src {
 	case querySourceParquet:
-		query = fmt.Sprintf(`%s FROM read_parquet('%s') %s %s ORDER BY bucket`,
-			sel, s.parquetPath("custom_metrics"), where, group)
+		query = fmt.Sprintf(`%s FROM %s %s %s ORDER BY bucket`,
+			sel, s.archiveScan("custom_metrics"), where, group)
 		args = []interface{}{source, metric, start, end}
 	case querySourceBoth:
 		query = fmt.Sprintf(`%s FROM (
 			SELECT ts, source, metric, value FROM custom_metrics WHERE source = ? AND metric = ? AND ts BETWEEN ? AND ?
 			UNION ALL
-			SELECT ts, source, metric, value FROM read_parquet('%s') WHERE source = ? AND metric = ? AND ts BETWEEN ? AND ?
-		) %s ORDER BY bucket`, sel, s.parquetPath("custom_metrics"), group)
+			SELECT ts, source, metric, value FROM %s WHERE source = ? AND metric = ? AND ts BETWEEN ? AND ?
+		) %s ORDER BY bucket`, sel, s.archiveScan("custom_metrics"), group)
 		args = []interface{}{source, metric, start, end, source, metric, start, end}
 	default:
 		query = fmt.Sprintf(`%s FROM custom_metrics %s %s ORDER BY bucket`, sel, where, group)

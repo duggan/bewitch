@@ -10,6 +10,28 @@ import (
 	"github.com/charmbracelet/log"
 )
 
+// ArchiveScan returns a parenthesized FROM-clause source that reads a table's
+// archived Parquet files with the table's *current* schema. files is a SQL
+// literal: a quoted path or glob ('…/*.parquet') or a list (['a', 'b']); use
+// ParquetLiteral to quote a single path.
+//
+// Archives outlive schema migrations: a file written before a migration added
+// a column (e.g. cpu_metrics.steal_pct) has fewer columns than the live table
+// and than files written after it. Plain read_parquet over such a mix fails
+// ("schema mismatch in glob"), and positional UNION ALL against the live table
+// fails ("Set operations can only apply to expressions with the same number of
+// result columns"). Matching by name against an empty copy of the live table
+// gives every reader the full current column set, with NULL for columns a file
+// predates. DuckDB still pushes projections and filters into the Parquet scan.
+func ArchiveScan(table, files string) string {
+	return fmt.Sprintf("((SELECT * FROM %s LIMIT 0) UNION ALL BY NAME (SELECT * FROM read_parquet(%s, union_by_name=true)))", table, files)
+}
+
+// ParquetLiteral quotes a single Parquet path or glob for use with ArchiveScan.
+func ParquetLiteral(path string) string {
+	return "'" + quoteLiteral(path) + "'"
+}
+
 // ArchiveExclusive exports data older than threshold to Parquet files.
 // Uses opMu mutex to coordinate with prune/compact.
 func (s *Store) ArchiveExclusive(archivePath string, threshold time.Duration) error {
@@ -161,11 +183,13 @@ func (s *Store) exportToParquet(table, parquetPath string, start, end time.Time)
 	if fileExists {
 		// Merge existing Parquet data with new data
 		tmpPath := parquetPath + ".tmp"
+		// Match columns by name: the existing file may predate a migration that
+		// added columns to the table (see ArchiveScan).
 		query := fmt.Sprintf(`COPY (
-			SELECT * FROM read_parquet('%s')
-			UNION ALL
 			SELECT * FROM %s WHERE ts > ? AND ts <= ?
-		) TO '%s' (FORMAT parquet, COMPRESSION zstd)`, parquetPath, table, tmpPath)
+			UNION ALL BY NAME
+			SELECT * FROM %s
+		) TO '%s' (FORMAT parquet, COMPRESSION zstd)`, table, ArchiveScan(table, ParquetLiteral(parquetPath)), quoteLiteral(tmpPath))
 
 		if _, err := s.db.Exec(query, start, end); err != nil {
 			os.Remove(tmpPath)
@@ -312,7 +336,7 @@ func (s *Store) unarchiveTable(table, archivePath string) error {
 	}
 
 	// Insert all Parquet data back into the live table
-	query := fmt.Sprintf("INSERT INTO %s SELECT * FROM read_parquet('%s')", table, pattern)
+	query := fmt.Sprintf("INSERT INTO %s BY NAME SELECT * FROM read_parquet(%s, union_by_name=true)", table, ParquetLiteral(pattern))
 	result, err := s.db.Exec(query)
 	if err != nil {
 		return fmt.Errorf("insert from parquet: %w", err)
@@ -336,7 +360,7 @@ func (s *Store) unarchiveDimensionTables(archivePath string) error {
 	dimPath := filepath.Join(archivePath, "dimension_values.parquet")
 	if _, err := os.Stat(dimPath); err == nil {
 		if _, err := s.db.Exec(fmt.Sprintf(
-			"INSERT OR IGNORE INTO dimension_values SELECT * FROM read_parquet('%s')", dimPath)); err != nil {
+			"INSERT OR IGNORE INTO dimension_values BY NAME SELECT * FROM read_parquet(%s, union_by_name=true)", ParquetLiteral(dimPath))); err != nil {
 			return fmt.Errorf("reload dimension_values: %w", err)
 		}
 		os.Remove(dimPath)
@@ -345,7 +369,7 @@ func (s *Store) unarchiveDimensionTables(archivePath string) error {
 	procPath := filepath.Join(archivePath, "process_info.parquet")
 	if _, err := os.Stat(procPath); err == nil {
 		if _, err := s.db.Exec(fmt.Sprintf(
-			"INSERT OR IGNORE INTO process_info SELECT * FROM read_parquet('%s')", procPath)); err != nil {
+			"INSERT OR IGNORE INTO process_info BY NAME SELECT * FROM read_parquet(%s, union_by_name=true)", ParquetLiteral(procPath))); err != nil {
 			return fmt.Errorf("reload process_info: %w", err)
 		}
 		os.Remove(procPath)

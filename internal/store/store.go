@@ -772,8 +772,8 @@ func (s *Store) Snapshot(snapshotPath, archivePath string, withSystemTables bool
 		parquetGlob := filepath.Join(archivePath, table, "*.parquet")
 		if archivePath != "" && HasParquetFiles(archivePath, table) {
 			query = fmt.Sprintf(
-				"INSERT INTO snap_db.%s SELECT * FROM %s UNION ALL SELECT * FROM read_parquet('%s')",
-				table, table, parquetGlob)
+				"INSERT INTO snap_db.%s BY NAME SELECT * FROM %s UNION ALL BY NAME SELECT * FROM %s",
+				table, table, ArchiveScan(table, ParquetLiteral(parquetGlob)))
 		} else {
 			query = fmt.Sprintf("INSERT INTO snap_db.%s SELECT * FROM %s", table, table)
 		}
@@ -798,8 +798,8 @@ func (s *Store) Snapshot(snapshotPath, archivePath string, withSystemTables bool
 		if archivePath != "" {
 			if _, err := os.Stat(parquetFile); err == nil {
 				query = fmt.Sprintf(
-					"INSERT INTO snap_db.%s SELECT DISTINCT * FROM (SELECT * FROM %s UNION ALL SELECT * FROM read_parquet('%s'))",
-					item.table, item.table, parquetFile)
+					"INSERT INTO snap_db.%s BY NAME SELECT DISTINCT * FROM (SELECT * FROM %s UNION ALL BY NAME SELECT * FROM %s)",
+					item.table, item.table, ArchiveScan(item.table, ParquetLiteral(parquetFile)))
 			}
 		}
 		if query == "" {
