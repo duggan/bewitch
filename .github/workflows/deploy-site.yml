@@ -23,7 +23,7 @@ jobs:
       deployments: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Zola
         run: |
@@ -84,9 +84,12 @@ jobs:
               site/static/install.sh > site/dist/install-dev.sh
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: site
+          # Pinned to match the wrangler used by dev/release jobs; wrangler-action v4
+          # otherwise defaults to the latest Wrangler 4.x.
+          wranglerVersion: "4.99.0"
           command: pages deploy dist --project-name=bewitch --branch=${{ github.head_ref || github.ref_name }} --commit-dirty=true
