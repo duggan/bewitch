@@ -505,37 +505,85 @@ func detectTransportSysfs(devName string) string {
 type mountEntry struct {
 	device     string
 	mountPoint string
+	devID      string // major:minor from mountinfo
+	root       string // path within the filesystem that is mounted here ("/" = whole fs)
 }
 
+// mountinfoPath is a package var so tests can point parsing at a fixture.
+var mountinfoPath = "/proc/self/mountinfo"
+
 func (c *DiskCollector) parseMounts() ([]mountEntry, error) {
-	data, err := os.ReadFile("/proc/mounts")
+	data, err := os.ReadFile(mountinfoPath)
 	if err != nil {
 		return nil, err
 	}
 	var mounts []mountEntry
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		if !strings.HasPrefix(fields[0], "/dev/") {
-			continue
-		}
+	for _, m := range dropBindDuplicates(parseMountinfo(string(data))) {
 		// Check mount path exclusions
-		mountPoint := fields[1]
 		excluded := false
 		for _, prefix := range c.excludeMounts {
-			if strings.HasPrefix(mountPoint, prefix) {
+			if strings.HasPrefix(m.mountPoint, prefix) {
 				excluded = true
 				break
 			}
 		}
-		if excluded {
-			continue
+		if !excluded {
+			mounts = append(mounts, m)
 		}
-		mounts = append(mounts, mountEntry{device: fields[0], mountPoint: mountPoint})
 	}
 	return mounts, nil
+}
+
+// parseMountinfo returns the block-device-backed (/dev/...) mounts from
+// /proc/self/mountinfo content. Format per line:
+//
+//	id parent major:minor root mountpoint options [optional...] - fstype source superopts
+func parseMountinfo(data string) []mountEntry {
+	var mounts []mountEntry
+	for _, line := range strings.Split(data, "\n") {
+		pre, post, ok := strings.Cut(line, " - ")
+		if !ok {
+			continue
+		}
+		f := strings.Fields(pre)
+		g := strings.Fields(post)
+		if len(f) < 5 || len(g) < 2 || !strings.HasPrefix(g[1], "/dev/") {
+			continue
+		}
+		mounts = append(mounts, mountEntry{device: g[1], mountPoint: f[4], devID: f[2], root: f[3]})
+	}
+	return mounts
+}
+
+// dropBindDuplicates removes bind mounts of a directory inside a filesystem that
+// is already mounted elsewhere — same device, and the other mount's root contains
+// this one's. These report the same statfs numbers and I/O as the parent mount,
+// so they'd only appear as phantom duplicate disks. The main source is the
+// daemon's own systemd sandbox: ReadWritePaths/StateDirectory and PrivateTmp
+// bind /var/lib/bewitch and /var/tmp into its private mount namespace.
+//
+// Sibling btrfs subvolumes are kept: "/" mounted from root /@ and /home from
+// /@home share a device, but neither root contains the other.
+func dropBindDuplicates(mounts []mountEntry) []mountEntry {
+	out := make([]mountEntry, 0, len(mounts))
+	for i, m := range mounts {
+		dup := false
+		for j, o := range mounts {
+			if i != j && o.devID == m.devID && o.root != m.root && rootContains(o.root, m.root) {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// rootContains reports whether path child lies within parent ("/" contains all).
+func rootContains(parent, child string) bool {
+	return parent == "/" || strings.HasPrefix(child, strings.TrimSuffix(parent, "/")+"/")
 }
 
 // ioDeviceName returns the /proc/diskstats name for a mount source. Sources are
