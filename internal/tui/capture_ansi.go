@@ -671,6 +671,27 @@ func (m *Model) fetchHistoryForCapture(v view) {
 	end := time.Now()
 	start := end.Add(-m.historyRanges[m.historyRange].Duration)
 
+	if v == viewServices {
+		// Custom-source history is per (source, metric), outside the generic
+		// per-view history path.
+		m.refreshCustomData()
+		m.cachedHistoryCharts[m.current] = ""
+		source, metric, _ := m.selectedCustomSeries()
+		if source == "" || metric == "" {
+			return
+		}
+		series, err := m.client.GetCustomHistory(source, metric, start, end)
+		if err != nil || len(series) == 0 {
+			return
+		}
+		m.servicesHist[servicesHistKey(source, metric)] = customHistEntry{series: series, start: start, end: end}
+		m.historySeries = series
+		m.historyStart = start
+		m.historyEnd = end
+		m.regenerateHistoryChart()
+		return
+	}
+
 	metric := viewMetric(v)
 	if v == viewHardware {
 		switch m.hardwareSection {

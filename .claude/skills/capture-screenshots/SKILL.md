@@ -17,8 +17,8 @@ Capture high-resolution PNG screenshots of all bewitch TUI views for the website
 
 1. **Builds** the project (`make build`)
 2. **Starts `bewitchd` in mock mode** to generate synthetic data
-3. **Captures** all 8 views using `bewitch capture-views`
-4. **Updates** `site/src/pages/home.tsx` image dimensions if they changed
+3. **Captures** all views (9 in mock mode, including Services) using `bewitch capture-views`
+4. **Checks** the homepage `<img>` dimensions in `site/templates/index.html` still match
 5. **Cleans up** the daemon
 
 ## Prerequisites
@@ -27,11 +27,12 @@ Capture high-resolution PNG screenshots of all bewitch TUI views for the website
 
 ## Mock Daemon Setup
 
-The screenshots use `data/bewitch.toml` which has `mock = true` — the daemon generates synthetic data without real collectors. Start it and allow ~10 seconds for data to accumulate so history charts have content:
+The screenshots use `data/bewitch.toml` which has `mock = true` — the daemon generates synthetic data without real collectors. Start it on a **fresh** database and wait for seeding to finish. On first start the daemon seeds 30 days of tiered history (with daily and weekly rhythms, so long-range charts aren't flat), custom-source history for the Services tab, and demo alert rules and fired alerts. Seeding holds the maintenance lock, so a startup archive or compaction (the mock config sets `archive_threshold`) waits for it:
 
 ```bash
+rm -f /tmp/bewitch.duckdb /tmp/bewitch.duckdb.wal /tmp/bewitch.sock && rm -rf /tmp/archive
 ./bin/bewitchd -config data/bewitch.toml &>/tmp/bewitchd.log &
-sleep 10
+# wait until the log shows "mock alerts seeded" (and "compaction complete" if archiving), then ~20s more
 ```
 
 The mock config uses `/tmp/bewitch.sock` and `/tmp/bewitch.duckdb`, so it won't conflict with a real installation.
@@ -41,10 +42,10 @@ Kill the daemon after capturing: `kill $(pgrep -f 'bewitchd.*data/bewitch.toml')
 ## Capture Command
 
 ```bash
-./bin/bewitch -config data/bewitch.toml capture-views site/public/screenshots/
+./bin/bewitch -config data/bewitch.toml capture-views site/static/screenshots/
 ```
 
-This captures all 8 views (Dashboard, CPU, Memory, Disk, Network, Hardware, Process, Alerts) as PNG files rendered with embedded Noto Sans Mono fonts at 144 DPI (2x resolution).
+This captures all views (Dashboard, CPU, Memory, Disk, Network, Hardware, Process, Alerts, plus Services whenever custom sources exist; mock mode always has two) as PNG files rendered with embedded Noto Sans Mono fonts at 144 DPI (2x resolution).
 
 ### Options
 
@@ -70,7 +71,7 @@ Mock mode generates synthetic data for all collectors including temperature, pow
 
 ## Output Files
 
-The command writes these files to `site/public/screenshots/`:
+The command writes these files to `site/static/screenshots/`:
 
 - `dashboard.png`
 - `cpu.png`
@@ -80,10 +81,11 @@ The command writes these files to `site/public/screenshots/`:
 - `hardware.png`
 - `process.png`
 - `alerts.png`
+- `services.png`
 
 ## Homepage Integration
 
-The homepage at `site/src/pages/home.tsx` references these images in the "See it in action" slideshow section. The `<img>` tags have `width` and `height` attributes that should match the pixel dimensions printed by the capture command.
+The homepage template `site/templates/index.html` and the repo `README.md` reference these images. The homepage `<img>` tags have `width` and `height` attributes that should match the pixel dimensions printed by the capture command (currently 2072x1280).
 
 ## Instructions
 
@@ -93,23 +95,24 @@ When invoked:
    ```bash
    make build
    ```
-2. Start the mock daemon and wait for data:
+2. Start the mock daemon on a fresh database and wait for seeding (see "Mock Daemon Setup"):
    ```bash
+   rm -f /tmp/bewitch.duckdb /tmp/bewitch.duckdb.wal /tmp/bewitch.sock && rm -rf /tmp/archive
    ./bin/bewitchd -config data/bewitch.toml &>/tmp/bewitchd.log &
-   sleep 10
+   # wait for "mock alerts seeded" (and "compaction complete") in /tmp/bewitchd.log, then ~20s
    ```
 3. Capture all views:
    ```bash
-   ./bin/bewitch -config data/bewitch.toml capture-views site/public/screenshots/
+   ./bin/bewitch -config data/bewitch.toml capture-views site/static/screenshots/
    ```
 4. Note the pixel dimensions from the output (e.g., `2072x1288 pixels`)
 5. Kill the daemon:
    ```bash
    kill $(pgrep -f 'bewitchd.*data/bewitch.toml')
    ```
-6. Check the `width` and `height` attributes in `site/src/pages/home.tsx` — update them if the dimensions changed
+6. Check the `width` and `height` attributes in `site/templates/index.html`; update them if the dimensions changed
 7. Review the captured PNGs by reading them (Claude can view PNG images)
-8. Ask if the user wants to rebuild the site (`cd site && bun run build`)
+8. Ask if the user wants to rebuild the site (`make site`, or `cd site && zola build`)
 
 ## Capture Settings
 

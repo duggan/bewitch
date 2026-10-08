@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"math"
 	"time"
 
 	"github.com/duggan/bewitch/internal/config"
@@ -49,9 +50,41 @@ func NewMockCustomSourceCollector(cfg config.CustomSourceConfig) *MockCustomSour
 
 func (c *MockCustomSourceCollector) Name() string { return "custom:" + c.cfg.Name }
 
+// MockCustomValue returns a plausible value for one of MockCustomSources'
+// metrics at time t (unix seconds), so the live mock collector and the
+// history seeder agree and the Services tab looks like the real services:
+// Pi-hole's blocked count and percentage are consistent with its query count,
+// Home Assistant's entity/automation counts are steady. ok is false for
+// metrics it doesn't model.
+func MockCustomValue(source, metric string, t float64) (v float64, ok bool) {
+	wave := func(min, max, period, phase float64) float64 {
+		return min + (max-min)*(math.Sin(t*2*math.Pi/period+phase)+1)/2
+	}
+	queries := math.Round(wave(18000, 46000, 86400, 0))
+	blockedFrac := wave(0.18, 0.31, 21600, 1.3)
+	switch source + "/" + metric {
+	case "pihole/queries":
+		return queries, true
+	case "pihole/blocked":
+		return math.Round(queries * blockedFrac), true
+	case "pihole/block_pct":
+		return math.Round(blockedFrac*1000) / 10, true
+	case "homeassistant/entities":
+		return math.Round(wave(181, 189, 7200, 0.4)), true
+	case "homeassistant/automations":
+		return math.Round(wave(23, 26, 43200, 2.1)), true
+	}
+	return 0, false
+}
+
 func (c *MockCustomSourceCollector) Collect() (Sample, error) {
 	data := CustomSourceData{Source: c.cfg.Name}
+	now := float64(time.Now().UnixNano()) / 1e9
 	for i, m := range c.cfg.Metrics {
+		if v, ok := MockCustomValue(c.cfg.Name, m.Name, now); ok {
+			data.Metrics = append(data.Metrics, CustomMetricSample{Name: m.Name, Unit: m.Unit, Value: v})
+			continue
+		}
 		phase := float64(i) * 0.7
 		var v float64
 		switch m.Unit {

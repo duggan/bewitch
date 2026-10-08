@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+
+	"github.com/duggan/bewitch/internal/collector"
 )
 
 // smoothWaveAt returns a value oscillating between min and max using a sine wave
@@ -128,6 +130,13 @@ func (s *Store) SeedMockHistory() error {
 	}
 	defer powerStmt.Close()
 
+	customStmt, err := tx.Prepare("INSERT INTO custom_metrics (ts, source, metric, value) VALUES (?, ?, ?, ?)")
+	if err != nil {
+		return fmt.Errorf("prepare custom: %w", err)
+	}
+	defer customStmt.Close()
+	mockSources := collector.MockCustomSources()
+
 	gpuStmt, err := tx.Prepare("INSERT INTO gpu_metrics (ts, gpu_id, utilization_pct, memory_used_bytes, memory_total_bytes, temp_celsius, power_watts, frequency_mhz, frequency_max_mhz, throttle_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return fmt.Errorf("prepare gpu: %w", err)
@@ -154,11 +163,17 @@ func (s *Store) SeedMockHistory() error {
 		for i := 0; i < steps; i++ {
 			ts := tierStart.Add(time.Duration(i) * tier.interval)
 			t := float64(ts.UnixNano()) / 1e9
+			// Daily and weekly rhythm (busier by day, a slow weekly drift) so
+			// long-range charts, which average into hour-plus buckets, look like
+			// a real host instead of flattening the minute-scale waves to a line.
+			day := (math.Sin(2*math.Pi*t/86400-math.Pi/2) + 1) / 2
+			week := 0.8 + 0.2*math.Sin(2*math.Pi*t/(7*86400))
+			load := day * week // 0..1
 
 		// CPU - aggregate + 8 cores
 		{
-			user := smoothWaveAt(t, 5, 25, 120, 0)
-			sys := smoothWaveAt(t, 2, 10, 90, 1.0)
+			user := 3 + 34*load + smoothWaveAt(t, 0, 6, 120, 0)
+			sys := 1.5 + 9*load + smoothWaveAt(t, 0, 2, 90, 1.0)
 			iow := smoothWaveAt(t, 0, 3, 200, 2.0)
 			idle := math.Max(0, 100-user-sys-iow)
 			cpuStmt.Exec(ts, -1, user, sys, idle, iow)
@@ -175,7 +190,7 @@ func (s *Store) SeedMockHistory() error {
 
 		// Memory
 		{
-			usedPct := smoothWaveAt(t, 0.40, 0.65, 600, 0)
+			usedPct := 0.38 + 0.24*load + smoothWaveAt(t, 0, 0.04, 600, 0)
 			used := uint64(float64(memTotal) * usedPct)
 			buffers := uint64(float64(memTotal) * smoothWaveAt(t, 0.01, 0.03, 300, 1.5))
 			cached := uint64(float64(memTotal) * smoothWaveAt(t, 0.10, 0.20, 400, 2.0))
@@ -205,7 +220,7 @@ func (s *Store) SeedMockHistory() error {
 		{
 			netStmt.Exec(ts,
 				dimIDs["interface/eth0"],
-				smoothWaveAt(t, 1e6, 50e6, 45, 0), smoothWaveAt(t, 0.5e6, 20e6, 60, 0.5),
+				1e6+48e6*load+smoothWaveAt(t, 0, 4e6, 45, 0), 0.5e6+18e6*load+smoothWaveAt(t, 0, 2e6, 60, 0.5),
 				smoothWaveAt(t, 1000, 40000, 45, 0), smoothWaveAt(t, 500, 15000, 60, 0.5),
 			)
 			netStmt.Exec(ts,
@@ -228,7 +243,8 @@ func (s *Store) SeedMockHistory() error {
 				{"sensor/acpitz/temp1", 30, 40, 300, 1.5},
 			}
 			for _, s := range sensors {
-				tempStmt.Exec(ts, dimIDs[s.key], smoothWaveAt(t, s.min, s.max, s.period, s.phase))
+				temp := s.min + (s.max-s.min)*(0.15+0.7*load) + smoothWaveAt(t, 0, 3, s.period, s.phase)
+				tempStmt.Exec(ts, dimIDs[s.key], temp)
 			}
 		}
 
@@ -244,7 +260,8 @@ func (s *Store) SeedMockHistory() error {
 				{"zone/package-0/uncore", 2, 10, 120, 1.0},
 			}
 			for _, z := range zones {
-				powerStmt.Exec(ts, dimIDs[z.key], smoothWaveAt(t, z.min, z.max, z.period, z.phase))
+				watts := z.min + (z.max-z.min)*(0.1+0.8*load) + smoothWaveAt(t, 0, (z.max-z.min)*0.08, z.period, z.phase)
+				powerStmt.Exec(ts, dimIDs[z.key], watts)
 			}
 		}
 
@@ -263,13 +280,22 @@ func (s *Store) SeedMockHistory() error {
 			// NVIDIA discrete
 			gpuStmt.Exec(ts,
 				dimIDs["gpu/NVIDIA GeForce RTX 4090"],
-				smoothWaveAt(t, 10, 85, 45, 2.0),                     // utilization
+				5+75*load+smoothWaveAt(t, 0, 8, 45, 2.0),             // utilization
 				int64(smoothWaveAt(t, 2e9, 18e9, 120, 0.5)), int64(24e9), // memory
 				smoothWaveAt(t, 35, 78, 90, 1.0),                     // temp
 				smoothWaveAt(t, 30, 350, 45, 1.5),                    // power
 				int32(smoothWaveAt(t, 210, 2520, 60, 0)), int32(2520), // freq
 				0.0, // throttle (N/A for NVIDIA)
 			)
+		}
+
+		// Custom sources (the Services tab)
+		for _, src := range mockSources {
+			for _, m := range src.Metrics {
+				if v, ok := collector.MockCustomValue(src.Name, m.Name, t); ok {
+					customStmt.Exec(ts, src.Name, m.Name, v)
+				}
+			}
 		}
 	}
 	}
@@ -279,6 +305,22 @@ func (s *Store) SeedMockHistory() error {
 	}
 
 	log.Infof("mock history seeded successfully")
+	return nil
+}
+
+// SeedMock seeds mock history and demo alerts while holding the maintenance
+// lock. A startup archive pass is followed by a compaction, which swaps the
+// database file; without the lock, a concurrent seeding transaction could
+// commit into the file being replaced and its 30 days of history vanished.
+func (s *Store) SeedMock() error {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	if err := s.SeedMockHistory(); err != nil {
+		return fmt.Errorf("history: %w", err)
+	}
+	if err := SeedMockAlerts(s.DB()); err != nil {
+		return fmt.Errorf("alerts: %w", err)
+	}
 	return nil
 }
 

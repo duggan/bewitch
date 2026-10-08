@@ -114,11 +114,8 @@ func main() {
 		// daemon socket comes up immediately (seeding can take 10+ seconds
 		// on slow CI machines).
 		go func() {
-			if err := st.SeedMockHistory(); err != nil {
-				log.Errorf("seeding mock history: %v", err)
-			}
-			if err := store.SeedMockAlerts(database); err != nil {
-				log.Errorf("seeding mock alerts: %v", err)
+			if err := st.SeedMock(); err != nil {
+				log.Errorf("seeding mock data: %v", err)
 			}
 		}()
 		cpuCollector = collector.NewMockCPUCollector()

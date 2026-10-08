@@ -3570,6 +3570,7 @@ var captureFileName = map[view]string{
 	viewHardware:  "hardware",
 	viewProcess:   "process",
 	viewAlerts:    "alerts",
+	viewServices:  "services",
 }
 
 // CaptureAllViews renders all views to PNG files in dir.
@@ -3587,6 +3588,11 @@ func (m *Model) CaptureAllViews(dir string) (imgW, imgH int, files []string, err
 	m.initSelectionMaps()
 
 	views := []view{viewDashboard, viewCPU, viewMemory, viewDisk, viewNetwork, viewHardware, viewProcess, viewAlerts}
+	if len(m.customSources) > 0 {
+		// The Services tab only exists when custom sources are configured
+		// (mock mode synthesizes two).
+		views = append(views, viewServices)
+	}
 	for _, v := range views {
 		name, ok := captureFileName[v]
 		if !ok {
