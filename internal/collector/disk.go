@@ -262,7 +262,7 @@ func (c *DiskCollector) readSMARTDevice(devPath string) *SMARTInfo {
 		if closeErr := dev.Close(); closeErr != nil {
 			log.Warnf("smart: error closing %s: %v", devPath, closeErr)
 		}
-		if info.Available {
+		if info.Available && hasSMARTData(info) {
 			delete(c.smartLoggedErr, devPath)
 			return info
 		}
@@ -271,7 +271,7 @@ func (c *DiskCollector) readSMARTDevice(devPath string) *SMARTInfo {
 
 	// Library failed — try direct SAT passthrough for SATA drives with
 	// broken vendor ident detection.
-	if info, satErr := satSMARTInfo(devPath); satErr == nil {
+	if info, satErr := satSMARTInfo(devPath); satErr == nil && hasSMARTData(info) {
 		delete(c.smartLoggedErr, devPath)
 		return info
 	}
@@ -294,6 +294,20 @@ func (c *DiskCollector) readSMARTDevice(devPath string) *SMARTInfo {
 		c.smartLoggedErr[devPath] = true
 	}
 	return &SMARTInfo{} // Available=false
+}
+
+// hasSMARTData reports whether a fallback-path reading contains any actual
+// SMART data. The library and SAT paths mark a device Available/Healthy before
+// reading anything, so a device that accepts the commands but returns an empty
+// page — typically a USB flash stick behind a bridge smartctl doesn't know
+// (cube's SanDisk 0781:5583) — came out "healthy" with every field zero. Any
+// real drive reports at least power-on hours or a power-cycle count, so an
+// all-zero reading means "no SMART", not "healthy". (smartctl results carry
+// explicit status and don't go through this check.)
+func hasSMARTData(i *SMARTInfo) bool {
+	return i != nil && (i.PowerOnHours > 0 || i.PowerCycles > 0 || i.Temperature > 0 ||
+		i.ReadSectors > 0 || i.WrittenSectors > 0 || i.ReallocatedSectors > 0 ||
+		i.PendingSectors > 0 || i.UncorrectableErrs > 0 || i.AvailableSpare > 0 || i.PercentUsed > 0)
 }
 
 // openSMART tries smart.Open() auto-detection first, then falls back to

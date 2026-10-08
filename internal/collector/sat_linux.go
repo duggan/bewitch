@@ -151,6 +151,11 @@ func satSMARTInfo(devPath string) (*SMARTInfo, error) {
 		return nil, fmt.Errorf("parsing SMART page: %w", err)
 	}
 
+	if page.Attrs[0].ID == 0 {
+		// The bridge accepted the passthrough but returned no attribute table
+		// (common on USB flash sticks): there is no SMART here.
+		return nil, fmt.Errorf("SMART READ DATA returned no attributes")
+	}
 	for _, a := range page.Attrs {
 		if a.ID == 0 {
 			break

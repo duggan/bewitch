@@ -171,3 +171,26 @@ func TestRunSmartctlNVMeWithoutHealthLog(t *testing.T) {
 		t.Errorf("unexpected info %+v", info)
 	}
 }
+
+// TestHasSMARTData: an all-zero fallback reading (USB flash stick behind an
+// unknown bridge) must not count as SMART data, so it shows as unavailable
+// rather than "healthy". Any single real reading is enough.
+func TestHasSMARTData(t *testing.T) {
+	if hasSMARTData(nil) {
+		t.Error("nil reading counted as data")
+	}
+	if hasSMARTData(&SMARTInfo{Available: true, Healthy: true}) {
+		t.Error("empty Available/Healthy reading counted as data")
+	}
+	for name, info := range map[string]SMARTInfo{
+		"power-on hours": {PowerOnHours: 1},
+		"power cycles":   {PowerCycles: 3},
+		"temperature":    {Temperature: 41},
+		"reallocated":    {ReallocatedSectors: 2},
+		"nvme wear":      {PercentUsed: 4},
+	} {
+		if !hasSMARTData(&info) {
+			t.Errorf("%s alone should count as SMART data", name)
+		}
+	}
+}
