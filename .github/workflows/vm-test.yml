@@ -1,0 +1,63 @@
+name: VM Test
+
+# Boots a real Debian VM under QEMU/KVM, upgrades from the previous stable
+# release to a freshly built package, and checks the hardened systemd units on
+# emulated NVMe + LVM: the NVMe SMART helper, LVM disk I/O, the daemon's
+# capabilities, phantom sandbox mounts, and compaction-then-restart. The
+# containers in e2e.yml have no systemd, so none of that is exercised there.
+# Manual for now; see scripts/vm-test/.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/vm-test] # temporary: lets the workflow run before it exists on main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compute version
+        id: version
+        run: echo "version=$(cat VERSION)~vmtest.$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build package
+        run: >-
+          docker build -f Dockerfile.build
+          --build-arg BEWITCH_VERSION=${{ steps.version.outputs.version }}
+          -o dist .
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-amd64
+          path: dist/
+
+  vm:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    name: debian-13 VM (upgrade from stable)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist-amd64
+          path: dist/
+
+      - name: Run VM test
+        run: bash scripts/vm-test/run-vm.sh "$(ls dist/bewitch_*_amd64.deb | head -1)" "$RUNNER_TEMP/vm"
+
+      - name: Collect VM logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vm-logs
+          path: |
+            ${{ runner.temp }}/vm/serial.log
+            ${{ runner.temp }}/vm/journal.log
+          if-no-files-found: ignore
