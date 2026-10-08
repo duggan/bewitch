@@ -19,12 +19,18 @@ mkdir -p "$WORK"
 cd "$WORK"
 
 echo "::group::Host setup"
-sudo apt-get update -qq
-sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils >/dev/null
-# GitHub's Ubuntu runners expose /dev/kvm but not to the runner user by default.
-echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules >/dev/null
-sudo udevadm control --reload-rules
-sudo udevadm trigger --name-match=kvm
+# Only install/configure what's missing, so this can also run on a dev box
+# without changing it.
+if ! command -v qemu-system-x86_64 >/dev/null || ! command -v qemu-img >/dev/null || ! command -v cloud-localds >/dev/null; then
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils >/dev/null
+fi
+if ! [ -r /dev/kvm ] || ! [ -w /dev/kvm ]; then
+  # GitHub's Ubuntu runners expose /dev/kvm but not to the runner user by default.
+  echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules >/dev/null
+  sudo udevadm control --reload-rules
+  sudo udevadm trigger --name-match=kvm
+fi
 ls -l /dev/kvm
 echo "::endgroup::"
 

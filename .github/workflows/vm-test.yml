@@ -56,7 +56,7 @@ jobs:
 
       - name: Run VM test
         env:
-          BASELINE: ${{ (github.event_name == 'push' || inputs.baseline) && '1' || '0' }} # temporary: push runs the baseline control
+          BASELINE: ${{ inputs.baseline && '1' || '0' }}
         run: bash scripts/vm-test/run-vm.sh "$(ls dist/bewitch_*_amd64.deb | head -1)" "$RUNNER_TEMP/vm"
 
       - name: Collect VM logs

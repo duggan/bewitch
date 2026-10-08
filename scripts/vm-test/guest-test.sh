@@ -73,7 +73,9 @@ echo "::endgroup::"
 echo "::group::NVMe SMART helper"
 systemctl start bewitch-smart.service || true
 check "helper wrote an NVMe snapshot" wait_for 60 test -s /var/lib/bewitch/smart/nvme0n1.json
-check "snapshot reports SMART available" jq -e '.info.Available == true' /var/lib/bewitch/smart/nvme0n1.json
+# Require real data, not just "available": 0.8.0 reported NVMe SMART as
+# available+healthy with every field zero when the health log was unreadable.
+check "snapshot has real NVMe SMART data" jq -e '.info.Available == true and .info.Temperature > 0' /var/lib/bewitch/smart/nvme0n1.json
 systemctl show bewitch-smart.service -p Result -p ExecMainStatus
 # The daemon reads snapshots at its SMART refresh; restart so it picks this one
 # up now rather than in smart_interval (5m).
@@ -82,7 +84,7 @@ wait_for 30 sh -c "curl -fsS --unix-socket $SOCK http://x/api/metrics/disk | jq 
 DISK=$(api /api/metrics/disk)
 echo "$DISK" | jq -c '[.disks[] | {mount, device, smart_available}]'
 check "LVM mount /srv/data is listed" sh -c "echo '$DISK' | jq -e '.disks[] | select(.mount == \"/srv/data\")' >/dev/null"
-check "NVMe SMART available to the unprivileged daemon (via helper)" sh -c "echo '$DISK' | jq -e '.disks[] | select(.mount == \"/srv/data\") | .smart_available == true' >/dev/null"
+check "unprivileged daemon reports real NVMe SMART data (via helper)" sh -c "echo '$DISK' | jq -e '.disks[] | select(.mount == \"/srv/data\") | .smart_available == true and (.smart_temperature // 0) > 0' >/dev/null"
 check "no phantom sandbox mounts (/var/lib/bewitch, /var/tmp)" sh -c "! echo '$DISK' | jq -e '.disks[] | select(.mount == \"/var/lib/bewitch\" or .mount == \"/var/tmp\")' >/dev/null"
 echo "::endgroup::"
 
