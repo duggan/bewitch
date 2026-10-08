@@ -4,19 +4,61 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/smtp"
+	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/charmbracelet/log"
 
 	"github.com/duggan/bewitch/internal/config"
 )
 
 // EmailNotifier delivers alerts via SMTP email.
 type EmailNotifier struct {
-	cfg config.EmailDest
+	cfg         config.EmailDest
+	logLocalMTA sync.Once
+}
+
+// use_mail_cmd under the hardened systemd unit.
+//
+// The packaged unit sets NoNewPrivileges (and RestrictSUIDSGID), so exec'ing
+// mail(1) can't gain the setgid/setuid bits a local MTA's submission helper
+// relies on: Postfix's sendmail hands off to setgid-postdrop, which then fails
+// "mail_queue_enter: create file maildrop/…: Permission denied" and retries
+// until our 10s timeout — every alert was silently dropped. Exim and classic
+// sendmail are setuid/setgid the same way. Rather than weaken the sandbox, when
+// NoNewPrivileges is in effect we hand the message to the local MTA over SMTP
+// on loopback (an MTA that relays for local mail listens there by default).
+// If nothing is listening, mail(1) is still tried, which covers relays like
+// msmtp/ssmtp that need no privileges.
+var (
+	localMTAAddr = "127.0.0.1:25"
+	noNewPrivsFn = noNewPrivs
+)
+
+var errNoLocalMTA = errors.New("no local MTA listening")
+
+// notifyCmdTimeout bounds the mail(1) and command notifiers (a var for tests).
+var notifyCmdTimeout = 10 * time.Second
+
+// noNewPrivs reports whether this process runs with no_new_privs set.
+func noNewPrivs() bool {
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if v, ok := strings.CutPrefix(line, "NoNewPrivs:"); ok {
+			return strings.TrimSpace(v) == "1"
+		}
+	}
+	return false
 }
 
 func NewEmailNotifier(cfg config.EmailDest) *EmailNotifier {
@@ -65,6 +107,22 @@ func (n *EmailNotifier) Send(a *Alert) NotifyResult {
 	if n.cfg.UseMailCmd {
 		result.Body = body
 		start := time.Now()
+		if noNewPrivsFn() {
+			err := n.sendLocalMTA(subject, body)
+			if err == nil {
+				n.logLocalMTA.Do(func() {
+					log.Infof("email: use_mail_cmd: delivering via the local MTA at %s (NoNewPrivileges blocks the setgid/setuid helpers mail(1) relies on)", localMTAAddr)
+				})
+				result.Latency = time.Since(start)
+				return result
+			}
+			if !errors.Is(err, errNoLocalMTA) {
+				result.Latency = time.Since(start)
+				result.Error = fmt.Sprintf("local MTA %s: %v", localMTAAddr, err)
+				return result
+			}
+			// Nothing on loopback:25 — fall back to mail(1) (works for msmtp-style relays).
+		}
 		err := n.sendMailCmd(subject, body)
 		result.Latency = time.Since(start)
 		if err != nil {
@@ -94,8 +152,33 @@ func (n *EmailNotifier) Send(a *Alert) NotifyResult {
 	return result
 }
 
+// sendLocalMTA submits the message to the local MTA over SMTP on loopback: no
+// TLS or auth (it never leaves the host), relayed as local mail.
+func (n *EmailNotifier) sendLocalMTA(subject, body string) error {
+	conn, err := net.DialTimeout("tcp", localMTAAddr, 3*time.Second)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errNoLocalMTA, err)
+	}
+	c, err := smtp.NewClient(conn, "localhost")
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("smtp client: %w", err)
+	}
+	defer c.Close()
+
+	from := n.cfg.From
+	if from == "" {
+		// mail(1) lets the MTA pick the sender; over SMTP we must name one.
+		host, _ := os.Hostname()
+		from = "bewitch@" + host
+	}
+	msg := fmt.Sprintf("Subject: %s\r\nFrom: %s\r\nTo: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s",
+		subject, from, strings.Join(n.cfg.To, ", "), body)
+	return deliverMessage(c, from, n.cfg.To, msg)
+}
+
 func (n *EmailNotifier) sendMailCmd(subject, body string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), notifyCmdTimeout)
 	defer cancel()
 
 	args := []string{"-s", subject}
@@ -105,6 +188,7 @@ func (n *EmailNotifier) sendMailCmd(subject, body string) error {
 	args = append(args, n.cfg.To...)
 
 	cmd := exec.CommandContext(ctx, "mail", args...)
+	contain(cmd)
 	cmd.Stdin = bytes.NewReader([]byte(body))
 
 	var stderr bytes.Buffer
@@ -112,7 +196,7 @@ func (n *EmailNotifier) sendMailCmd(subject, body string) error {
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("mail command timed out (10s)")
+			return fmt.Errorf("mail command timed out (%s)", notifyCmdTimeout)
 		}
 		if stderr.Len() > 0 {
 			return fmt.Errorf("%w: %s", err, stderr.String())
@@ -187,10 +271,14 @@ func (n *EmailNotifier) sendMailImplicitTLS(addr string, msg string) error {
 }
 
 func (n *EmailNotifier) deliverMessage(c *smtp.Client, msg string) error {
-	if err := c.Mail(n.cfg.From); err != nil {
+	return deliverMessage(c, n.cfg.From, n.cfg.To, msg)
+}
+
+func deliverMessage(c *smtp.Client, from string, to []string, msg string) error {
+	if err := c.Mail(from); err != nil {
 		return fmt.Errorf("mail from: %w", err)
 	}
-	for _, rcpt := range n.cfg.To {
+	for _, rcpt := range to {
 		if err := c.Rcpt(rcpt); err != nil {
 			return fmt.Errorf("rcpt %s: %w", rcpt, err)
 		}

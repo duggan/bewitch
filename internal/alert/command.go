@@ -34,10 +34,11 @@ func (n *CommandNotifier) Send(a *Alert) NotifyResult {
 		return result
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), notifyCmdTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	contain(cmd)
 	status := "firing"
 	if a.Resolved {
 		status = "resolved"
@@ -69,7 +70,7 @@ func (n *CommandNotifier) Send(a *Alert) NotifyResult {
 
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			result.Error = "command timed out (10s)"
+			result.Error = fmt.Sprintf("command timed out (%s)", notifyCmdTimeout)
 		} else {
 			result.Error = fmt.Sprintf("exit: %v", err)
 		}

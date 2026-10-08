@@ -46,14 +46,16 @@ Alerts can be delivered via email or shell command. All are configured in the TO
 
 ### Email (local mail command)
 
-Send email alerts using the local `mail` command (postfix/sendmail). No SMTP configuration needed.
+Send email alerts through the host's own mail system (Postfix, Exim, sendmail, or a relay like msmtp). No SMTP configuration needed.
 
 ```toml
 [[alerts.email]]
 use_mail_cmd = true
 to = ["admin@example.com"]
-from = "bewitch@myserver.local"  # optional, uses system default if omitted
+from = "bewitch@myserver.local"  # optional; defaults to bewitch@<hostname>
 ```
+
+**Under the packaged service** (which sets `NoNewPrivileges`), bewitch can't use the setgid/setuid helpers that Postfix, Exim and sendmail rely on for local submission (Postfix's `postdrop` fails with `Permission denied`). So when it detects `NoNewPrivileges`, bewitch hands the message to the local MTA over SMTP on `127.0.0.1:25` instead, without TLS or authentication since it never leaves the host. Your MTA must therefore be **running and listening on loopback**: Postfix does by default (`inet_interfaces` includes loopback and `mynetworks` includes `127.0.0.0/8`). If nothing is listening there, bewitch falls back to running `mail`, which works for unprivileged relays such as msmtp. The daemon logs which path it used the first time it sends.
 
 ### Email (SMTP)
 

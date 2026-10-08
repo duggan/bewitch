@@ -33,11 +33,13 @@ db_path = "/var/lib/bewitch/bewitch.duckdb"
 evaluation_interval = "10s"
 # Alert rules are now managed via the TUI (Alerts tab → press 'n' to create)
 
-# Local mail command (postfix/sendmail):
+# Local mail system (postfix/exim/sendmail/msmtp). Under the packaged (sandboxed)
+# service this is delivered to the local MTA over SMTP on 127.0.0.1:25, so the
+# MTA must be running; with nothing listening there, `mail` is run instead.
 # [[alerts.email]]
 # use_mail_cmd = true
 # to = ["admin@example.com"]
-# from = "bewitch@myserver.local"  # optional, uses system default if omitted
+# from = "bewitch@myserver.local"  # optional, defaults to bewitch@<hostname>
 
 # Full SMTP:
 # [[alerts.email]]
