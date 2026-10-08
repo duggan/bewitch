@@ -92,7 +92,12 @@ Reads hardware sensor temperatures from `/sys/class/hwmon/`. Caches sensor paths
 
 ## Power
 
-Reads power consumption from Linux powercap/RAPL zones at `/sys/class/powercap/`. Delta-based, computes watts from energy counter differences. Caches zone paths (60s refresh).
+Reads RAPL energy counters and computes watts from their differences. Two sources, same zone names:
+
+- **powercap** (`/sys/class/powercap/*/energy_uj`) when readable. Since kernel 5.10 these files are root-only (a side-channel mitigation, CVE-2020-8694), so this path is used when bewitchd runs as root.
+- **perf events** (the kernel's `power` PMU, e.g. `energy-pkg`) otherwise. This is how the packaged daemon, which runs as the unprivileged `bewitch` user, reads power: it needs `CAP_PERFMON`, which the packaged service grants. Custom units need `AmbientCapabilities=CAP_PERFMON` (or `kernel.perf_event_paranoid <= 0`).
+
+If RAPL counters exist but neither source is readable, the daemon logs a warning saying why. VMs and most ARM boards have no RAPL; the collector stays silent there. Caches zone paths (60s refresh).
 
 - **Metrics:** watts per power zone (package, core, uncore, DRAM)
 - **Storage:** `power_metrics` table with dimension IDs for zone names

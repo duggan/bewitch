@@ -1,11 +1,15 @@
 package collector
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/log"
 )
 
 // powercapRoot is the sysfs powercap directory. A package var so tests can point
@@ -27,16 +31,30 @@ type zonePath struct {
 	maxRange   int64 // max_energy_range_uj: energy_uj wraps back to 0 at this value
 }
 
+// energyZone is a RAPL domain read as cumulative joules, from either a powercap
+// energy_uj file or a perf counter.
+type energyZone struct {
+	name  string
+	wrapJ float64 // the counter wraps back to 0 at this many joules; 0 = never wraps
+	read  func() (float64, error)
+}
+
 type PowerCollector struct {
-	zones    []zonePath
-	prev     map[string]int64 // zone path -> energy_uj
+	zones    []energyZone
+	source   string             // "powercap", "perf", or "" (none readable)
+	prev     map[string]float64 // zone name -> cumulative joules
 	prevTime time.Time
 	sysfsCache
+
+	perf      []*perfCounter // kept open across rediscovery (opened once)
+	perfZones []energyZone
+	perfTried bool
+	warned    bool
 }
 
 func NewPowerCollector() *PowerCollector {
 	c := &PowerCollector{
-		zones: make([]zonePath, 0, 8),
+		zones: make([]energyZone, 0, 8),
 	}
 	c.discoverZones()
 	return c
@@ -44,8 +62,74 @@ func NewPowerCollector() *PowerCollector {
 
 func (c *PowerCollector) Name() string { return "power" }
 
+// discoverZones picks the energy source: powercap when its energy_uj files are
+// readable (root, or a host that relaxed them — keeps mmio/psys coverage), else
+// the RAPL perf events (CAP_PERFMON; the packaged unprivileged daemon's path).
 func (c *PowerCollector) discoverZones() {
-	c.zones = c.zones[:0]
+	defer c.markRefreshed()
+
+	var pcErr error
+	if pc := discoverPowercapZones(); len(pc) > 0 {
+		if _, pcErr = pc[0].read(); pcErr == nil {
+			c.useZones("powercap", pc)
+			return
+		}
+	}
+
+	if !c.perfTried {
+		c.perfTried = true
+		perfErr := c.openPerfZones()
+		// Stay quiet on hosts with no RAPL at all (VMs, ARM): no powercap zones and
+		// no power PMU. Warn when counters exist but neither path can read them.
+		if perfErr != nil && (pcErr != nil || !errors.Is(perfErr, os.ErrNotExist)) && !c.warned {
+			c.warned = true
+			log.Warnf("power: RAPL energy counters unreadable — powercap: %v; perf: %v. "+
+				"powercap energy_uj is root-only since kernel 5.10 (CVE-2020-8694); the perf "+
+				"path needs CAP_PERFMON (granted by the packaged unit) or perf_event_paranoid <= 0", pcErr, perfErr)
+		}
+	}
+	if len(c.perfZones) > 0 {
+		c.useZones("perf", c.perfZones)
+		return
+	}
+	c.useZones("", nil)
+}
+
+func (c *PowerCollector) useZones(source string, zones []energyZone) {
+	if source != c.source {
+		if source != "" {
+			log.Infof("power: reading RAPL energy via %s (%d zones)", source, len(zones))
+		}
+		c.prev = nil // different counters: don't difference across a switch
+		c.source = source
+	}
+	c.zones = zones
+}
+
+// openPerfZones opens one perf counter per RAPL event and package.
+func (c *PowerCollector) openPerfZones() error {
+	events, err := discoverPerfRAPL()
+	if err != nil {
+		return err
+	}
+	for _, ev := range events {
+		pc, err := openPerfCounter(ev)
+		if err != nil {
+			for _, open := range c.perf {
+				open.close()
+			}
+			c.perf, c.perfZones = nil, nil
+			return err
+		}
+		c.perf = append(c.perf, pc)
+		c.perfZones = append(c.perfZones, energyZone{name: ev.zone, read: pc.joules})
+	}
+	return nil
+}
+
+// discoverPowercapZones lists the powercap RAPL domains as energy zones.
+func discoverPowercapZones() []energyZone {
+	var zones []zonePath
 
 	// /sys/class/powercap is a flat directory of symlinks to every RAPL domain,
 	// so a sub-domain (intel-rapl:0:0) appears BOTH as a bare top-level entry
@@ -106,12 +190,28 @@ func (c *PowerCollector) discoverZones() {
 	}
 
 	for _, z := range byReal {
-		c.zones = append(c.zones, z)
+		zones = append(zones, z)
 	}
 	// Stable order so dimension IDs and tests are deterministic.
-	sort.Slice(c.zones, func(i, j int) bool { return c.zones[i].name < c.zones[j].name })
+	sort.Slice(zones, func(i, j int) bool { return zones[i].name < zones[j].name })
 
-	c.markRefreshed()
+	out := make([]energyZone, 0, len(zones))
+	for _, z := range zones {
+		path := z.energyPath
+		out = append(out, energyZone{
+			name:  z.name,
+			wrapJ: float64(z.maxRange) / 1e6,
+			read: func() (float64, error) {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return 0, err
+				}
+				uj, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+				return float64(uj) / 1e6, err
+			},
+		})
+	}
+	return out
 }
 
 func (c *PowerCollector) Collect() (Sample, error) {
@@ -121,14 +221,12 @@ func (c *PowerCollector) Collect() (Sample, error) {
 		c.discoverZones()
 	}
 
-	// Read current energy values
-	cur := make(map[string]int64, len(c.zones))
+	// Read current cumulative energy (joules) per zone.
+	cur := make(map[string]float64, len(c.zones))
 	for _, z := range c.zones {
-		val, err := strconv.ParseInt(strings.TrimSpace(readStringFile(z.energyPath)), 10, 64)
-		if err != nil {
-			continue
+		if j, err := z.read(); err == nil {
+			cur[z.name] = j
 		}
-		cur[z.energyPath] = val
 	}
 
 	var zones []PowerZoneSample
@@ -137,32 +235,32 @@ func (c *PowerCollector) Collect() (Sample, error) {
 		dt := now.Sub(c.prevTime).Seconds()
 		if dt > 0 {
 			for _, z := range c.zones {
-				curVal, ok := cur[z.energyPath]
+				curVal, ok := cur[z.name]
 				if !ok {
 					continue
 				}
-				prevVal, ok := c.prev[z.energyPath]
+				prevVal, ok := c.prev[z.name]
 				if !ok {
 					continue
 				}
 				delta := curVal - prevVal
 				if delta < 0 {
-					// energy_uj is a fixed-width counter that wraps back to 0 at
-					// max_energy_range_uj (~262 J on many package/core domains —
+					// powercap energy_uj is a fixed-width counter that wraps back to 0
+					// at max_energy_range_uj (~262 J on many package/core domains —
 					// every few seconds at tens of watts). Recover the real delta
 					// across the wrap instead of dropping the sample, which made
 					// high-draw zones vanish from the chart exactly under load.
-					if z.maxRange > 0 {
-						delta += z.maxRange
+					// (perf counters are 64-bit and don't wrap: wrapJ is 0.)
+					if z.wrapJ > 0 {
+						delta += z.wrapJ
 					}
 					if delta < 0 {
 						continue // no wrap range, or skew beyond one wrap — can't trust it
 					}
 				}
-				watts := float64(delta) / dt / 1e6
 				zones = append(zones, PowerZoneSample{
 					Zone:  z.name,
-					Watts: watts,
+					Watts: delta / dt,
 				})
 			}
 		}
