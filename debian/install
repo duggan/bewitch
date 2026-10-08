@@ -1,3 +1,4 @@
 bin/bewitchd usr/bin
 bin/bewitch usr/bin
 bewitch.example.toml usr/share/bewitch
+examples/sources.d/proxmox.toml usr/share/bewitch/examples/sources.d

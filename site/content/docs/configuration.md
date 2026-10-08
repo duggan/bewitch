@@ -105,7 +105,7 @@ Each collector has its own section with an `interval` field. If omitted, the col
 # interval = "30s"
 # smart_interval = "5m"         # SMART polling (0 to disable, min 30s)
 # exclude_mounts = ["/boot/efi"]  # additional mount exclusions
-# no_default_excludes = false    # true to disable defaults (/snap/, /run/)
+# no_default_excludes = false    # true to disable defaults (/snap/, /run/, /etc/pve)
 
 [collectors.network]
 # interval = "5s"

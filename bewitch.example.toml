@@ -89,7 +89,7 @@ refresh_interval = "2s"
 # smart_interval = "5m"  # how often to read SMART data from disks (requires CAP_SYS_RAWIO)
 # smart_helper_dir = "/var/lib/bewitch/smart"  # where bewitch-smart.timer drops NVMe SMART snapshots
 #                                              # (default: "smart" next to db_path)
-# Mount paths to exclude (prefix match). Default excludes: /snap/, /run/
+# Mount paths to exclude (prefix match). Default excludes: /snap/, /run/, /etc/pve
 # exclude_mounts = ["/boot/efi"]  # add to defaults
 # no_default_excludes = false  # set true to disable defaults
 

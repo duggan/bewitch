@@ -1,0 +1,174 @@
+# Proxmox VE API → bewitch custom sources.
+#
+# Copy to your sources_dir (default: a "sources.d" directory next to the config,
+# e.g. /etc/sources.d for /etc/bewitch.toml — or set [daemon] sources_dir), then:
+#
+#   sudo install -m 0640 -o root -g bewitch \
+#     /usr/share/bewitch/examples/sources.d/proxmox.toml /etc/sources.d/
+#
+# The file holds an API token, so keep it 0640 root:bewitch like bewitch.toml.
+#
+# 1. Create a read-only API token (PVEAuditor is enough):
+#      pveum user add bewitch@pve
+#      pveum acl modify / --users bewitch@pve --roles PVEAuditor
+#      pveum user token add bewitch@pve monitor --privsep 0
+#    and paste the printed secret into the header_value lines below.
+#
+# 2. Pin the API's self-signed certificate. Its SHA-256 fingerprint is shown in
+#    the web UI under Node → System → Certificates (pve-ssl.pem), or run on the host:
+#      openssl x509 -in /etc/pve/local/pve-ssl.pem -noout -fingerprint -sha256
+#    Replace the zeros below with it. Until you do, the daemon logs the
+#    fingerprint the server presented — check it against the UI before pinning.
+#
+# 3. Replace "pve" in the node status path with your node's name (`hostname`).
+#
+# Proxmox reports cpu as a 0..1 fraction (so unit = "raw"), memory/disk in bytes.
+
+[[custom_source]]
+name     = "pve-node"
+interval = "30s"
+base_url = "https://127.0.0.1:8006"
+
+  [custom_source.tls]
+  fingerprint = "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
+
+  [custom_source.request]
+  path = "/api2/json/nodes/pve/status"
+
+  [custom_source.auth]
+  type         = "header"            # not "bearer": PVE wants "PVEAPIToken=…", not "Bearer …"
+  header_name  = "Authorization"
+  header_value = "PVEAPIToken=bewitch@pve!monitor=00000000-0000-0000-0000-000000000000"
+
+  [[custom_source.metric]]
+  name = "cpu"
+  path = "data.cpu"
+  unit = "raw"
+
+  [[custom_source.metric]]
+  name = "load1"
+  path = "data.loadavg.0"
+  unit = "raw"
+
+  [[custom_source.metric]]
+  name = "mem_used"
+  path = "data.memory.used"
+  unit = "bytes"
+
+  [[custom_source.metric]]
+  name = "ksm_shared"
+  path = "data.ksm.shared"
+  unit = "bytes"
+
+  [[custom_source.metric]]
+  name = "rootfs_used"
+  path = "data.rootfs.used"
+  unit = "bytes"
+
+  [[custom_source.status]]
+  label = "PVE"
+  path  = "data.pveversion"
+
+  [[custom_source.status]]
+  label = "Kernel"
+  path  = "data.kversion"
+
+[[custom_source]]
+name     = "pve-guests"
+interval = "30s"
+base_url = "https://127.0.0.1:8006"
+
+  [custom_source.tls]
+  fingerprint = "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
+
+  [custom_source.request]
+  path = "/api2/json/cluster/resources?type=vm"
+
+  [custom_source.auth]
+  type         = "header"
+  header_name  = "Authorization"
+  header_value = "PVEAPIToken=bewitch@pve!monitor=00000000-0000-0000-0000-000000000000"
+
+  [[custom_source.metric]]
+  name = "running"
+  path = 'data.#(status=="running")#|#'
+  unit = "count"
+
+  [[custom_source.metric]]
+  name = "stopped"
+  path = 'data.#(status=="stopped")#|#'
+  unit = "count"
+
+  [[custom_source.metric]]
+  name = "locked"                     # backups, snapshots, migrations in flight
+  path = 'data.#(lock)#|#'
+  unit = "count"
+
+  # Per-guest metrics need one block per guest (select by name or vmid):
+  # [[custom_source.metric]]
+  # name = "homeassistant_cpu"
+  # path = 'data.#(name=="homeassistant").cpu'
+  # unit = "raw"
+  #
+  # [[custom_source.metric]]
+  # name = "vm100_mem"
+  # path = 'data.#(vmid==100).mem'
+  # unit = "bytes"
+
+[[custom_source]]
+name     = "pve-storage"
+interval = "60s"
+base_url = "https://127.0.0.1:8006"
+
+  [custom_source.tls]
+  fingerprint = "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
+
+  [custom_source.request]
+  path = "/api2/json/cluster/resources?type=storage"
+
+  [custom_source.auth]
+  type         = "header"
+  header_name  = "Authorization"
+  header_value = "PVEAPIToken=bewitch@pve!monitor=00000000-0000-0000-0000-000000000000"
+
+  # LVM-thin pool usage — bewitchd can't read it directly (device-mapper status
+  # needs CAP_SYS_ADMIN), but Proxmox computes it. Change "local-lvm" to match
+  # your storage ID; add blocks for other storages.
+  [[custom_source.metric]]
+  name = "local_lvm_used"
+  path = 'data.#(storage=="local-lvm").disk'
+  unit = "bytes"
+
+  [[custom_source.metric]]
+  name = "local_lvm_total"
+  path = 'data.#(storage=="local-lvm").maxdisk'
+  unit = "bytes"
+
+[[custom_source]]
+name     = "pve-cluster"
+interval = "30s"
+base_url = "https://127.0.0.1:8006"
+
+  [custom_source.tls]
+  fingerprint = "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
+
+  [custom_source.request]
+  path = "/api2/json/cluster/status"
+
+  [custom_source.auth]
+  type         = "header"
+  header_name  = "Authorization"
+  header_value = "PVEAPIToken=bewitch@pve!monitor=00000000-0000-0000-0000-000000000000"
+
+  [[custom_source.metric]]
+  name = "nodes_online"
+  path = 'data.#(type=="node")#|#(online==1)#|#'
+  unit = "count"
+
+  # Only present on a cluster; a single node simply omits this row.
+  [[custom_source.status]]
+  label = "Quorum"
+  path  = 'data.#(type=="cluster").quorate'
+    [custom_source.status.badges]
+    "1" = "ok"
+    "0" = "crit"

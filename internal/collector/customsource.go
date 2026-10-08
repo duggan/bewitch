@@ -2,14 +2,20 @@ package collector
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/tidwall/gjson"
 
 	"github.com/duggan/bewitch/internal/config"
@@ -69,6 +75,9 @@ func NewCustomSourceCollector(cfg config.CustomSourceConfig, interval time.Durat
 		// defence alongside Client.Timeout (which also covers body reads).
 		ResponseHeaderTimeout: timeout,
 	}
+	if cfg.TLS.IsSet() {
+		transport.TLSClientConfig = customTLSConfig(cfg)
+	}
 	base := strings.TrimRight(cfg.BaseURL, "/")
 	if cfg.UnixSocket != "" {
 		// Dial the unix socket regardless of the request host; the URL host is
@@ -102,6 +111,44 @@ func NewCustomSourceCollector(cfg config.CustomSourceConfig, interval time.Durat
 }
 
 func (c *CustomSourceCollector) Name() string { return "custom:" + c.cfg.Name }
+
+// customTLSConfig builds the client TLS config for a source's [tls] block.
+// Validate() already checked the options, so errors here can only come from a
+// ca_file changing after startup; those fall back to system roots (the request
+// then fails verification visibly rather than silently skipping it).
+func customTLSConfig(cfg config.CustomSourceConfig) *tls.Config {
+	t := &tls.Config{MinVersion: tls.VersionTLS12}
+	switch {
+	case cfg.TLS.Fingerprint != "":
+		want, _ := config.NormalizeFingerprint(cfg.TLS.Fingerprint)
+		// Pin the exact leaf certificate; chain and hostname are deliberately
+		// not checked (that's what a pin replaces), mirroring the TUI's TOFU.
+		t.InsecureSkipVerify = true
+		t.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+			if len(rawCerts) == 0 {
+				return fmt.Errorf("no certificate presented")
+			}
+			sum := sha256.Sum256(rawCerts[0])
+			if got := hex.EncodeToString(sum[:]); got != want {
+				// Show the server's fingerprint so a user can confirm it against the
+				// service's UI and pin it — never auto-trusted.
+				return fmt.Errorf("certificate fingerprint mismatch: pinned sha256:%s, server presented sha256:%s", want, got)
+			}
+			return nil
+		}
+	case cfg.TLS.CAFile != "":
+		if pem, err := os.ReadFile(cfg.TLS.CAFile); err == nil {
+			pool := x509.NewCertPool()
+			if pool.AppendCertsFromPEM(pem) {
+				t.RootCAs = pool
+			}
+		}
+	case cfg.TLS.InsecureSkipVerify:
+		log.Warnf("custom source %q: TLS certificate verification disabled (insecure_skip_verify); prefer tls.fingerprint", cfg.Name)
+		t.InsecureSkipVerify = true
+	}
+	return t
+}
 
 func (c *CustomSourceCollector) Collect() (Sample, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)

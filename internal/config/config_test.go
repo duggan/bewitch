@@ -237,7 +237,7 @@ func TestGetDiskExcludes(t *testing.T) {
 		{
 			"merge user with defaults",
 			DiskCollectorConfig{ExcludeMounts: []string{"/boot/"}},
-			[]string{"/snap/", "/run/", "/boot/"},
+			[]string{"/snap/", "/run/", "/etc/pve", "/boot/"},
 		},
 		{
 			"no default excludes",
@@ -252,7 +252,7 @@ func TestGetDiskExcludes(t *testing.T) {
 		{
 			"dedup user and defaults",
 			DiskCollectorConfig{ExcludeMounts: []string{"/snap/", "/extra/"}},
-			[]string{"/snap/", "/run/", "/extra/"},
+			[]string{"/snap/", "/run/", "/etc/pve", "/extra/"},
 		},
 	}
 	for _, tt := range tests {

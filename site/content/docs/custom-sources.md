@@ -123,6 +123,25 @@ Most local APIs want a token or login. The `[custom_source.auth]` block covers t
 You can also set arbitrary request headers under `[custom_source.request] headers = { ... }`.
 Secrets stay on the daemon host — they're never written to logs and never returned by the API.
 
+## Self-signed HTTPS
+
+Homelab services often serve HTTPS with a self-signed certificate (Proxmox VE on `:8006`,
+TrueNAS, OPNsense, UniFi). By default those fail verification. Add a `[custom_source.tls]` block
+with **one** of:
+
+```toml
+  [custom_source.tls]
+  fingerprint = "AB:CD:…"            # pin the server's certificate (SHA-256) — recommended
+  # ca_file = "/etc/bewitch/my-ca.pem" # or verify against your own CA (hostname is checked)
+  # insecure_skip_verify = true        # last resort: no verification (logged as a warning)
+```
+
+The fingerprint can be written `sha256:<hex>`, as plain hex, or colon-separated the way most web
+UIs display it. With a pin, bewitch checks that the server presents exactly that certificate and
+ignores the chain and hostname. If the pin doesn't match, the error names the fingerprint the
+server *did* present. Check it against the service's own UI before pinning it; bewitch never
+trusts it automatically.
+
 ## Talking to Docker (unix socket)
 
 Docker has no TCP port by default; it listens on a unix socket. Set `unix_socket` and bewitch dials

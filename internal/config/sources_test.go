@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -182,5 +183,34 @@ func TestDefaultSourcesDir(t *testing.T) {
 	d.SourcesDir = "/custom/dir"
 	if got := d.DefaultSourcesDir("/etc/bewitch.toml"); got != "/custom/dir" {
 		t.Errorf("explicit SourcesDir = %q, want /custom/dir", got)
+	}
+}
+
+func TestCustomSourceTLSValidation(t *testing.T) {
+	base := CustomSourceConfig{Name: "s", BaseURL: "https://127.0.0.1:8006",
+		Metrics: []CustomMetricSpec{{Name: "m", Path: "a", Unit: "raw"}}}
+	fp := strings.Repeat("ab", 32)
+	cases := []struct {
+		name    string
+		mut     func(c *CustomSourceConfig)
+		wantErr string
+	}{
+		{"fingerprint ok", func(c *CustomSourceConfig) { c.TLS.Fingerprint = "sha256:" + fp }, ""},
+		{"colon fingerprint ok", func(c *CustomSourceConfig) { c.TLS.Fingerprint = "AB:" + strings.Repeat("ab:", 30) + "AB" }, ""},
+		{"short fingerprint", func(c *CustomSourceConfig) { c.TLS.Fingerprint = "abcd" }, "64 hex"},
+		{"two modes", func(c *CustomSourceConfig) { c.TLS.Fingerprint = fp; c.TLS.InsecureSkipVerify = true }, "only one"},
+		{"tls on http", func(c *CustomSourceConfig) { c.BaseURL = "http://127.0.0.1:85"; c.TLS.InsecureSkipVerify = true }, "https"},
+		{"missing ca_file", func(c *CustomSourceConfig) { c.TLS.CAFile = "/nonexistent/ca.pem" }, "ca_file"},
+	}
+	for _, tc := range cases {
+		c := base
+		tc.mut(&c)
+		err := c.Validate()
+		if tc.wantErr == "" && err != nil {
+			t.Errorf("%s: unexpected error %v", tc.name, err)
+		}
+		if tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+			t.Errorf("%s: err = %v, want containing %q", tc.name, err, tc.wantErr)
+		}
 	}
 }

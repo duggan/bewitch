@@ -1,12 +1,15 @@
 package config
 
 import (
+	"crypto/x509"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -24,6 +27,7 @@ type CustomSourceConfig struct {
 	UnixSocket string              `toml:"unix_socket"` // dial a unix socket (e.g. Docker /var/run/docker.sock) instead of TCP
 	Request    CustomRequestConfig `toml:"request"`
 	Auth       CustomAuthConfig    `toml:"auth"`
+	TLS        CustomTLSConfig     `toml:"tls"`
 	Metrics    []CustomMetricSpec  `toml:"metric"`
 	Status     []CustomStatusSpec  `toml:"status"`
 }
@@ -34,6 +38,41 @@ type CustomRequestConfig struct {
 	Path    string            `toml:"path"`
 	Body    string            `toml:"body"` // optional request body (POST)
 	Headers map[string]string `toml:"headers"`
+}
+
+// CustomTLSConfig controls certificate verification for https sources whose
+// certificate isn't signed by a system-trusted CA (homelab services with
+// self-signed certs: Proxmox VE on :8006, TrueNAS, OPNsense, …). Pick one:
+//   - fingerprint: pin the server's leaf certificate by SHA-256 (as the
+//     Proxmox UI shows it under Node → System → Certificates); the chain and
+//     hostname are not checked, the exact certificate is.
+//   - ca_file: verify against this PEM CA bundle (with hostname checks).
+//   - insecure_skip_verify: no verification at all (logged as a warning).
+type CustomTLSConfig struct {
+	CAFile             string `toml:"ca_file"`
+	Fingerprint        string `toml:"fingerprint"`
+	InsecureSkipVerify bool   `toml:"insecure_skip_verify"`
+}
+
+// IsSet reports whether any TLS option was given.
+func (t CustomTLSConfig) IsSet() bool {
+	return t.CAFile != "" || t.Fingerprint != "" || t.InsecureSkipVerify
+}
+
+// NormalizeFingerprint accepts a SHA-256 certificate fingerprint as
+// "sha256:<hex>", plain hex, or colon-separated hex (any case) and returns
+// lowercase hex without separators.
+func NormalizeFingerprint(fp string) (string, error) {
+	s := strings.ToLower(strings.TrimSpace(fp))
+	s = strings.TrimPrefix(s, "sha256:")
+	s = strings.ReplaceAll(s, ":", "")
+	if len(s) != 64 {
+		return "", fmt.Errorf("fingerprint must be a SHA-256 (64 hex digits), got %d", len(s))
+	}
+	if _, err := hex.DecodeString(s); err != nil {
+		return "", fmt.Errorf("fingerprint is not hex: %w", err)
+	}
+	return s, nil
 }
 
 // CustomAuthConfig holds optional authentication applied to each request.
@@ -143,6 +182,34 @@ func (c *CustomSourceConfig) Validate() error {
 	if c.Timeout != "" {
 		if _, err := ParseDuration(c.Timeout); err != nil {
 			return fmt.Errorf("invalid timeout %q: %w", c.Timeout, err)
+		}
+	}
+	if c.TLS.IsSet() {
+		if c.UnixSocket != "" || !strings.HasPrefix(strings.ToLower(c.BaseURL), "https://") {
+			return fmt.Errorf("[tls] options only apply to an https:// base_url")
+		}
+		modes := 0
+		for _, set := range []bool{c.TLS.CAFile != "", c.TLS.Fingerprint != "", c.TLS.InsecureSkipVerify} {
+			if set {
+				modes++
+			}
+		}
+		if modes > 1 {
+			return fmt.Errorf("[tls]: set only one of fingerprint, ca_file, insecure_skip_verify")
+		}
+		if c.TLS.Fingerprint != "" {
+			if _, err := NormalizeFingerprint(c.TLS.Fingerprint); err != nil {
+				return fmt.Errorf("[tls] %w", err)
+			}
+		}
+		if c.TLS.CAFile != "" {
+			pem, err := os.ReadFile(c.TLS.CAFile)
+			if err != nil {
+				return fmt.Errorf("[tls] ca_file: %w", err)
+			}
+			if !x509.NewCertPool().AppendCertsFromPEM(pem) {
+				return fmt.Errorf("[tls] ca_file %s: no PEM certificates found", c.TLS.CAFile)
+			}
 		}
 	}
 	if !validAuthTypes[c.Auth.Type] {

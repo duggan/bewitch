@@ -320,7 +320,9 @@ func (c *DiskCollectorConfig) GetSMARTInterval() time.Duration {
 }
 
 // DefaultDiskExcludes are mount path prefixes excluded by default.
-var DefaultDiskExcludes = []string{"/snap/", "/run/"}
+// /etc/pve is Proxmox VE's pmxcfs cluster filesystem (FUSE from /dev/fuse, a
+// 128 MiB RAM-backed config DB): its statfs numbers aren't a disk.
+var DefaultDiskExcludes = []string{"/snap/", "/run/", "/etc/pve"}
 
 // GetDiskExcludes returns the effective list of mount exclusion prefixes.
 func (c *DiskCollectorConfig) GetDiskExcludes() []string {
