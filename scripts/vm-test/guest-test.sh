@@ -48,7 +48,17 @@ check "previous stable bewitchd is running" wait_for 30 systemctl is-active --qu
 echo "::endgroup::"
 
 echo "::group::Upgrade to the built package"
-UPGRADE_START=$(date '+%Y-%m-%d %H:%M:%S')
+# Post-upgrade journal checks must only see the upgraded daemon. A timestamp
+# (--since) has one-second resolution, and even a journal cursor isn't enough:
+# the previous release's daemon is "active" before its first SMART pass ends,
+# so its slow smartctl warnings can be logged after any cursor taken now.
+# Exclude the previous daemon's PID instead.
+OLD_PID=$(systemctl show -p MainPID --value bewitchd)
+UPGRADE_EPOCH=$(date +%s)
+since_upgrade() {
+  journalctl -u bewitchd --since "@$((UPGRADE_EPOCH - 5))" --no-pager -o short |
+    grep -v "bewitchd\[$OLD_PID\]" | sed 's/^[^]]*\]: //'
+}
 if [ "${BASELINE:-0}" = 1 ]; then
   # Negative control: run every check against the previous stable release only.
   # Checks covering bugs fixed since then must FAIL here, proving they detect them.
@@ -88,6 +98,15 @@ check "unprivileged daemon reports real NVMe SMART data (via helper)" sh -c "ech
 check "no phantom sandbox mounts (/var/lib/bewitch, /var/tmp)" sh -c "! echo '$DISK' | jq -e '.disks[] | select(.mount == \"/var/lib/bewitch\" or .mount == \"/var/tmp\")' >/dev/null"
 echo "::endgroup::"
 
+if [ "${FLAVOR:-debian}" = proxmox ]; then
+  echo "::group::Proxmox VE"
+  check "running a Proxmox kernel ($(uname -r))" sh -c "uname -r | grep -q pve"
+  check "/etc/pve (pmxcfs) is mounted" findmnt /etc/pve
+  check "/etc/pve is not listed as a disk" sh -c "! echo '$DISK' | jq -e '.disks[] | select(.mount == \"/etc/pve\")' >/dev/null"
+  check "no SMART probe of /dev/fuse" sh -c "! echo \"\$0\" | grep -q '/dev/fuse'" "$(since_upgrade)"
+  echo "::endgroup::"
+fi
+
 echo "::group::LVM disk I/O"
 ( for _ in $(seq 1 30); do dd if=/dev/zero of=/srv/data/load bs=1M count=64 oflag=direct status=none; sync; done ) &
 LOAD=$!
@@ -107,7 +126,7 @@ check "no restart loop" test "$(systemctl show -p NRestarts --value bewitchd)" =
 echo "::endgroup::"
 
 echo "::group::Journal"
-JOURNAL=$(journalctl -u bewitchd --since "$UPGRADE_START" --no-pager -o cat)
+JOURNAL=$(since_upgrade)
 check "no RAPL 'unreadable' warning on a host without RAPL" sh -c "! echo \"\$0\" | grep -q 'RAPL energy counters unreadable'" "$JOURNAL"
 ERRORS=$(echo "$JOURNAL" | grep -E ' (ERRO|FATA) ' || true)
 if [ -n "$ERRORS" ]; then echo "$ERRORS"; fi

@@ -5,11 +5,18 @@ name: VM Test
 # emulated NVMe + LVM: the NVMe SMART helper, LVM disk I/O, the daemon's
 # capabilities, phantom sandbox mounts, and compaction-then-restart. The
 # containers in e2e.yml have no systemd, so none of that is exercised there.
-# Manual for now; see scripts/vm-test/.
+# The proxmox flavor converts the VM to Proxmox VE 9 first (scripts/vm-test/
+# proxmox-prep.sh) and adds /etc/pve and Proxmox-kernel checks. The scripts
+# also run on any Linux box with KVM: FLAVOR=proxmox scripts/vm-test/run-vm.sh <deb>.
 
 on:
   workflow_dispatch:
     inputs:
+      flavor:
+        description: "debian: Debian 13 VM. proxmox: the same VM converted to Proxmox VE 9 (slower). both: run each."
+        type: choice
+        options: [debian, proxmox, both]
+        default: debian
       baseline:
         description: "Negative control: skip the upgrade and run the checks against the previous stable release (expect failures)"
         type: boolean
@@ -44,8 +51,13 @@ jobs:
   vm:
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    name: debian-13 VM (upgrade from stable)
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # Branch pushes (no inputs) run both flavors.
+        flavor: ${{ fromJSON((inputs.flavor == 'both' || inputs.flavor == '' || inputs.flavor == null) && '["debian","proxmox"]' || format('["{0}"]', inputs.flavor)) }}
+    name: ${{ matrix.flavor }} VM (upgrade from stable)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -56,6 +68,7 @@ jobs:
 
       - name: Run VM test
         env:
+          FLAVOR: ${{ matrix.flavor }}
           BASELINE: ${{ inputs.baseline && '1' || '0' }}
         run: bash scripts/vm-test/run-vm.sh "$(ls dist/bewitch_*_amd64.deb | head -1)" "$RUNNER_TEMP/vm"
 
@@ -63,7 +76,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: vm-logs
+          name: vm-logs-${{ matrix.flavor }}
           path: |
             ${{ runner.temp }}/vm/serial.log
             ${{ runner.temp }}/vm/journal.log

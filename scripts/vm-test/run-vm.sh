@@ -5,7 +5,8 @@
 # health log) so the NVMe SMART helper, LVM disk I/O and the hardened systemd
 # units are exercised for real — the containers in e2e.yml have no systemd.
 #
-# Usage: run-vm.sh <path/to/bewitch_*.deb> [workdir]
+# Usage: [FLAVOR=debian|proxmox] [BASELINE=1] run-vm.sh <path/to/bewitch_*.deb> [workdir]
+#   FLAVOR=proxmox converts the VM into a Proxmox VE 9 host first (proxmox-prep.sh).
 set -euo pipefail
 
 DEB=$(realpath "$1")
@@ -44,6 +45,7 @@ qemu-img create -q -f qcow2 nvme.qcow2 4G
 echo "::endgroup::"
 
 echo "::group::cloud-init seed"
+rm -f id_vm id_vm.pub # a reused workdir would otherwise make ssh-keygen prompt
 ssh-keygen -q -t ed25519 -N "" -f id_vm
 cat > user-data <<EOF
 #cloud-config
@@ -81,13 +83,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Waiting for SSH..."
-for i in $(seq 1 60); do
-  if "${SSH[@]}" true 2>/dev/null; then break; fi
-  if [ "$i" = 60 ]; then echo "VM never came up; serial log:"; tail -50 serial.log; exit 1; fi
-  sleep 5
-done
+wait_ssh() {
+  echo "Waiting for SSH..."
+  for i in $(seq 1 60); do
+    if "${SSH[@]}" true 2>/dev/null; then return 0; fi
+    if [ "$i" = 60 ]; then echo "VM never came up; serial log:"; tail -50 serial.log; exit 1; fi
+    sleep 5
+  done
+}
+
+wait_ssh
 "${SSH[@]}" 'cloud-init status --wait >/dev/null 2>&1 || true; uname -a'
 
+FLAVOR=${FLAVOR:-debian}
+if [ "$FLAVOR" = proxmox ]; then
+  echo "::group::Convert to Proxmox VE"
+  "${SCP[@]}" "$HERE/proxmox-prep.sh" tester@127.0.0.1:/tmp/
+  "${SSH[@]}" 'sudo bash /tmp/proxmox-prep.sh stage1'
+  "${SSH[@]}" 'sudo systemctl reboot' || true
+  sleep 15
+  wait_ssh
+  # /tmp is cleared by the reboot.
+  "${SCP[@]}" "$HERE/proxmox-prep.sh" tester@127.0.0.1:/tmp/
+  "${SSH[@]}" 'sudo bash /tmp/proxmox-prep.sh stage2'
+  echo "::endgroup::"
+fi
+
 "${SCP[@]}" "$DEB" "$HERE/guest-test.sh" tester@127.0.0.1:/tmp/
-"${SSH[@]}" "sudo BASELINE=${BASELINE:-0} bash /tmp/guest-test.sh /tmp/$(basename "$DEB")"
+"${SSH[@]}" "sudo FLAVOR=$FLAVOR BASELINE=${BASELINE:-0} bash /tmp/guest-test.sh /tmp/$(basename "$DEB")"
