@@ -142,17 +142,42 @@ ignores the chain and hostname. If the pin doesn't match, the error names the fi
 server *did* present. Check it against the service's own UI before pinning it; bewitch never
 trusts it automatically.
 
-## Talking to Docker (unix socket)
+## Talking to Docker
 
-Docker has no TCP port by default; it listens on a unix socket. Set `unix_socket` and bewitch dials
-that instead of a host:
+Docker's API listens on a unix socket, `/var/run/docker.sock`. Access to that socket is
+root-equivalent: anything that can talk to it can start a privileged container. So the packaged
+daemon, which runs as the unprivileged `bewitch` user, isn't in the `docker` group, and **adding it
+is not recommended**.
+
+Instead, run a **read-only socket proxy** that exposes only the endpoints bewitch needs, on
+loopback. With [linuxserver/socket-proxy](https://docs.linuxserver.io/images/docker-socket-proxy/):
+
+```yaml
+# docker-compose.yml
+services:
+  socket-proxy:
+    image: lscr.io/linuxserver/socket-proxy:latest
+    container_name: socket-proxy
+    restart: unless-stopped
+    environment:
+      INFO: "1"      # GET /info: everything below needs only this
+      POST: "0"      # no writes
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:2375:2375"   # loopback only
+    read_only: true
+    tmpfs:
+      - /run
+```
+
+Every API section you don't enable returns `403`, as does any write. Then point the source at it:
 
 ```toml
 [[custom_source]]
-name        = "docker"
-interval    = "15s"
-unix_socket = "/var/run/docker.sock"
-base_url    = "http://unix"        # placeholder host; the socket is dialed instead
+name     = "docker"
+interval = "15s"
+base_url = "http://127.0.0.1:2375"
 
   [custom_source.request]
   path = "/info"
@@ -172,8 +197,10 @@ base_url    = "http://unix"        # placeholder host; the socket is dialed inst
   path  = "ServerVersion"
 ```
 
-The daemon's user needs read access to the socket (add `bewitch` to the `docker` group, or point
-it at a read-only proxy).
+If you run bewitchd as root, or otherwise have socket access, you can dial the socket directly by
+replacing `base_url` with `unix_socket = "/var/run/docker.sock"` and `base_url = "http://unix"` (a
+placeholder host; the socket is dialed instead). The same `unix_socket` option works for any
+service that serves HTTP on a unix socket.
 
 ## The Services tab
 
