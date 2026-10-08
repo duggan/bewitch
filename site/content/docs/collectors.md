@@ -20,6 +20,7 @@ Reads `/proc/meminfo` for total, free, available, buffers, cached, and swap. Com
 
 - **Metrics:** total, used, free, available, buffers, cached, swap (bytes + percentages)
 - **Storage:** `memory_metrics` table
+- **ZFS:** the kernel leaves the ARC out of `Cached` and `MemAvailable`, so bewitch adds it to cached, and the part above the ARC's minimum size (`c_min`, which ZFS gives back under memory pressure) to available. Without this, a ZFS host's ARC would show as used memory.
 
 ## Disk
 
@@ -35,10 +36,11 @@ Three data sources per mount: space usage (via `statfs`), I/O rates (via `/proc/
 - **Metrics:** read/write bytes per second per device
 - Delta-based: keeps previous reading, computes rate. First sample discarded.
 - Symlinked mount sources (`/dev/mapper/*` for LVM/LUKS, `/dev/disk/by-*`) are resolved to their kernel name (`dm-1`, `sda1`) before matching `/proc/diskstats`.
+- ZFS datasets have no `/proc/diskstats` entry; their I/O comes from the per-dataset counters in `/proc/spl/kstat/zfs/<pool>/objset-*`. These are logical: reads served from the ARC count too.
 
 ### SMART Health
 
-Reads SMART data per physical device (not per partition). Multiple mounts from the same disk share one SMART read. Snapshots are stored in the `smart_metrics` table at the `smart_interval` cadence. Mount sources that aren't block devices (e.g. Proxmox's `/etc/pve`, mounted from `/dev/fuse`) are skipped.
+Reads SMART data per physical device (not per partition). Multiple mounts from the same disk share one SMART read. Snapshots are stored in the `smart_metrics` table at the `smart_interval` cadence. Mount sources that aren't block devices (e.g. Proxmox's `/etc/pve`, mounted from `/dev/fuse`) are skipped. For a ZFS dataset, SMART is read from every disk in its pool (found from udev's `zfs_member` labels); a mount on a multi-disk pool shows a failing disk first, otherwise the first one.
 
 - **NVMe:** available spare %, percent used, critical warning, temperature, power-on hours, power cycles
 - **SATA:** reallocated sectors, pending sectors, uncorrectable errors, temperature, power-on hours

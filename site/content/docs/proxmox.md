@@ -23,6 +23,10 @@ rather than the machine.
   doesn't hold that capability; the packaged `bewitch-smart.timer` reads NVMe drives every
   5 minutes in a separate sandboxed helper. It's enabled automatically. Check it with
   `systemctl status bewitch-smart.timer`.
+- **ZFS** (including a ZFS root): each mounted dataset is listed with its space and I/O, and
+  SMART is read from the pool's disks. In a mirror or RAID-Z, the mount shows a failing disk
+  first, and every disk's SMART is stored and alertable. The ARC (ZFS's read cache) counts as
+  cache memory, not used memory.
 - **`/etc/pve`** (pmxcfs, the cluster config filesystem) is excluded from the disk list by default.
 - **Power** (Intel/AMD RAPL), temperatures, network, processes: as on any host.
 
@@ -35,9 +39,10 @@ rather than the machine.
 - **Guest network interfaces multiply.** Each guest NIC adds `tap…`/`veth…`, `fwbr…`, `fwln…` and
   `fwpr…` interfaces on the host, all carrying the same traffic. Use the Network tab's selection
   (space / `a`) to chart the ones you care about, typically `vmbr0` and your physical NICs.
-- **ZFS**: the ARC (ZFS's read cache) isn't counted as available memory by the kernel, so memory
-  "used" includes it. On a ZFS host, set `memory.used_pct` alert thresholds with that in mind.
-  ZFS datasets are not yet shown in the disk view.
+- **ZFS I/O is per dataset and logical**: it counts reads the ARC answered, not just disk
+  reads. Guest disks on zvols aren't mounted on the host, so they aren't listed. Container
+  volumes (`subvol-…` datasets) are, one per container; exclude `/rpool/data/` if that's too
+  many.
 
 ## Guests, storage and quorum from the Proxmox API
 
