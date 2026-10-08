@@ -33,7 +33,6 @@ PrivateTmp=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
-ProtectClock=true
 ProtectHostname=true
 RestrictSUIDSGID=true
 RestrictRealtime=true

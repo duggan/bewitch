@@ -52,7 +52,6 @@ PrivateTmp=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
-ProtectClock=true
 ProtectHostname=true
 RestrictSUIDSGID=true
 RestrictRealtime=true
@@ -67,6 +66,11 @@ SystemCallArchitectures=native
 #   PrivatePID / ProcSubset=pid — process collector reads other PIDs under /proc;
 #                     eBPF attribution also keys on the host PID namespace.
 #   SystemCallFilter — must not block bpf()/perf_event_open() (see note above).
+#   ProtectClock    — on older systemd (seen on 249; not on 257) it implies DeviceAllow=char-rtc, which
+#                     switches on a device allowlist (DevicePolicy=auto) that blocks
+#                     every disk: SMART failed with EPERM ("Operation not permitted")
+#                     on Ubuntu 22.04 (systemd 249). Redundant anyway: the bounding set
+#                     above already excludes CAP_SYS_TIME, so the clock can't be set.
 #   MemoryDenyWriteExecute — incompatible with the CGO DuckDB engine.
 
 [Install]
