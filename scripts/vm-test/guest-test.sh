@@ -49,7 +49,13 @@ echo "::endgroup::"
 
 echo "::group::Upgrade to the built package"
 UPGRADE_START=$(date '+%Y-%m-%d %H:%M:%S')
-apt-get install -y "$DEB" 2>&1 | tail -5
+if [ "${BASELINE:-0}" = 1 ]; then
+  # Negative control: run every check against the previous stable release only.
+  # Checks covering bugs fixed since then must FAIL here, proving they detect them.
+  echo "BASELINE=1: skipping the upgrade; expect failures"
+else
+  apt-get install -y "$DEB" 2>&1 | tail -5
+fi
 dpkg-query -W bewitch
 echo "::endgroup::"
 

@@ -84,4 +84,4 @@ done
 "${SSH[@]}" 'cloud-init status --wait >/dev/null 2>&1 || true; uname -a'
 
 "${SCP[@]}" "$DEB" "$HERE/guest-test.sh" tester@127.0.0.1:/tmp/
-"${SSH[@]}" "sudo bash /tmp/guest-test.sh /tmp/$(basename "$DEB")"
+"${SSH[@]}" "sudo BASELINE=${BASELINE:-0} bash /tmp/guest-test.sh /tmp/$(basename "$DEB")"
