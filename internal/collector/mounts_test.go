@@ -63,6 +63,18 @@ func TestParseMountinfoAndDropBindDuplicates(t *testing.T) {
 60 25 0:51 / /etc/pve rw - fuse /dev/fuse rw,user_id=0`,
 			want: "/,/etc/pve",
 		},
+		{
+			// Proxmox ZFS root: datasets are mounted by name, not from /dev. Each
+			// has its own anonymous device number; a sandbox bind into the root
+			// dataset is still dropped.
+			name: "zfs datasets kept, sandbox bind dropped",
+			info: `25 1 0:25 / / rw,relatime shared:1 - zfs rpool/ROOT/pve-1 rw,xattr,noacl,casesensitive
+40 25 0:41 / /rpool rw,relatime shared:20 - zfs rpool rw,xattr,noacl,casesensitive
+41 40 0:42 / /rpool/data rw,relatime shared:21 - zfs rpool/data rw,xattr,noacl,casesensitive
+50 25 0:25 /var/lib/bewitch /var/lib/bewitch rw,relatime shared:30 - zfs rpool/ROOT/pve-1 rw,xattr,noacl,casesensitive
+60 25 0:51 / /etc/pve rw - fuse /dev/fuse rw,user_id=0`,
+			want: "/,/rpool,/rpool/data,/etc/pve",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

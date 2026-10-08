@@ -2,6 +2,9 @@ package collector
 
 import (
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/procfs"
@@ -44,6 +47,20 @@ func (c *MemoryCollector) Collect() (Sample, error) {
 	swapTotal := ptrVal(info.SwapTotal) * 1024
 	swapFree := ptrVal(info.SwapFree) * 1024
 
+	// The ZFS ARC is a cache, but the kernel doesn't count it in Cached or
+	// MemAvailable, so on a ZFS host it would read as used memory (often most of
+	// RAM). Count it as cache, and the part above its floor (c_min, which the
+	// ARC gives back under memory pressure) as available.
+	if size, cMin, ok := readARCStats(); ok {
+		cached += size
+		if size > cMin {
+			available += size - cMin
+		}
+		if available > total {
+			available = total
+		}
+	}
+
 	return Sample{
 		Timestamp: time.Now(),
 		Kind:      "memory",
@@ -64,4 +81,31 @@ func ptrVal(p *uint64) uint64 {
 		return 0
 	}
 	return *p
+}
+
+// arcstatsPath is a package var so tests can point it at a fixture.
+var arcstatsPath = "/proc/spl/kstat/zfs/arcstats"
+
+// readARCStats returns the ZFS ARC's current size and minimum size in bytes;
+// ok is false when ZFS isn't loaded.
+func readARCStats() (size, cMin uint64, ok bool) {
+	data, err := os.ReadFile(arcstatsPath)
+	if err != nil {
+		return 0, 0, false
+	}
+	var haveSize bool
+	for _, line := range strings.Split(string(data), "\n") {
+		f := strings.Fields(line)
+		if len(f) != 3 {
+			continue
+		}
+		switch f[0] {
+		case "size":
+			size, err = strconv.ParseUint(f[2], 10, 64)
+			haveSize = err == nil
+		case "c_min":
+			cMin, _ = strconv.ParseUint(f[2], 10, 64)
+		}
+	}
+	return size, cMin, haveSize
 }

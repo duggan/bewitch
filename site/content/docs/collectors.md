@@ -28,7 +28,7 @@ Three data sources per mount: space usage (via `statfs`), I/O rates (via `/proc/
 ### Space
 
 - **Metrics:** total, used, free bytes; used percentage per mount
-- Mount filtering: `/snap/`, `/run/` and `/etc/pve` (Proxmox VE's cluster config filesystem) excluded by default
+- Mount filtering: `/snap/`, `/run/`, `/etc/pve` (Proxmox VE's cluster config filesystem) and `/var/lib/docker/` (per-layer mounts of Docker's ZFS/btrfs storage drivers) excluded by default
 
 ### I/O
 

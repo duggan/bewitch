@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Boot a Debian 13 VM under QEMU/KVM and run guest-test.sh in it against a
 # freshly built bewitch .deb. Runs on a GitHub-hosted Ubuntu runner (which has
-# /dev/kvm). The VM gets an emulated NVMe drive (QEMU implements the SMART /
-# health log) so the NVMe SMART helper, LVM disk I/O and the hardened systemd
-# units are exercised for real — the containers in e2e.yml have no systemd.
+# /dev/kvm). The VM gets two emulated NVMe drives (QEMU implements the SMART /
+# health log) so the NVMe SMART helper, LVM and ZFS disk I/O and the hardened
+# systemd units are exercised for real — the containers in e2e.yml have no systemd.
 #
 # Usage: [FLAVOR=debian|proxmox] [BASELINE=1] run-vm.sh <path/to/bewitch_*.deb> [workdir]
 #   FLAVOR=proxmox converts the VM into a Proxmox VE 9 host first (proxmox-prep.sh).
@@ -42,6 +42,7 @@ curl -fsSL "$IMG_BASE/SHA512SUMS" -o SHA512SUMS
 grep " $IMG_NAME\$" SHA512SUMS | sha512sum -c -
 qemu-img create -q -f qcow2 -F qcow2 -b "$IMG_NAME" disk.qcow2 20G
 qemu-img create -q -f qcow2 nvme.qcow2 4G
+qemu-img create -q -f qcow2 nvme2.qcow2 4G # ZFS pool (proxmox flavor)
 echo "::endgroup::"
 
 echo "::group::cloud-init seed"
@@ -67,6 +68,8 @@ qemu-system-x86_64 \
   -drive file=seed.iso,if=virtio,format=raw \
   -drive file=nvme.qcow2,if=none,id=nvm \
   -device nvme,serial=bewitchnvme0,drive=nvm \
+  -drive file=nvme2.qcow2,if=none,id=nvm2 \
+  -device nvme,serial=bewitchnvme1,drive=nvm2 \
   -netdev user,id=n0,hostfwd=tcp:127.0.0.1:${SSH_PORT}-:22 \
   -device virtio-net-pci,netdev=n0 \
   -display none -serial file:serial.log \

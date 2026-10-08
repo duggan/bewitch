@@ -74,7 +74,13 @@ type DiskCollector struct {
 	transportCache map[string]string // keyed by physical device path → "nvme", "sata", "usb", etc.
 	helperDir      string            // where bewitch-smart drops NVMe snapshots; "" = disabled
 	dumpMode       bool              // running as `bewitchd smart-dump` (the helper itself)
+	prevZFS        map[string]zfsIO  // keyed by dataset name
+	zfsMembers     map[string][]string
+	zfsMembersTime time.Time
 }
+
+// zfsMembersRefresh is how often pool membership is re-read from udev.
+const zfsMembersRefresh = time.Minute
 
 func NewDiskCollector(excludeMounts []string, smartInterval time.Duration) (*DiskCollector, error) {
 	bfs, err := blockdevice.NewDefaultFS()
@@ -137,6 +143,22 @@ func (c *DiskCollector) Collect() (Sample, error) {
 		return Sample{}, fmt.Errorf("reading mounts: %w", err)
 	}
 
+	// ZFS datasets have no diskstats entry; read their objset counters instead.
+	pools := make(map[string]bool)
+	for _, mt := range mounts {
+		if mt.fstype == "zfs" {
+			pools[zfsPool(mt.device)] = true
+		}
+	}
+	var curZFS map[string]zfsIO
+	if len(pools) > 0 {
+		curZFS = readZFSObjsetIO(pools)
+		if c.zfsMembers == nil || time.Since(c.zfsMembersTime) > zfsMembersRefresh {
+			c.zfsMembers = zfsPoolDevices()
+			c.zfsMembersTime = now
+		}
+	}
+
 	// Refresh SMART cache if stale; persist a snapshot only on refresh cycles.
 	smartRefreshed := false
 	if c.smartInterval > 0 && (time.Since(c.smartCacheTime) > c.smartInterval || len(c.smartCache) == 0) {
@@ -154,10 +176,19 @@ func (c *DiskCollector) Collect() (Sample, error) {
 		free := stat.Bavail * uint64(stat.Bsize)
 		used := total - (stat.Bfree * uint64(stat.Bsize))
 
-		devName := ioDeviceName(mt.device)
 		var readBps, writeBps, readIOPS, writeIOPS float64
-		if cur, ok := curIO[devName]; ok {
-			if prev, ok2 := c.prevIO[devName]; ok2 {
+		if mt.fstype == "zfs" {
+			// Dataset-level (logical) I/O, so reads served from the ARC count too.
+			if cur, ok := curZFS[mt.device]; ok {
+				if prev, ok2 := c.prevZFS[mt.device]; ok2 && cur.nread >= prev.nread && cur.nwritten >= prev.nwritten {
+					readBps = float64(cur.nread-prev.nread) / dt
+					writeBps = float64(cur.nwritten-prev.nwritten) / dt
+					readIOPS = float64(cur.reads-prev.reads) / dt
+					writeIOPS = float64(cur.writes-prev.writes) / dt
+				}
+			}
+		} else if cur, ok := curIO[ioDeviceName(mt.device)]; ok {
+			if prev, ok2 := c.prevIO[cur.Info.DeviceName]; ok2 {
 				readBps = float64(cur.IOStats.ReadSectors-prev.IOStats.ReadSectors) * 512 / dt
 				writeBps = float64(cur.IOStats.WriteSectors-prev.IOStats.WriteSectors) * 512 / dt
 				readIOPS = float64(cur.IOStats.ReadIOs-prev.IOStats.ReadIOs) / dt
@@ -165,12 +196,25 @@ func (c *DiskCollector) Collect() (Sample, error) {
 			}
 		}
 
-		physDev := physicalDevice(mt.device)
+		var physDev string
+		var members []string
+		if mt.fstype == "zfs" {
+			members = c.zfsMembers[zfsPool(mt.device)]
+			if len(members) > 0 {
+				physDev = members[0]
+			}
+		} else {
+			physDev = physicalDevice(mt.device)
+		}
+		transport := ""
+		if physDev != "" {
+			transport = c.detectTransport(physDev)
+		}
 
 		s := DiskMountSample{
 			Mount:         mt.mountPoint,
 			Device:        mt.device,
-			Transport:     c.detectTransport(physDev),
+			Transport:     transport,
 			TotalBytes:    total,
 			UsedBytes:     used,
 			FreeBytes:     free,
@@ -183,7 +227,9 @@ func (c *DiskCollector) Collect() (Sample, error) {
 		}
 
 		// Attach SMART data from cache
-		if si, ok := c.smartCache[physDev]; ok && si.Available {
+		if mt.fstype == "zfs" {
+			s.SMART = zfsMountSMART(members, c.smartCache)
+		} else if si, ok := c.smartCache[physDev]; ok && si.Available {
 			s.SMART = si
 		}
 
@@ -191,6 +237,7 @@ func (c *DiskCollector) Collect() (Sample, error) {
 	}
 
 	c.prevIO = curIO
+	c.prevZFS = curZFS
 	c.prevTime = now
 
 	var smartDevices []SMARTDevice
@@ -213,6 +260,16 @@ func (c *DiskCollector) Collect() (Sample, error) {
 func (c *DiskCollector) refreshSMARTCache(mounts []mountEntry) {
 	physDevs := make(map[string]bool)
 	for _, mt := range mounts {
+		if mt.fstype == "zfs" {
+			// A pool's disks are its members, not anything derived from the
+			// dataset name.
+			for _, dev := range c.zfsMembers[zfsPool(mt.device)] {
+				if isBlockDevice(dev) {
+					physDevs[dev] = true
+				}
+			}
+			continue
+		}
 		dev := physicalDevice(mt.device)
 		// Skip mount sources that aren't block devices (e.g. Proxmox's /etc/pve is
 		// mounted from /dev/fuse, a char device) — there is no disk to query.
@@ -521,6 +578,7 @@ type mountEntry struct {
 	mountPoint string
 	devID      string // major:minor from mountinfo
 	root       string // path within the filesystem that is mounted here ("/" = whole fs)
+	fstype     string
 }
 
 // mountinfoPath is a package var so tests can point parsing at a fixture.
@@ -548,8 +606,9 @@ func (c *DiskCollector) parseMounts() ([]mountEntry, error) {
 	return mounts, nil
 }
 
-// parseMountinfo returns the block-device-backed (/dev/...) mounts from
-// /proc/self/mountinfo content. Format per line:
+// parseMountinfo returns the block-device-backed (/dev/...) and ZFS mounts from
+// /proc/self/mountinfo content. A ZFS mount's source is the dataset name
+// (rpool/ROOT/pve-1) rather than a device node. Format per line:
 //
 //	id parent major:minor root mountpoint options [optional...] - fstype source superopts
 func parseMountinfo(data string) []mountEntry {
@@ -561,10 +620,10 @@ func parseMountinfo(data string) []mountEntry {
 		}
 		f := strings.Fields(pre)
 		g := strings.Fields(post)
-		if len(f) < 5 || len(g) < 2 || !strings.HasPrefix(g[1], "/dev/") {
+		if len(f) < 5 || len(g) < 2 || !(strings.HasPrefix(g[1], "/dev/") || g[0] == "zfs") {
 			continue
 		}
-		mounts = append(mounts, mountEntry{device: g[1], mountPoint: f[4], devID: f[2], root: f[3]})
+		mounts = append(mounts, mountEntry{device: g[1], mountPoint: f[4], devID: f[2], root: f[3], fstype: g[0]})
 	}
 	return mounts
 }

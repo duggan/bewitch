@@ -35,7 +35,14 @@ lvcreate -q -y -n data -L 2G testvg
 mkfs.ext4 -q /dev/testvg/data
 mkdir -p /srv/data
 mount /dev/testvg/data /srv/data
-lsblk
+if [ "${FLAVOR:-debian}" = proxmox ]; then
+  # ZFS on the second NVMe drive (the PVE kernel ships the module and
+  # proxmox-ve pulls in zfsutils-linux): a dataset mounted by name, not /dev.
+  zpool create -f tank /dev/nvme1n1
+  zfs create tank/data
+  udevadm settle
+fi
+lsblk -o NAME,FSTYPE,LABEL,MOUNTPOINTS
 echo "::endgroup::"
 
 echo "::group::Install previous stable from APT"
@@ -104,6 +111,38 @@ if [ "${FLAVOR:-debian}" = proxmox ]; then
   check "/etc/pve (pmxcfs) is mounted" findmnt /etc/pve
   check "/etc/pve is not listed as a disk" sh -c "! echo '$DISK' | jq -e '.disks[] | select(.mount == \"/etc/pve\")' >/dev/null"
   check "no SMART probe of /dev/fuse" sh -c "! echo \"\$0\" | grep -q '/dev/fuse'" "$(since_upgrade)"
+  echo "::endgroup::"
+
+  echo "::group::ZFS"
+  check "ZFS dataset /tank/data is listed" sh -c "echo '$DISK' | jq -e '.disks[] | select(.mount == \"/tank/data\" and .device == \"tank/data\")' >/dev/null"
+  check "ZFS dataset carries its pool disk's SMART data" sh -c "echo '$DISK' | jq -e '.disks[] | select(.mount == \"/tank/data\") | .smart_available == true and (.smart_temperature // 0) > 0 and .transport == \"nvme\"' >/dev/null"
+  smart_persisted() { query "SELECT count(*) FROM smart_metrics WHERE device = '/dev/nvme1n1'" | jq -e '.rows[0][0] > 0'; }
+  check "pool disk's SMART is persisted" wait_for 30 smart_persisted
+  ( for _ in $(seq 1 30); do dd if=/dev/urandom of=/tank/data/load bs=1M count=64 status=none; sync; done ) &
+  LOAD=$!
+  zfs_io_seen() { api /api/metrics/disk | jq -e '.disks[] | select(.mount == "/tank/data") | .write_bytes_sec > 0' >/dev/null; }
+  check "write I/O on the ZFS dataset is non-zero" wait_for 45 zfs_io_seen
+  kill "$LOAD" 2>/dev/null; wait "$LOAD" 2>/dev/null
+  # The ARC is ZFS's cache, but the kernel doesn't count it in MemAvailable, so
+  # bewitch adds it back. Measure that premise here (an OpenZFS that starts
+  # reporting the ARC as reclaimable would make bewitch double-count it), then
+  # check bewitch reports the ARC as cache. Export/import empties the ARC, then
+  # reading a file back fills it.
+  dd if=/dev/urandom of=/tank/data/arc bs=1M count=768 status=none
+  zpool export tank && zpool import tank
+  sync; echo 3 > /proc/sys/vm/drop_caches; sleep 2
+  arc() { awk '$1 == "size" {print $3}' /proc/spl/kstat/zfs/arcstats; }
+  avail() { awk '$1 == "MemAvailable:" {print $2 * 1024}' /proc/meminfo; }
+  ARC0=$(arc); AVAIL0=$(avail)
+  cat /tank/data/arc > /dev/null
+  ARC1=$(arc); AVAIL1=$(avail)
+  GROWTH=$((ARC1 - ARC0)); DROP=$((AVAIL0 - AVAIL1))
+  echo "ARC grew $GROWTH bytes; kernel MemAvailable fell $DROP bytes"
+  check "kernel MemAvailable excludes the ZFS ARC (premise of bewitch's adjustment)" test "$DROP" -ge $((GROWTH / 2))
+  sleep 6 # one memory collection
+  CACHED=$(api /api/metrics/memory | jq '.cached_bytes')
+  check "memory counts the ZFS ARC ($(arc) bytes) as cache (cached=$CACHED)" test "$CACHED" -ge $(($(arc) * 9 / 10))
+  rm -f /tank/data/arc
   echo "::endgroup::"
 fi
 
