@@ -21,8 +21,6 @@ on:
         description: "Negative control: skip the upgrade and run the checks against the previous stable release (expect failures)"
         type: boolean
         default: false
-  push:
-    branches: [ci/vm-test] # temporary: lets the workflow run before it exists on main
 
 permissions:
   contents: read
@@ -55,8 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Branch pushes (no inputs) run both flavors.
-        flavor: ${{ fromJSON((inputs.flavor == 'both' || inputs.flavor == '' || inputs.flavor == null) && '["debian","proxmox"]' || format('["{0}"]', inputs.flavor)) }}
+        flavor: ${{ fromJSON(inputs.flavor == 'both' && '["debian","proxmox"]' || format('["{0}"]', inputs.flavor)) }}
     name: ${{ matrix.flavor }} VM (upgrade from stable)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
