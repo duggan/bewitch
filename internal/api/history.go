@@ -310,24 +310,24 @@ func (s *Server) handleHistoryMemory(w http.ResponseWriter, r *http.Request) {
 	baseSelect := fmt.Sprintf(`SELECT time_bucket(INTERVAL '%s', ts) AS bucket,
 		AVG(CAST(used_bytes AS DOUBLE) / NULLIF(total_bytes, 0) * 100) AS used_pct,
 		AVG(CAST(swap_used_bytes AS DOUBLE) / NULLIF(swap_total_bytes, 0) * 100) AS swap_pct`, bucket)
-	baseWhere := "WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)"
+	baseWhere := "WHERE ts BETWEEN ? AND ?"
 	baseGroup := "GROUP BY bucket"
 
 	switch source {
 	case querySourceDuckDB:
 		query = fmt.Sprintf(`%s FROM memory_metrics %s %s ORDER BY bucket`, baseSelect, baseWhere, baseGroup)
-		args = []interface{}{start.Unix(), end.Unix()}
+		args = []interface{}{start, end}
 	case querySourceParquet:
 		query = fmt.Sprintf(`%s FROM %s %s %s ORDER BY bucket`,
 			baseSelect, s.archiveScan("memory_metrics"), baseWhere, baseGroup)
-		args = []interface{}{start.Unix(), end.Unix()}
+		args = []interface{}{start, end}
 	case querySourceBoth:
 		query = fmt.Sprintf(`%s FROM (
-			SELECT * FROM memory_metrics WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			SELECT * FROM memory_metrics WHERE ts BETWEEN ? AND ?
 			UNION ALL BY NAME
-			SELECT * FROM %s WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			SELECT * FROM %s WHERE ts BETWEEN ? AND ?
 		) %s ORDER BY bucket`, baseSelect, s.archiveScan("memory_metrics"), baseGroup)
-		args = []interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
+		args = []interface{}{start, end, start, end}
 	}
 
 	queryStart := time.Now()
@@ -402,7 +402,7 @@ func (s *Server) handleDimHistory(w http.ResponseWriter, r *http.Request, spec d
 		d.value AS dim_label,
 		%s AS agg_value`, bucket, spec.aggExpr)
 	joinFrag := fmt.Sprintf(`JOIN dimension_values d ON d.category = '%s' AND d.id = m.%s`, spec.dimCat, spec.dimFK)
-	whereFrag := "WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)"
+	whereFrag := "WHERE m.ts BETWEEN ? AND ?"
 	groupFrag := "GROUP BY bucket, d.value ORDER BY bucket"
 
 	var query string
@@ -412,24 +412,24 @@ func (s *Server) handleDimHistory(w http.ResponseWriter, r *http.Request, spec d
 	case querySourceDuckDB:
 		query = fmt.Sprintf(`%s FROM %s m %s %s %s`,
 			selectFrag, spec.table, joinFrag, whereFrag, groupFrag)
-		args = []interface{}{start.Unix(), end.Unix()}
+		args = []interface{}{start, end}
 	case querySourceParquet:
 		pqJoin := fmt.Sprintf(`JOIN %s d ON d.category = '%s' AND d.id = m.%s`,
 			s.archiveScanFile("dimension_values", s.dimensionParquetPath()), spec.dimCat, spec.dimFK)
 		query = fmt.Sprintf(`%s FROM %s m %s %s %s`,
 			selectFrag, s.archiveScan(spec.table), pqJoin, whereFrag, groupFrag)
-		args = []interface{}{start.Unix(), end.Unix()}
+		args = []interface{}{start, end}
 	case querySourceBoth:
 		query = fmt.Sprintf(`%s FROM (
-			SELECT %s FROM %s WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			SELECT %s FROM %s WHERE ts BETWEEN ? AND ?
 			UNION ALL
-			SELECT %s FROM %s WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			SELECT %s FROM %s WHERE ts BETWEEN ? AND ?
 		) m %s %s`,
 			selectFrag,
 			spec.unionCols, spec.table,
 			spec.unionCols, s.archiveScan(spec.table),
 			joinFrag, groupFrag)
-		args = []interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
+		args = []interface{}{start, end, start, end}
 	}
 
 	queryStart := time.Now()
@@ -519,28 +519,28 @@ func (s *Server) handleHistoryNetwork(w http.ResponseWriter, r *http.Request) {
 		AVG(m.rx_bytes_sec) AS rx_avg,
 		AVG(m.tx_bytes_sec) AS tx_avg`, bucket)
 	joinFrag := "JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id"
-	whereFrag := "WHERE m.ts BETWEEN to_timestamp(?) AND to_timestamp(?)"
+	whereFrag := "WHERE m.ts BETWEEN ? AND ?"
 	groupFrag := "GROUP BY bucket, d.value ORDER BY bucket"
 
 	switch source {
 	case querySourceDuckDB:
 		query = fmt.Sprintf(`%s FROM network_metrics m %s %s %s`,
 			selectFrag, joinFrag, whereFrag, groupFrag)
-		args = []interface{}{start.Unix(), end.Unix()}
+		args = []interface{}{start, end}
 	case querySourceParquet:
 		pqJoin := fmt.Sprintf(`JOIN %s d ON d.category = 'interface' AND d.id = m.interface_id`,
 			s.archiveScanFile("dimension_values", s.dimensionParquetPath()))
 		query = fmt.Sprintf(`%s FROM %s m %s %s %s`,
 			selectFrag, s.archiveScan("network_metrics"), pqJoin, whereFrag, groupFrag)
-		args = []interface{}{start.Unix(), end.Unix()}
+		args = []interface{}{start, end}
 	case querySourceBoth:
 		query = fmt.Sprintf(`%s FROM (
-			SELECT ts, interface_id, rx_bytes_sec, tx_bytes_sec FROM network_metrics WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			SELECT ts, interface_id, rx_bytes_sec, tx_bytes_sec FROM network_metrics WHERE ts BETWEEN ? AND ?
 			UNION ALL
-			SELECT ts, interface_id, rx_bytes_sec, tx_bytes_sec FROM %s WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
+			SELECT ts, interface_id, rx_bytes_sec, tx_bytes_sec FROM %s WHERE ts BETWEEN ? AND ?
 		) m %s %s`,
 			selectFrag, s.archiveScan("network_metrics"), joinFrag, groupFrag)
-		args = []interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
+		args = []interface{}{start, end, start, end}
 	}
 
 	queryStart := time.Now()
@@ -636,14 +636,7 @@ func (s *Server) handleHistoryProcess(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var query string
-	var args []interface{}
-
-	if len(filterNames) > 0 {
-		query, args = s.buildProcessHistoryByName(filterNames, start, end, bucket, source)
-	} else {
-		query, args = s.buildProcessHistoryTopCPU(start, end, bucket, source)
-	}
+	query, args := s.buildProcessHistory(filterNames, start, end, bucket, source)
 
 	queryStart := time.Now()
 	rows, err := s.dbFn().Query(query, args...)
@@ -658,14 +651,12 @@ func (s *Server) handleHistoryProcess(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		rowCount++
 		var ts time.Time
-		var pid int32
 		var name string
 		var cpuAvg float64
-		if err := rows.Scan(&ts, &pid, &name, &cpuAvg); err != nil {
+		if err := rows.Scan(&ts, &name, &cpuAvg); err != nil {
 			log.Debugf("history/process: scan error: %v", err)
 			continue
 		}
-		// Use name as label (pid can change if process restarts)
 		label := name
 		ser, ok := seriesMap[label]
 		if !ok {
@@ -698,166 +689,83 @@ func (s *Server) handleHistoryProcess(w http.ResponseWriter, r *http.Request) {
 	s.writeHistoryData(r, w, series)
 }
 
-// buildProcessHistoryTopCPU returns the query and args for fetching top N
-// processes by average CPU over the time range (the default behavior).
-// Uses a single-scan pattern: bucket all PIDs first, then rank from the
-// already-aggregated data to avoid scanning process_metrics twice.
-func (s *Server) buildProcessHistoryTopCPU(start, end time.Time, bucket string, source querySource) (string, []interface{}) {
-	switch source {
-	case querySourceDuckDB:
-		return fmt.Sprintf(`WITH bucketed AS (
-			SELECT time_bucket(INTERVAL '%s', pm.ts) AS bucket, pm.pid,
-				AVG(pm.cpu_user_pct + pm.cpu_system_pct) AS cpu_avg
-			FROM process_metrics pm
-			WHERE pm.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, pm.pid
-		),
-		pid_total AS (
-			SELECT pid FROM bucketed GROUP BY pid ORDER BY AVG(cpu_avg) DESC LIMIT 10
-		)
-		SELECT b.bucket, b.pid,
-			COALESCE(pi.name, CAST(b.pid AS VARCHAR)) AS name, b.cpu_avg
-		FROM bucketed b
-		JOIN pid_total pt ON b.pid = pt.pid
-		LEFT JOIN (SELECT DISTINCT ON (pid) pid, name FROM process_info ORDER BY pid, first_seen DESC) pi
-			ON b.pid = pi.pid
-		ORDER BY b.bucket`, bucket),
-			[]interface{}{start.Unix(), end.Unix()}
-	case querySourceParquet:
-		return fmt.Sprintf(`WITH bucketed AS (
-			SELECT time_bucket(INTERVAL '%s', pm.ts) AS bucket, pm.pid,
-				AVG(pm.cpu_user_pct + pm.cpu_system_pct) AS cpu_avg
-			FROM %s pm
-			WHERE pm.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, pm.pid
-		),
-		pid_total AS (
-			SELECT pid FROM bucketed GROUP BY pid ORDER BY AVG(cpu_avg) DESC LIMIT 10
-		)
-		SELECT b.bucket, b.pid,
-			COALESCE(pi.name, CAST(b.pid AS VARCHAR)) AS name, b.cpu_avg
-		FROM bucketed b
-		JOIN pid_total pt ON b.pid = pt.pid
-		LEFT JOIN (SELECT DISTINCT ON (pid) pid, name FROM %s ORDER BY pid, first_seen DESC) pi
-			ON b.pid = pi.pid
-		ORDER BY b.bucket`, bucket, s.archiveScanForRange("process_metrics", start, end), s.archiveScanFile("process_info", s.processInfoParquetPath())),
-			[]interface{}{start.Unix(), end.Unix()}
-	default: // querySourceBoth
-		// Aggregate each source independently then combine. This avoids
-		// materializing all raw rows into an all_metrics CTE before
-		// bucketing — each source produces far fewer pre-aggregated rows.
-		return fmt.Sprintf(`WITH bucketed AS (
-			SELECT time_bucket(INTERVAL '%s', ts) AS bucket, pid,
-				AVG(cpu_user_pct + cpu_system_pct) AS cpu_avg
-			FROM process_metrics
-			WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, pid
-			UNION ALL
-			SELECT time_bucket(INTERVAL '%s', ts) AS bucket, pid,
-				AVG(cpu_user_pct + cpu_system_pct) AS cpu_avg
-			FROM %s
-			WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, pid
-		),
-		pid_total AS (
-			SELECT pid FROM bucketed GROUP BY pid ORDER BY AVG(cpu_avg) DESC LIMIT 10
-		)
-		SELECT b.bucket, b.pid,
-			COALESCE(pi.name, CAST(b.pid AS VARCHAR)) AS name, b.cpu_avg
-		FROM bucketed b
-		JOIN pid_total pt ON b.pid = pt.pid
-		LEFT JOIN (SELECT DISTINCT ON (pid) pid, name FROM process_info ORDER BY pid, first_seen DESC) pi
-			ON b.pid = pi.pid
-		ORDER BY b.bucket`, bucket, bucket, s.archiveScanForRange("process_metrics", start, end)),
-			[]interface{}{start.Unix(), end.Unix(), start.Unix(), end.Unix()}
-	}
-}
+// processHistoryTopN is how many process names the default (unfiltered)
+// process history returns.
+const processHistoryTopN = 10
 
-// buildProcessHistoryByName returns the query and args for fetching history
-// for specific processes identified by name (used for pinned process charts).
-func (s *Server) buildProcessHistoryByName(names []string, start, end time.Time, bucket string, source querySource) (string, []interface{}) {
-	// Build SQL placeholders and args for the IN clause.
-	placeholders := make([]string, len(names))
-	nameArgs := make([]interface{}, len(names))
-	for i, n := range names {
-		placeholders[i] = "?"
-		nameArgs[i] = n
+// buildProcessHistory returns the query and args for process CPU history,
+// grouped by process name. With names empty it returns the top
+// processHistoryTopN names by total CPU over the window; otherwise just the
+// named processes (pinned-process charts).
+//
+// Semantics, per (bucket, name): the summed CPU% of every instance of that name,
+// averaged over all collection samples in the bucket. process_metrics stores
+// only the enriched (top-N + pinned) processes each cycle, so a name absent
+// from a sample contributed ~0 and is counted as 0 rather than skipped.
+// Ranking by the SUM of those bucket values (∝ CPU-time used in the window)
+// lets steady heavy processes outrank one-off bursts. The previous query
+// ranked PIDs by the AVG of their bucket averages, so a short-lived PID seen in
+// a single busy bucket outranked a process busy all day, and long ranges filled
+// up with one-point series. Grouping by name (series are labelled by name)
+// also merges repeated short-lived processes instead of emitting duplicate
+// points per bucket. Names are resolved on (pid, start_time) so a reused PID
+// can't inherit another process's name.
+//
+// Result columns: bucket, name, cpu_avg.
+func (s *Server) buildProcessHistory(names []string, start, end time.Time, bucket string, source querySource) (string, []interface{}) {
+	metrics := "process_metrics"
+	info := "process_info"
+	infoArchive := ""
+	if _, err := os.Stat(s.processInfoParquetPath()); err == nil && source != querySourceDuckDB {
+		infoArchive = s.archiveScanFile("process_info", s.processInfoParquetPath())
 	}
-	inClause := strings.Join(placeholders, ", ")
-
 	switch source {
-	case querySourceDuckDB:
-		args := append(nameArgs, start.Unix(), end.Unix())
-		return fmt.Sprintf(`WITH target_pids AS (
-			SELECT DISTINCT pid FROM process_info
-			WHERE name IN (%s)
-		),
-		bucketed AS (
-			SELECT time_bucket(INTERVAL '%s', pm.ts) AS bucket, pm.pid,
-				AVG(pm.cpu_user_pct + pm.cpu_system_pct) AS cpu_avg
-			FROM process_metrics pm
-			WHERE pm.pid IN (SELECT pid FROM target_pids)
-				AND pm.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, pm.pid
-		)
-		SELECT b.bucket, b.pid,
-			COALESCE(pi.name, CAST(b.pid AS VARCHAR)) AS name, b.cpu_avg
-		FROM bucketed b
-		LEFT JOIN (SELECT DISTINCT ON (pid) pid, name FROM process_info ORDER BY pid, first_seen DESC) pi
-			ON b.pid = pi.pid
-		ORDER BY b.bucket`, inClause, bucket), args
 	case querySourceParquet:
-		args := append(nameArgs, start.Unix(), end.Unix())
-		return fmt.Sprintf(`WITH target_pids AS (
-			SELECT DISTINCT pid FROM %s
-			WHERE name IN (%s)
-		),
-		bucketed AS (
-			SELECT time_bucket(INTERVAL '%s', pm.ts) AS bucket, pm.pid,
-				AVG(pm.cpu_user_pct + pm.cpu_system_pct) AS cpu_avg
-			FROM %s pm
-			WHERE pm.pid IN (SELECT pid FROM target_pids)
-				AND pm.ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-			GROUP BY bucket, pm.pid
-		)
-		SELECT b.bucket, b.pid,
-			COALESCE(pi.name, CAST(b.pid AS VARCHAR)) AS name, b.cpu_avg
-		FROM bucketed b
-		LEFT JOIN (SELECT DISTINCT ON (pid) pid, name FROM %s ORDER BY pid, first_seen DESC) pi
-			ON b.pid = pi.pid
-		ORDER BY b.bucket`, s.archiveScanFile("process_info", s.processInfoParquetPath()), inClause, bucket, s.archiveScanForRange("process_metrics", start, end), s.archiveScanFile("process_info", s.processInfoParquetPath())), args
-	default: // querySourceBoth
-		// Aggregate each source independently then combine (same pattern
-		// as buildProcessHistoryTopCPU — avoids all_metrics CTE).
-		args := make([]interface{}, 0, len(nameArgs)+4)
-		args = append(args, nameArgs...)
-		args = append(args, start.Unix(), end.Unix(), start.Unix(), end.Unix())
-		return fmt.Sprintf(`WITH target_pids AS (
-			SELECT DISTINCT pid FROM process_info
-			WHERE name IN (%s)
-		),
-		bucketed AS (
-			SELECT time_bucket(INTERVAL '%s', ts) AS bucket, pid,
-				AVG(cpu_user_pct + cpu_system_pct) AS cpu_avg
-			FROM process_metrics
-			WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-				AND pid IN (SELECT pid FROM target_pids)
-			GROUP BY bucket, pid
-			UNION ALL
-			SELECT time_bucket(INTERVAL '%s', ts) AS bucket, pid,
-				AVG(cpu_user_pct + cpu_system_pct) AS cpu_avg
-			FROM %s
-			WHERE ts BETWEEN to_timestamp(?) AND to_timestamp(?)
-				AND pid IN (SELECT pid FROM target_pids)
-			GROUP BY bucket, pid
-		)
-		SELECT b.bucket, b.pid,
-			COALESCE(pi.name, CAST(b.pid AS VARCHAR)) AS name, b.cpu_avg
-		FROM bucketed b
-		LEFT JOIN (SELECT DISTINCT ON (pid) pid, name FROM process_info ORDER BY pid, first_seen DESC) pi
-			ON b.pid = pi.pid
-		ORDER BY b.bucket`, inClause, bucket, bucket, s.archiveScanForRange("process_metrics", start, end)), args
+		metrics = s.archiveScanForRange("process_metrics", start, end)
+	case querySourceBoth:
+		metrics = fmt.Sprintf("(SELECT * FROM process_metrics UNION ALL BY NAME SELECT * FROM %s)",
+			s.archiveScanForRange("process_metrics", start, end))
 	}
+	if infoArchive != "" {
+		// Live process_info plus the archived snapshot, one name per (pid, start_time).
+		info = fmt.Sprintf(`(SELECT DISTINCT ON (pid, start_time) pid, start_time, name
+			FROM (SELECT pid, start_time, name, first_seen FROM process_info
+				UNION ALL BY NAME
+				SELECT pid, start_time, name, first_seen FROM %s)
+			ORDER BY pid, start_time, first_seen DESC)`, infoArchive)
+	}
+
+	args := []interface{}{start, end}
+	selectNames := fmt.Sprintf(`SELECT name FROM bucketed GROUP BY name ORDER BY SUM(cpu_avg) DESC LIMIT %d`, processHistoryTopN)
+	if len(names) > 0 {
+		placeholders := make([]string, len(names))
+		for i, n := range names {
+			placeholders[i] = "?"
+			args = append(args, n)
+		}
+		selectNames = fmt.Sprintf(`SELECT DISTINCT name FROM bucketed WHERE name IN (%s)`, strings.Join(placeholders, ", "))
+	}
+
+	return fmt.Sprintf(`WITH samples AS (
+			SELECT time_bucket(INTERVAL '%s', pm.ts) AS bucket, pm.ts,
+				COALESCE(pi.name, CAST(pm.pid AS VARCHAR)) AS name,
+				pm.cpu_user_pct + pm.cpu_system_pct AS cpu
+			FROM %s pm
+			LEFT JOIN %s pi ON pi.pid = pm.pid AND pi.start_time = pm.start_time
+			WHERE pm.ts BETWEEN ? AND ?
+		),
+		bucket_samples AS (
+			SELECT bucket, COUNT(DISTINCT ts) AS n FROM samples GROUP BY bucket
+		),
+		bucketed AS (
+			SELECT sm.bucket, sm.name, SUM(sm.cpu) / bs.n AS cpu_avg
+			FROM samples sm JOIN bucket_samples bs ON bs.bucket = sm.bucket
+			GROUP BY sm.bucket, sm.name, bs.n
+		),
+		chosen AS (%s)
+		SELECT b.bucket, b.name, b.cpu_avg
+		FROM bucketed b JOIN chosen c ON c.name = b.name
+		ORDER BY b.bucket`, bucket, metrics, info, selectNames), args
 }
 
 const historyCacheTTL = 10 * time.Second
