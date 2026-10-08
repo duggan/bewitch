@@ -133,3 +133,45 @@ func TestCompactThenRestart(t *testing.T) {
 	}
 	reopened.Close()
 }
+
+// TestCompactDoesNotLoseConcurrentWrites: a write made directly on DB() (the
+// API's rule/alert/preference writes, the alert engine's fire/resolve) while
+// compaction is copying used to land in the file being replaced — the table it
+// targets was already copied — and vanished at the swap. Writers go through
+// AcquireWrite, which compaction holds exclusively until the swap, so the write
+// waits and lands in the new database.
+func TestCompactDoesNotLoseConcurrentWrites(t *testing.T) {
+	s, dbPath := newCompactTestStore(t)
+	done := make(chan error, 1)
+	var once sync.Once
+	compactCopyHook = func(table string) {
+		if table != "alerts" {
+			return
+		}
+		once.Do(func() {
+			go func() {
+				release := s.AcquireWrite()
+				defer release()
+				_, err := s.DB().Exec(`INSERT INTO alerts (ts, rule_name, severity, message) VALUES (?, 'r', 'warning', 'mid-compaction')`, time.Now())
+				done <- err
+			}()
+			// Give the writer time to attempt its write while alerts is already copied.
+			time.Sleep(200 * time.Millisecond)
+		})
+	}
+	t.Cleanup(func() { compactCopyHook = nil })
+
+	if err := s.Compact(dbPath); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("concurrent write: %v", err)
+	}
+	var n int
+	if err := s.DB().QueryRow(`SELECT COUNT(*) FROM alerts WHERE message = 'mid-compaction'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("alert written during compaction: %d rows after the swap, want 1 (lost to the replaced file)", n)
+	}
+}

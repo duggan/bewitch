@@ -35,6 +35,7 @@ type Store struct {
 	bufDroppedTotal uint64 // lifetime accumulator (never reset) for self-metrics
 	paused          bool
 	opMu            sync.Mutex // prevents concurrent maintenance/compaction
+	writeGate       sync.RWMutex // see AcquireWrite; held exclusively by Compact
 
 	// DuckDB settings re-applied when compaction reopens the database (they are
 	// per-instance and reset to defaults on a fresh connection pool). Set via
@@ -221,6 +222,23 @@ func (s *Store) getDimensionID(tx *sql.Tx, category, value string) (int16, error
 }
 
 // DB returns the current database connection. This may change after compaction.
+// AcquireWrite holds the write gate (shared) for a write made directly on DB()
+// — the API's rule/alert/preference writes and the alert engine's fire/resolve
+// — i.e. anything outside WriteBatch, whose writes compaction already pauses and
+// buffers. Compact holds the gate exclusively from the start of its copy until
+// the file swap, so such a write waits and then lands in the new database.
+// Without it, a write made mid-compaction went to the file being replaced and
+// was silently lost (any table already copied never saw it). Acquire first,
+// then fetch the handle with DB(); always call release.
+func (s *Store) AcquireWrite() (release func()) {
+	s.writeGate.RLock()
+	return s.writeGate.RUnlock
+}
+
+// compactCopyHook, when set (tests only), runs after each table is copied
+// during compaction, while the write gate is held.
+var compactCopyHook func(table string)
+
 func (s *Store) DB() *sql.DB {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -618,6 +636,9 @@ func (s *Store) reopenLocked(path string) {
 func (s *Store) Compact(dbPath string) error {
 	s.pause()
 	defer s.resume()
+	// Hold off direct writers (AcquireWrite) until the new file is in place.
+	s.writeGate.Lock()
+	defer s.writeGate.Unlock()
 
 	tmpPath := dbPath + ".compact"
 
@@ -655,6 +676,9 @@ func (s *Store) Compact(dbPath string) error {
 		var count int64
 		if err := s.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", table)).Scan(&count); err == nil {
 			log.Infof("compaction: copied %s (%d rows)", table, count)
+		}
+		if compactCopyHook != nil {
+			compactCopyHook(table)
 		}
 	}
 

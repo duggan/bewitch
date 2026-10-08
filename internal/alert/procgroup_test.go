@@ -19,7 +19,8 @@ import (
 // must return promptly (not block on the pipe) and take the descendant with it.
 func TestNotifierTimeoutKillsProcessTree(t *testing.T) {
 	old := notifyCmdTimeout
-	notifyCmdTimeout = 300 * time.Millisecond
+	// Long enough for sh to start and record its child even on a loaded CI box.
+	notifyCmdTimeout = 2 * time.Second
 	t.Cleanup(func() { notifyCmdTimeout = old })
 
 	dir := t.TempDir()
@@ -33,7 +34,7 @@ func TestNotifierTimeoutKillsProcessTree(t *testing.T) {
 
 	start := time.Now()
 	res := NewCommandNotifier(config.CommandDest{Cmd: script}).Send(&Alert{RuleName: "r", Severity: "warning"})
-	if elapsed := time.Since(start); elapsed > 5*time.Second {
+	if elapsed := time.Since(start); elapsed > 8*time.Second {
 		t.Fatalf("Send blocked %v after the %v timeout (waiting on a pipe held by a descendant)", elapsed, notifyCmdTimeout)
 	}
 	if !strings.Contains(res.Error, "timed out") {

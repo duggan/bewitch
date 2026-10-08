@@ -237,8 +237,13 @@ func main() {
 	// Start API server
 	apiServer := api.NewServer(cfg, st.DB)
 	apiServer.SetVersion(version)
+	// Direct DB writers wait out a compaction's copy+swap instead of writing to
+	// the file being replaced.
+	apiServer.SetWriteGate(st.AcquireWrite)
 	apiServer.SetCompactFunc(func() error {
-		return st.CompactExclusive(cfg.Daemon.DBPath)
+		err := st.CompactExclusive(cfg.Daemon.DBPath)
+		apiServer.CreateArchiveViews() // views aren't copied by compaction
+		return err
 	})
 	apiServer.SetSnapshotFunc(func(path string, withSystemTables bool) error {
 		return st.SnapshotExclusive(path, cfg.Daemon.ArchivePath, withSystemTables)
@@ -342,6 +347,7 @@ func main() {
 
 	// Start alert engine (declared earlier so the runtime-pins closure can reference it)
 	alertEngine = alert.NewEngine(st.DB, &cfg.Alerts)
+	alertEngine.SetWriteGate(st.AcquireWrite)
 	apiServer.SetNotifiers(alertEngine.Notifiers())
 	alertEngine.Start()
 
@@ -524,7 +530,9 @@ func main() {
 	// Start periodic compaction if configured
 	if compactionInterval > 0 {
 		runScheduledJob(st, "compact", compactionInterval, shutdownCh, func() error {
-			return st.CompactExclusive(cfg.Daemon.DBPath)
+			err := st.CompactExclusive(cfg.Daemon.DBPath)
+			apiServer.CreateArchiveViews() // views aren't copied by compaction
+			return err
 		})
 	}
 

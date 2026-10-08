@@ -38,6 +38,7 @@ type Server struct {
 	archiveDirStatFn   func() (*ArchiveDirStats, error)
 	statsFn            func() (*StatsCore, error)
 	selfStatsFn        func() SelfStats // daemon self-health (dropped batches, backoff, memory); pulled on demand
+	writeGate          func() (release func()) // store write gate; see SetWriteGate
 	version            string
 	archivePath        string
 	archiveThreshold   time.Duration
@@ -168,6 +169,22 @@ func (s *Server) SetStatsFunc(fn func() (*StatsCore, error)) {
 // runtime.ReadMemStats since scrapes are infrequent. Set once at startup.
 func (s *Server) SetSelfStatsFunc(fn func() SelfStats) {
 	s.selfStatsFn = fn
+}
+
+// SetWriteGate installs the store's write gate (store.Store.AcquireWrite).
+// Handlers that write directly through dbFn (rule CRUD, alert ack/clear,
+// preferences, archive views) hold it, so a write made while a compaction is
+// copying waits for the swap instead of landing in the file being replaced.
+func (s *Server) SetWriteGate(fn func() (release func())) {
+	s.writeGate = fn
+}
+
+// acquireWrite takes the write gate if one is installed (tests may not set it).
+func (s *Server) acquireWrite() (release func()) {
+	if s.writeGate == nil {
+		return func() {}
+	}
+	return s.writeGate()
 }
 
 // SetVersion records the daemon version string for /api/status and /api/stats.
@@ -428,6 +445,9 @@ func (s *Server) CreateArchiveViews() {
 	if s.archivePath == "" {
 		return
 	}
+	// View DDL is a write: keep it out of a concurrent compaction's copy window.
+	release := s.acquireWrite()
+	defer release()
 	db := s.dbFn()
 
 	for _, table := range archiveViewTables {

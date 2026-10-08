@@ -267,6 +267,8 @@ func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAckAlert(w http.ResponseWriter, r *http.Request) {
+	release := s.acquireWrite() // compaction-safe: see Server.SetWriteGate
+	defer release()
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -296,6 +298,8 @@ func (s *Server) handleAckAlert(w http.ResponseWriter, r *http.Request) {
 // daemon offline. Lifecycle-safe: if the rule is still breaching, the engine
 // re-fires on the next cycle (correct); if the condition cleared, it stays gone.
 func (s *Server) handleDeleteAlert(w http.ResponseWriter, r *http.Request) {
+	release := s.acquireWrite() // compaction-safe: see Server.SetWriteGate
+	defer release()
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, "invalid id")
@@ -387,6 +391,8 @@ func (s *Server) handleListAlertRules(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateAlertRule(w http.ResponseWriter, r *http.Request) {
+	release := s.acquireWrite() // compaction-safe: see Server.SetWriteGate
+	defer release()
 	var rule AlertRuleMetric
 	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
 		writeError(w, r, http.StatusBadRequest, "invalid JSON: "+err.Error())
@@ -489,6 +495,8 @@ func (s *Server) handleCreateAlertRule(w http.ResponseWriter, r *http.Request) {
 // tables); enabled stays under /toggle and created_at is preserved. All writes run in a
 // single transaction so a partial failure leaves the rule untouched.
 func (s *Server) handleUpdateAlertRule(w http.ResponseWriter, r *http.Request) {
+	release := s.acquireWrite() // compaction-safe: see Server.SetWriteGate
+	defer release()
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -615,6 +623,8 @@ func (s *Server) handleUpdateAlertRule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteAlertRule(w http.ResponseWriter, r *http.Request) {
+	release := s.acquireWrite() // compaction-safe: see Server.SetWriteGate
+	defer release()
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -672,6 +682,8 @@ func (s *Server) handleDeleteAlertRule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleToggleAlertRule(w http.ResponseWriter, r *http.Request) {
+	release := s.acquireWrite() // compaction-safe: see Server.SetWriteGate
+	defer release()
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -781,6 +793,8 @@ func (s *Server) handleGetPreferences(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSetPreference(w http.ResponseWriter, r *http.Request) {
+	release := s.acquireWrite() // compaction-safe: see Server.SetWriteGate
+	defer release()
 	var req struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`

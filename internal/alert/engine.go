@@ -19,6 +19,7 @@ const collectionStalledRule = "collection-stalled"
 // Engine periodically evaluates alert rules.
 type Engine struct {
 	dbFn      func() *sql.DB
+	writeGate func() (release func()) // store write gate; see SetWriteGate
 	rules     []Rule
 	notifiers []Notifier
 	interval  time.Duration
@@ -300,11 +301,18 @@ func (e *Engine) evaluate() {
 			log.Errorf("alert rule %s error: %v", rule.Name(), err)
 			continue
 		}
-		e.applyAlertState(db, rule.Name(), alert)
+		e.applyAlertState(rule.Name(), alert)
 	}
 
 	// Built-in dead-man's-switch: fire when metric collection has silently stopped.
-	e.applyAlertState(db, collectionStalledRule, e.collectionStalled(db))
+	e.applyAlertState(collectionStalledRule, e.collectionStalled(db))
+}
+
+// SetWriteGate installs the store's write gate (store.Store.AcquireWrite) so
+// firing/resolving an alert during a compaction waits for the file swap rather
+// than writing to the file being replaced (where the row would be lost).
+func (e *Engine) SetWriteGate(fn func() (release func())) {
+	e.writeGate = fn
 }
 
 // applyAlertState drives one rule's (or the dead-man's-switch's) firing
@@ -315,7 +323,14 @@ func (e *Engine) evaluate() {
 // has two effects vs the old logic: a persistent condition fires exactly once
 // until it clears, and acking a still-breaching alert no longer spawns a
 // duplicate next cycle. alert is nil when the rule is not currently breaching.
-func (e *Engine) applyAlertState(db *sql.DB, ruleName string, alert *Alert) {
+func (e *Engine) applyAlertState(ruleName string, alert *Alert) {
+	// Read-then-write on one handle, fetched after taking the write gate so it
+	// is the post-compaction database (see SetWriteGate).
+	if e.writeGate != nil {
+		release := e.writeGate()
+		defer release()
+	}
+	db := e.dbFn()
 	var activeID int
 	var activeSeverity string
 	hasActive := db.QueryRow(
