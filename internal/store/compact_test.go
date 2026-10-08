@@ -86,3 +86,50 @@ func TestCompactConcurrentReaders(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+// TestCompactThenRestart is the restart half of compaction, which nothing
+// covered: compaction used to drop schema_version (and migration 000005's
+// unique rule-name index), so the daemon's next db.Open replayed migrations
+// onto the already-migrated schema and refused to start ("migration
+// 000007_network_drops failed: Column with name rx_dropped already exists",
+// then "database is dirty at version 7"). Seen on ms01 after its first
+// post-archive compaction.
+func TestCompactThenRestart(t *testing.T) {
+	s, dbPath := newCompactTestStore(t)
+	var before int
+	if err := s.DB().QueryRow(`SELECT version FROM schema_version`).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Compact(dbPath); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	var after int
+	var dirty bool
+	if err := s.DB().QueryRow(`SELECT version, dirty FROM schema_version`).Scan(&after, &dirty); err != nil {
+		t.Fatalf("schema_version after compaction: %v", err)
+	}
+	if after != before || dirty {
+		t.Errorf("schema_version after compaction = %d dirty=%v, want %d clean", after, dirty, before)
+	}
+	if _, err := s.DB().Exec(`INSERT INTO alert_rules (name, type, severity) VALUES ('dup', 'threshold', 'warning')`); err != nil {
+		t.Fatalf("inserting rule: %v", err)
+	}
+	if _, err := s.DB().Exec(`INSERT INTO alert_rules (name, type, severity) VALUES ('dup', 'threshold', 'warning')`); err == nil {
+		t.Error("duplicate rule name accepted: unique index idx_alert_rules_name missing after compaction")
+	}
+	var dups int
+	if err := s.DB().QueryRow(`SELECT COUNT(*) FROM alert_rules WHERE name = 'dup'`).Scan(&dups); err != nil {
+		t.Fatal(err)
+	}
+	if dups != 1 {
+		t.Errorf("rule-name unique index missing after compaction: %d rows named 'dup'", dups)
+	}
+
+	// Restart: a fresh db.Open must run migrations cleanly against the compacted file.
+	s.DB().Close()
+	reopened, err := db.Open(dbPath, "", "")
+	if err != nil {
+		t.Fatalf("reopening compacted DB (daemon restart): %v", err)
+	}
+	reopened.Close()
+}

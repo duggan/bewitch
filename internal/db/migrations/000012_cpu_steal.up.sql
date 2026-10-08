@@ -3,4 +3,4 @@
 -- before this migration have no steal value, and AVG/MAX/MIN ignore NULLs, so an
 -- alert window made entirely of pre-migration rows simply doesn't fire (no data)
 -- rather than reading 0.
-ALTER TABLE cpu_metrics ADD COLUMN steal_pct DOUBLE;
+ALTER TABLE cpu_metrics ADD COLUMN IF NOT EXISTS steal_pct DOUBLE;

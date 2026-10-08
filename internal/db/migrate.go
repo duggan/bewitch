@@ -128,7 +128,12 @@ func runMigrations(db *sql.DB) error {
 	}
 
 	if dirty {
-		return fmt.Errorf("database is dirty at version %d; a previous migration failed — restore from backup or fix manually", currentVersion)
+		// A previous start failed part-way through this migration. Migrations are
+		// written to be re-runnable (CREATE ... IF NOT EXISTS, ADD COLUMN IF NOT
+		// EXISTS, Go migrations that check before changing), so retry it rather
+		// than refusing to start. If it fails again the error is returned as usual.
+		log.Printf("schema_version is dirty at %06d (a previous migration failed); retrying it", currentVersion)
+		currentVersion--
 	}
 
 	for _, m := range migrations {

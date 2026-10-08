@@ -43,6 +43,11 @@ var (
 		"alert_rule_process_thrashing",
 		"archive_state",
 		"scheduled_jobs",
+		// The migration runner's version record. Compaction rebuilds the DB from
+		// AllTables, so leaving this out made the next start see data with no
+		// version, stamp it as version 1, and replay migrations onto a schema that
+		// already had them (failing on 000007's ADD COLUMN, leaving the DB dirty).
+		"schema_version",
 	}
 )
 
@@ -108,6 +113,15 @@ func CreateSequencesIn(db *sql.DB, schema string) error {
 func CreateIndexesIn(db *sql.DB, schema string) error {
 	indexes := []struct{ ddl string }{
 		{fmt.Sprintf("CREATE INDEX idx_dimension_lookup ON %s.dimension_values(category, value)", schema)},
+	}
+	// Migration 000005's unique rule-name index. Snapshots without system tables
+	// have no alert_rules, so only create it where the table was copied.
+	var hasRules int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM duckdb_tables() WHERE database_name = ? AND table_name = 'alert_rules'`, schema).Scan(&hasRules); err != nil {
+		return fmt.Errorf("checking %s.alert_rules: %w", schema, err)
+	}
+	if hasRules > 0 {
+		indexes = append(indexes, struct{ ddl string }{fmt.Sprintf("CREATE UNIQUE INDEX idx_alert_rules_name ON %s.alert_rules(name)", schema)})
 	}
 	for _, idx := range indexes {
 		if _, err := db.Exec(idx.ddl); err != nil {

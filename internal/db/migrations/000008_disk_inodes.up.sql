@@ -1,2 +1,2 @@
-ALTER TABLE disk_metrics ADD COLUMN inodes_total BIGINT;
-ALTER TABLE disk_metrics ADD COLUMN inodes_free BIGINT;
+ALTER TABLE disk_metrics ADD COLUMN IF NOT EXISTS inodes_total BIGINT;
+ALTER TABLE disk_metrics ADD COLUMN IF NOT EXISTS inodes_free BIGINT;

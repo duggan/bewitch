@@ -106,10 +106,46 @@ func TestExistingDBDetection(t *testing.T) {
 	}
 }
 
-func TestDirtyDBRefuses(t *testing.T) {
+// TestReplayOnMigratedDBWithoutVersion is the post-compaction case: before the
+// fix, compaction dropped schema_version, so the next start stamped a fully
+// migrated DB as version 1 and replayed migrations — 000007's ADD COLUMN then
+// failed ("Column with name rx_dropped already exists") and left it dirty. With
+// re-runnable migrations the replay just converges on the latest version.
+func TestReplayOnMigratedDBWithoutVersion(t *testing.T) {
 	db := openTestDB(t)
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("initial runMigrations: %v", err)
+	}
+	if _, err := db.Exec(`DROP TABLE schema_version`); err != nil {
+		t.Fatal(err)
+	}
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("replay onto migrated schema: %v", err)
+	}
+	assertClean(t, db)
+}
 
-	// Create schema_version in dirty state.
+// TestDirtyDBRetries covers a DB already left dirty by that failure (ms01 was
+// "dirty at version 7"): the runner retries the dirty migration instead of
+// refusing to start.
+func TestDirtyDBRetries(t *testing.T) {
+	db := openTestDB(t)
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("initial runMigrations: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE schema_version SET version = 7, dirty = true`); err != nil {
+		t.Fatal(err)
+	}
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("runMigrations on dirty DB: %v", err)
+	}
+	assertClean(t, db)
+}
+
+// TestDirtyDBStillFailsLoudly: a dirty migration that genuinely can't apply
+// (its table doesn't exist) is retried and its error returned, not ignored.
+func TestDirtyDBStillFailsLoudly(t *testing.T) {
+	db := openTestDB(t)
 	if _, err := db.Exec(`CREATE TABLE schema_version (
 		version INTEGER NOT NULL,
 		dirty BOOLEAN NOT NULL DEFAULT false,
@@ -117,13 +153,23 @@ func TestDirtyDBRefuses(t *testing.T) {
 	)`); err != nil {
 		t.Fatalf("creating schema_version: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO schema_version (version, dirty) VALUES (1, true)`); err != nil {
+	if _, err := db.Exec(`INSERT INTO schema_version (version, dirty) VALUES (7, true)`); err != nil {
 		t.Fatalf("inserting dirty version: %v", err)
 	}
+	if err := runMigrations(db); err == nil {
+		t.Fatal("expected migration 7 to fail without network_metrics, got nil")
+	}
+}
 
-	err := runMigrations(db)
-	if err == nil {
-		t.Fatal("expected error for dirty database, got nil")
+func assertClean(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM schema_version`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("reading schema_version: %v", err)
+	}
+	if want := latestVersion(t); version != want || dirty {
+		t.Errorf("schema_version = %d dirty=%v, want %d clean", version, dirty, want)
 	}
 }
 
