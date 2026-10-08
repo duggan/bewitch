@@ -92,7 +92,7 @@ func TestCompactConcurrentReaders(t *testing.T) {
 // unique rule-name index), so the daemon's next db.Open replayed migrations
 // onto the already-migrated schema and refused to start ("migration
 // 000007_network_drops failed: Column with name rx_dropped already exists",
-// then "database is dirty at version 7"). Seen on ms01 after its first
+// then "database is dirty at version 7"). Seen in the field after a first
 // post-archive compaction.
 func TestCompactThenRestart(t *testing.T) {
 	s, dbPath := newCompactTestStore(t)

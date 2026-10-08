@@ -14,7 +14,7 @@ import (
 // test process over loopback, and asserts the per-TGID counters reflect it. It requires
 // BTF + CAP_BPF/CAP_PERFMON (or root) and a kernel new enough for fentry; it skips
 // cleanly when eBPF is unavailable, so it is a harmless no-op in CI and on unprivileged
-// or older hosts. Run it privileged on a real Linux box (e.g. ms01) to exercise the
+// or older hosts. Run it privileged on a real Linux box to exercise the
 // kprobe-free fentry path end to end.
 func TestNetIOReaderTCPAttribution(t *testing.T) {
 	r, err := NewNetIOReader()

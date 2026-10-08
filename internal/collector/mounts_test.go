@@ -23,19 +23,19 @@ func TestParseMountinfoAndDropBindDuplicates(t *testing.T) {
 	}{
 		{
 			// Real excerpt from bewitchd's private mount namespace on an LVM host
-			// (ms01): ReadWritePaths/StateDirectory and PrivateTmp bind subdirectories
+			// (sanitized): ReadWritePaths/StateDirectory and PrivateTmp bind subdirectories
 			// of /var back into the tree. They must not show up as extra disks.
 			name: "systemd sandbox binds on LVM",
-			info: `1036 258 254:0 / / ro,nosuid,relatime shared:353 master:1 - ext4 /dev/mapper/ms01--vg-root rw,errors=remount-ro
+			info: `1036 258 254:0 / / ro,nosuid,relatime shared:353 master:1 - ext4 /dev/mapper/host--vg-root rw,errors=remount-ro
 1068 1036 0:46 / /tmp rw,nosuid,nodev shared:736 master:97 - tmpfs tmpfs rw,inode64
 1081 1036 259:2 / /boot ro,nosuid,relatime shared:750 master:122 - ext4 /dev/nvme0n1p2 rw
 1082 1081 259:1 / /boot/efi ro,nosuid,relatime shared:751 master:134 - vfat /dev/nvme0n1p1 rw
-1083 1036 254:1 / /var ro,nosuid,relatime shared:752 master:126 - ext4 /dev/mapper/ms01--vg-var rw
-1089 1036 0:56 / /mnt/wd1/share ro,nosuid,noatime shared:760 master:196 - nfs4 10.10.10.2:/mnt/wd1/share rw
-1093 1036 8:65 / /mnt/backup0 ro,nosuid,relatime shared:764 master:611 - ext4 /dev/sde1 rw
-1108 1083 254:1 /lib/bewitch /var/lib/bewitch rw,nosuid,relatime shared:757 master:126 - ext4 /dev/mapper/ms01--vg-var rw
-1109 1083 254:1 /tmp/systemd-private-1fe2-bewitchd.service-7qou7n/tmp /var/tmp rw,nosuid,relatime shared:758 master:126 - ext4 /dev/mapper/ms01--vg-var rw`,
-			want: "/,/boot,/boot/efi,/var,/mnt/backup0",
+1083 1036 254:1 / /var ro,nosuid,relatime shared:752 master:126 - ext4 /dev/mapper/host--vg-var rw
+1089 1036 0:56 / /mnt/nas ro,nosuid,noatime shared:760 master:196 - nfs4 192.0.2.10:/export/nas rw
+1093 1036 8:65 / /mnt/backup ro,nosuid,relatime shared:764 master:611 - ext4 /dev/sde1 rw
+1108 1083 254:1 /lib/bewitch /var/lib/bewitch rw,nosuid,relatime shared:757 master:126 - ext4 /dev/mapper/host--vg-var rw
+1109 1083 254:1 /tmp/systemd-private-1fe2-bewitchd.service-7qou7n/tmp /var/tmp rw,nosuid,relatime shared:758 master:126 - ext4 /dev/mapper/host--vg-var rw`,
+			want: "/,/boot,/boot/efi,/var,/mnt/backup",
 		},
 		{
 			name: "btrfs sibling subvolumes are kept",

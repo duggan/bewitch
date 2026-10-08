@@ -125,7 +125,7 @@ func TestReplayOnMigratedDBWithoutVersion(t *testing.T) {
 	assertClean(t, db)
 }
 
-// TestDirtyDBRetries covers a DB already left dirty by that failure (ms01 was
+// TestDirtyDBRetries covers a DB already left dirty by that failure (one was
 // "dirty at version 7"): the runner retries the dirty migration instead of
 // refusing to start.
 func TestDirtyDBRetries(t *testing.T) {

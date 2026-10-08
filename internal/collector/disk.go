@@ -300,7 +300,7 @@ func (c *DiskCollector) readSMARTDevice(devPath string) *SMARTInfo {
 // SMART data. The library and SAT paths mark a device Available/Healthy before
 // reading anything, so a device that accepts the commands but returns an empty
 // page — typically a USB flash stick behind a bridge smartctl doesn't know
-// (cube's SanDisk 0781:5583) — came out "healthy" with every field zero. Any
+// (e.g. SanDisk 0781:5583) — came out "healthy" with every field zero. Any
 // real drive reports at least power-on hours or a power-cycle count, so an
 // all-zero reading means "no SMART", not "healthy". (smartctl results carry
 // explicit status and don't go through this check.)

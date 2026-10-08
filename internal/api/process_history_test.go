@@ -145,7 +145,7 @@ func TestProcessHistoryBothSourcesNoDoubleCount(t *testing.T) {
 // host's UTC offset. ts is a naive TIMESTAMP holding UTC; the handlers used to
 // compare it against to_timestamp(?) (a TIMESTAMPTZ), which makes DuckDB read
 // ts in the session's local zone. On a UTC+1 host "last hour" missed the last
-// hour entirely (seen on ms01: memory 0 points, cpu — which bound Go times —
+// hour entirely (memory returned 0 points while cpu — which bound Go times —
 // fine). CI runs in UTC, so force zones on both sides of UTC here.
 func TestHistoryWindowNonUTC(t *testing.T) {
 	for _, tz := range []string{"Europe/Dublin", "America/Los_Angeles", "Asia/Tokyo"} {
