@@ -2,6 +2,13 @@
 
 All notable changes to bewitch are documented here.
 
+## [0.9.1] - 2026-10-09
+
+### Fixed
+
+- **Go 1.26.9** — fixes standard-library vulnerabilities in `net/http`, `net/textproto` and `crypto/tls` that were published after 0.9.0 was built
+- **Release builds verify the Go toolchain's checksum** — the download check had been silently skipped. Checksums are now pinned in the build, and the build fails if they don't match
+
 ## [0.9.0] - 2026-10-09
 
 ### Added

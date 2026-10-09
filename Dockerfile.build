@@ -2,9 +2,9 @@
 #   FROM debian:bookworm@sha256:<digest>
 # Left as a floating tag so `apt-get update` below keeps picking up base-image
 # security updates; bump to a digest pin if reproducibility outweighs that.
-FROM debian:bookworm
+FROM debian:bookworm AS build
 
-ARG GO_VERSION=1.26.6
+ARG GO_VERSION=1.26.9
 ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y \
@@ -15,24 +15,27 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Download the Go toolchain to a file and verify it against the official SHA256
-# (published at <url>.sha256) before extracting, instead of piping curl straight
-# into tar. The toolchain compiles the shipped binaries, so an in-transit/mirror
-# swap would taint every release. Pass --build-arg GO_SHA256=<hex> to pin/enforce
-# a specific checksum; otherwise the published one is fetched and used when valid.
+# Download the Go toolchain to a file and verify it against a pinned SHA256
+# before extracting. The toolchain compiles the shipped binaries, so an
+# in-transit/mirror swap would taint every release. The checksums below are
+# for GO_VERSION (from https://go.dev/dl/?mode=json) and must be updated with
+# it; the build fails closed on a mismatch or an unpinned arch. (Fetching
+# `go.dev/dl/<file>.sha256` doesn't work: it returns an HTML redirect page, so
+# an earlier fetch-and-verify step silently skipped verification.) Pass
+# --build-arg GO_SHA256=<hex> to override for another version.
 ARG GO_SHA256=""
 RUN set -eux; \
     url="https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz"; \
-    curl -fsSL "$url" -o /tmp/go.tgz; \
     sum="${GO_SHA256}"; \
     if [ -z "$sum" ]; then \
-        sum="$(curl -fsSL "${url}.sha256" 2>/dev/null | tr -d '[:space:]' || true)"; \
+        case "${GO_VERSION}-${TARGETARCH}" in \
+            1.26.9-amd64) sum=42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d ;; \
+            1.26.9-arm64) sum=4a97373d49fcacdcf3694fea368a500b00ee3e963974f3e7514132717632f052 ;; \
+            *) echo "ERROR: no pinned SHA256 for go${GO_VERSION} linux/${TARGETARCH}; pass --build-arg GO_SHA256=<hex>" >&2; exit 1 ;; \
+        esac; \
     fi; \
-    if printf '%s' "$sum" | grep -Eq '^[0-9a-f]{64}$'; then \
-        echo "${sum}  /tmp/go.tgz" | sha256sum -c -; \
-    else \
-        echo "WARNING: no valid SHA256 available for ${url}; extracting without checksum verification" >&2; \
-    fi; \
+    curl -fsSL "$url" -o /tmp/go.tgz; \
+    echo "${sum}  /tmp/go.tgz" | sha256sum -c -; \
     tar -C /usr/local -xzf /tmp/go.tgz; \
     rm -f /tmp/go.tgz
 ENV PATH="/usr/local/go/bin:${PATH}"
