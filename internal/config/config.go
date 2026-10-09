@@ -27,7 +27,8 @@ type Config struct {
 }
 
 type DaemonConfig struct {
-	Mock                bool   `toml:"mock"` // synthetic data for macOS TUI development
+	Mock                bool   `toml:"mock"`          // synthetic data for macOS TUI development
+	MockScenario        string `toml:"mock_scenario"` // mock only: "" or "incident" (a scripted backup that trips two alerts, for demos)
 	Socket              string `toml:"socket"`
 	Listen              string `toml:"listen"` // optional TCP listen address, e.g. ":9119"
 	DBPath              string `toml:"db_path"`

@@ -5,6 +5,7 @@
 
 [daemon]
 # mock = false  # synthetic data for macOS TUI development
+# mock_scenario = ""  # mock only: "incident" plays a scripted backup that trips two alerts (for demos)
 # socket = "/run/bewitch/bewitch.sock"  # default; requires RuntimeDirectory=bewitch in systemd
 # listen = ":9119"  # optional TCP listener for remote TUI access; empty = disabled
 # tls_cert = "/etc/bewitch/tls/cert.pem"  # PEM certificate; empty = auto-generate self-signed

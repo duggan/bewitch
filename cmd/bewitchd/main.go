@@ -107,23 +107,29 @@ func main() {
 		procCollector collector.ProcessCollectorI
 	)
 
+	var mockSim *collector.MockSim
 	if cfg.Daemon.Mock {
 		log.Infof("mock mode enabled: using synthetic data")
+		var err error
+		mockSim, err = collector.NewMockSim(time.Now(), cfg.Daemon.MockScenario)
+		if err != nil {
+			log.Fatalf("mock_scenario: %v", err)
+		}
 
 		// Seed historical data and demo alerts in the background so the
 		// daemon socket comes up immediately (seeding can take 10+ seconds
 		// on slow CI machines).
 		go func() {
-			if err := st.SeedMock(); err != nil {
+			if err := st.SeedMock(mockSim, cfg.Collectors.Process.Pinned); err != nil {
 				log.Errorf("seeding mock data: %v", err)
 			}
 		}()
-		cpuCollector = collector.NewMockCPUCollector()
-		memCollector = collector.NewMockMemoryCollector()
-		loadCollector = collector.NewMockLoadCollector()
-		diskCollector = collector.NewMockDiskCollector()
-		netCollector = collector.NewMockNetworkCollector()
-		procCollector = collector.NewMockProcessCollector(cfg.Collectors.Process.GetMaxProcesses(), cfg.Collectors.Process.Pinned)
+		cpuCollector = collector.NewMockCPUCollector(mockSim)
+		memCollector = collector.NewMockMemoryCollector(mockSim)
+		loadCollector = collector.NewMockLoadCollector(mockSim)
+		diskCollector = collector.NewMockDiskCollector(mockSim)
+		netCollector = collector.NewMockNetworkCollector(mockSim)
+		procCollector = collector.NewMockProcessCollector(mockSim, cfg.Collectors.Process.GetMaxProcesses(), cfg.Collectors.Process.Pinned)
 	} else {
 		var err error
 		cpu, err := collector.NewCPUCollector()
@@ -388,7 +394,7 @@ func main() {
 
 	var eccCollector collector.Collector
 	if cfg.Daemon.Mock {
-		eccCollector = collector.NewMockECCCollector()
+		eccCollector = collector.NewMockECCCollector(mockSim)
 	} else {
 		eccCollector = collector.NewECCCollector()
 	}
@@ -404,7 +410,7 @@ func main() {
 	if cfg.Daemon.Mock || cfg.Collectors.Temperature.IsEnabled() {
 		var tempCollector collector.Collector
 		if cfg.Daemon.Mock {
-			tempCollector = collector.NewMockTemperatureCollector()
+			tempCollector = collector.NewMockTemperatureCollector(mockSim)
 		} else {
 			tempCollector = collector.NewTemperatureCollector()
 		}
@@ -416,7 +422,7 @@ func main() {
 	if cfg.Daemon.Mock || cfg.Collectors.Power.IsEnabled() {
 		var powerCollector collector.Collector
 		if cfg.Daemon.Mock {
-			powerCollector = collector.NewMockPowerCollector()
+			powerCollector = collector.NewMockPowerCollector(mockSim)
 		} else {
 			powerCollector = collector.NewPowerCollector()
 		}
@@ -428,7 +434,7 @@ func main() {
 	if cfg.Daemon.Mock || cfg.Collectors.GPU.IsEnabled() {
 		var gpuCollector collector.Collector
 		if cfg.Daemon.Mock {
-			gpuCollector = collector.NewMockGPUCollector()
+			gpuCollector = collector.NewMockGPUCollector(mockSim)
 		} else {
 			gpuCollector = collector.NewGPUCollector()
 		}
