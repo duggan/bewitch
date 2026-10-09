@@ -81,8 +81,9 @@ is a ready-made starting point; the Debian package installs it as
    - **`pve-storage`**: LVM-thin pool usage.
    - **`pve-cluster`**: nodes online and quorum.
 
-   The numbers are stored, charted and exported to Prometheus. Alert rules can't use custom
-   metrics yet.
+   bewitch stores and charts these numbers, and includes them on its own Prometheus
+   [`/metrics`](@/docs/api.md#prometheus-metrics) endpoint as `bewitch_custom_value`. Alert rules
+   can't use custom metrics yet.
 
 Authenticate with `type = "header"` and `header_name = "Authorization"`. Proxmox expects
 `PVEAPIToken=…` rather than `Bearer …`, so the `bearer` auth type won't work.

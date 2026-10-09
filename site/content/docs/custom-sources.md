@@ -77,7 +77,7 @@ the API's shape changed) and the source backs off and retries, same as any other
 
 Each source declares two kinds of fields:
 
-- `[[custom_source.metric]]` — a **number**. Stored in DuckDB, charted, and exported to Prometheus.
+- `[[custom_source.metric]]` — a **number**. Stored in DuckDB, charted, and exported on bewitch's [`/metrics`](@/docs/api.md#prometheus-metrics) endpoint.
   Has a `name` (the series key), a `path`, and a `unit`.
 - `[[custom_source.status]]` — anything **non-numeric** (a version string, a connection state).
   Shown live on the Services tab but never stored. Has a `label`, a `path`, and optional `badges`.
