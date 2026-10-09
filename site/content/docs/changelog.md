@@ -6,6 +6,40 @@ weight = 100
 
 All notable changes to bewitch are documented here. See the full [CHANGELOG.md](https://github.com/duggan/bewitch/blob/main/CHANGELOG.md) on GitHub.
 
+## 0.9.0
+
+2026-10-09
+
+### Added
+
+- **A sandboxed NVMe SMART helper** (`bewitch-smart.timer`) — recent kernels need `CAP_SYS_ADMIN` for the NVMe health log; the helper holds it so the daemon doesn't. Enabled automatically
+- **`[custom_source.tls]`** for self-signed HTTPS services (certificate fingerprint pin, CA file, or skip-verify)
+- **Proxmox VE support** — a "Running on Proxmox VE" docs page, an example Proxmox API source file (guests, LVM-thin usage, quorum), and `/etc/pve` excluded from disks by default
+- **ZFS support** — datasets (including a ZFS root) are listed as disks with space and I/O, and SMART is read from each pool's disks. They were previously missing entirely
+
+### Changed
+
+- **Go 1.26.8** (fixes standard-library vulnerabilities), **DuckDB 1.5.6**, dependency updates, and CI actions moved off the deprecated Node 20
+- **Docs site**: `/docs/` now shows the latest stable release, development docs live at `/docs/dev/`, and each release has a frozen copy at `/docs/v<version>/`
+- **Tarball installer**: systemd units now point at `/usr/local/bin`, where it installs the binaries
+
+### Fixed
+
+- **Compaction no longer breaks restarts** — compaction dropped the database's schema-version record, so the next start replayed migrations and refused to start ("database is dirty"). Migrations are now safe to re-run, and a database already in that state repairs itself on upgrade
+- **Writes made during compaction are no longer lost** — rule changes, alert acknowledgements, preferences and fired or resolved alerts recorded while compaction was copying went to the database file being replaced. They now wait for the swap. Scheduled and manual compactions also no longer drop the `all_*` archive views
+- **Archiving no longer stalls after upgrades** — Parquet files written before a schema change made every later archive run fail (silently, for months on affected hosts). Columns now match by name across all archive reads, merges, views, snapshots and unarchive
+- **Power monitoring works under the packaged service** — it previously recorded nothing, because RAPL powercap counters are root-only since kernel 5.10. It now reads them through perf events using `CAP_PERFMON`
+- **SMART works on Ubuntu 22.04 and other older-systemd hosts** — the service's `ProtectClock` implied a device allowlist that blocked every disk
+- **Disk I/O on LVM, LUKS and `/dev/disk/by-*` mounts** no longer always reads 0 (#3)
+- **NVMe SMART no longer shows a fake "healthy" all-zero reading** when the health log can't be read, and neither do USB flash drives without SMART (#3)
+- **History charts on non-UTC hosts** — memory, disk, network, temperature, power, GPU and process windows were shifted by the host's UTC offset (on UTC+1, the last hour of memory was empty)
+- **Process history ranks by total CPU per process name** — one-off bursts used to outrank steady processes, and processes sharing a name produced duplicate points
+- **Email alerts with `use_mail_cmd` work under the packaged service** — they're delivered to the local MTA over SMTP on `127.0.0.1:25`, because `NoNewPrivileges` blocks Postfix's setgid `postdrop`
+- **Notifier commands no longer leak child processes or hang** after their timeout
+- **No more phantom `/var/lib/bewitch` and `/var/tmp` disks** from the service's sandbox mounts
+- **Mounts that aren't block devices** (e.g. Proxmox's `/etc/pve` on `/dev/fuse`) are no longer probed for SMART (#3)
+- **ZFS ARC counts as cache, not used memory** — the kernel leaves it out of available memory, so ZFS hosts showed most of RAM as used
+
 ## 0.8.0
 
 2026-06-11
