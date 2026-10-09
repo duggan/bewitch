@@ -83,27 +83,43 @@ func CreateTablesIn(db *sql.DB, schema string, tables []string) error {
 }
 
 // CreateSequencesIn introspects sequences in the main schema and creates
-// matching sequences in the target schema.
+// matching sequences in the target schema, each continuing from where the
+// original left off. (Starting them over at 1 made every id handed out after a
+// compaction collide with a copied row: fired alerts shared ids, which the TUI's
+// selection and DELETE /api/alerts/{id} key on.)
 func CreateSequencesIn(db *sql.DB, schema string) error {
-	rows, err := db.Query(`SELECT sequence_name FROM duckdb_sequences() WHERE schema_name = 'main'`)
+	rows, err := db.Query(`SELECT sequence_name, start_value, increment_by, last_value
+		FROM duckdb_sequences() WHERE schema_name = 'main'`)
 	if err != nil {
 		return fmt.Errorf("listing sequences: %w", err)
 	}
 	defer rows.Close()
 
-	var seqs []string
+	type seqState struct {
+		name             string
+		start, increment int64
+		last             sql.NullInt64 // NULL until nextval is first called
+	}
+	var seqs []seqState
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var sq seqState
+		if err := rows.Scan(&sq.name, &sq.start, &sq.increment, &sq.last); err != nil {
 			return err
 		}
-		seqs = append(seqs, name)
+		seqs = append(seqs, sq)
+	}
+	if err := rows.Err(); err != nil {
+		return err
 	}
 
-	for _, seq := range seqs {
-		ddl := fmt.Sprintf("CREATE SEQUENCE %s.%s START 1", schema, seq)
+	for _, sq := range seqs {
+		next := sq.start
+		if sq.last.Valid {
+			next = sq.last.Int64 + sq.increment
+		}
+		ddl := fmt.Sprintf("CREATE SEQUENCE %s.%s START %d INCREMENT BY %d", schema, sq.name, next, sq.increment)
 		if _, err := db.Exec(ddl); err != nil {
-			return fmt.Errorf("creating sequence %s.%s: %w", schema, seq, err)
+			return fmt.Errorf("creating sequence %s.%s: %w", schema, sq.name, err)
 		}
 	}
 	return nil

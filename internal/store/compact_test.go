@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -173,5 +175,56 @@ func TestCompactDoesNotLoseConcurrentWrites(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("alert written during compaction: %d rows after the swap, want 1 (lost to the replaced file)", n)
+	}
+}
+
+// TestCompactContinuesSequences: compaction recreated every sequence at START 1,
+// so after it (scheduled, manual, or the automatic post-archive pass) each new
+// fired alert reused an existing alert's id — the TUI's selection and
+// DELETE /api/alerts/{id} key on that id — and a new rule's id collided with an
+// existing rule's config rows. Ids must keep counting from where they were,
+// including across a restart.
+func TestCompactContinuesSequences(t *testing.T) {
+	s, dbPath := newCompactTestStore(t)
+	insertAlert := func(conn *sql.DB, msg string) {
+		t.Helper()
+		if _, err := conn.Exec(`INSERT INTO alerts (ts, rule_name, severity, message) VALUES (?, 'r', 'warning', ?)`, time.Now(), msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 3; i++ {
+		insertAlert(s.DB(), "before")
+	}
+	if _, err := s.DB().Exec(`INSERT INTO alert_rules (name, type, severity) VALUES ('a', 'threshold', 'warning')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Compact(dbPath); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	insertAlert(s.DB(), "after")
+	if _, err := s.DB().Exec(`INSERT INTO alert_rules (name, type, severity) VALUES ('b', 'threshold', 'warning')`); err != nil {
+		t.Fatal(err)
+	}
+
+	s.DB().Close() // restart, then compact again
+	reopened, err := db.Open(dbPath, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2 := New(reopened)
+	if err := s2.Compact(dbPath); err != nil {
+		t.Fatalf("second Compact: %v", err)
+	}
+	insertAlert(s2.DB(), "after restart")
+	defer s2.DB().Close()
+
+	for _, table := range []string{"alerts", "alert_rules"} {
+		var rows, ids int
+		if err := s2.DB().QueryRow(fmt.Sprintf(`SELECT COUNT(*), COUNT(DISTINCT id) FROM %s`, table)).Scan(&rows, &ids); err != nil {
+			t.Fatal(err)
+		}
+		if rows != ids {
+			t.Errorf("%s: %d rows share %d ids after compaction", table, rows, ids)
+		}
 	}
 }
