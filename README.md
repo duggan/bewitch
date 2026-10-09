@@ -4,7 +4,7 @@
 
 <h1 align="center">bewitch</h1>
 
-<p align="center">A Linux system monitor for the machines nobody else is watching.</p>
+<p align="center">A system monitor for Linux homelabs, with a terminal UI.</p>
 
 <p align="center">
   <a href="https://github.com/duggan/bewitch/actions/workflows/test.yml"><img src="https://github.com/duggan/bewitch/actions/workflows/test.yml/badge.svg" alt="Test"></a>
@@ -14,11 +14,15 @@
 
 ![The bewitch dashboard](site/static/screenshots/dashboard.png)
 
-bewitch is two small binaries. `bewitchd` is a daemon that reads `/proc` and `/sys` and keeps months
-of metrics in an embedded DuckDB database. `bewitch` is a terminal UI over them: live views,
-history charts, SMART and hardware health, and alerts. It's built for homelabs (the basement
-rack, the Raspberry Pi, that one VPS) and runs quietly as an unprivileged, sandboxed service on
-small machines. It comes in one colour: hot pink.
+bewitch monitors homelab servers, Raspberry Pis and VPSes. It has two binaries:
+
+- `bewitchd`, a daemon that collects metrics from `/proc`, `/sys` and the hardware, stores them in
+  a local DuckDB database, and evaluates alert rules.
+- `bewitch`, a client with a terminal UI (live views, history charts, hardware health, alerts), a
+  SQL console, and maintenance commands.
+
+Each machine runs its own daemon; there is no central server. The packaged daemon runs as an
+unprivileged, sandboxed systemd service and caps DuckDB's memory use at 512 MB by default.
 
 ## Install
 
@@ -41,24 +45,25 @@ bewitch -addr myhost:9119     # a remote daemon, over TLS with fingerprint pinni
 
 ## What it does
 
-- **Watches the whole machine:** CPU (per core, including steal), memory, disk space and I/O,
+- **System metrics:** CPU (per core, including steal), memory, disk space and I/O,
   network, temperatures, power (Intel/AMD RAPL), GPUs (Intel, NVIDIA, AMD), ECC memory, and every
   process, with per-process disk and network I/O.
-- **Tracks disk health:** SMART for SATA and NVMe, stored over time, so you can watch a drive
-  wear out and alert before it fails.
-- **Keeps history:** months of metrics charted at any time range, with optional retention and
-  Parquet archival.
-- **Alerts:** threshold, predictive ("disk full in 48 hours"), variance and process-down rules,
-  built in the TUI. Delivery by email, shell command, or Discord, Telegram, ntfy, Slack and more,
-  with recovery notices and a dead-man's switch.
-- **Watches your services too:** chart numbers from Pi-hole, Home Assistant, Docker, Proxmox VE or
-  any JSON HTTP API, declared in TOML with no code.
-- **Speaks SQL:** a REPL over everything it stores, export to CSV, Parquet or JSON, and a
+- **Disk health:** SMART data for SATA, NVMe and ZFS pool disks, stored over time so you can
+  track wear and alert on reallocated sectors, errors or failed health checks.
+- **History:** every sample is stored, and the TUI charts any time range. Optional retention
+  pruning and Parquet archival keep the database small.
+- **Alerts:** threshold, predictive (a disk projected to reach 90% within 48 hours), variance
+  and process rules, created in the TUI. Notifications go to email, a shell command, or Discord,
+  Telegram, ntfy, Slack and other services, with a second notification when an alert resolves.
+  A built-in alert fires if metric collection stops.
+- **Custom sources:** poll Pi-hole, Home Assistant, Docker, Proxmox VE or any JSON HTTP API and
+  chart the values. Sources are configured in TOML.
+- **SQL and export:** a REPL over all stored data, export to CSV, Parquet or JSON, and a
   Prometheus `/metrics` endpoint.
-- **Stays out of the way:** runs as its own unprivileged user in a hardened systemd sandbox, with
-  TLS and token authentication for remote access.
+- **Remote access:** the TUI and REPL can connect to a daemon on another machine over TLS, with
+  certificate fingerprint pinning and optional token authentication.
 
-## A look around
+## Screenshots
 
 | Processes | Hardware |
 | --- | --- |
