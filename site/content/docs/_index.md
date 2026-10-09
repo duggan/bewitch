@@ -6,25 +6,19 @@ template = "section.html"
 page_template = "page.html"
 +++
 
-bewitch is a monitoring daemon (`bewitchd`) and a TUI (`bewitch`) for Linux. It reads
-`/proc` and `/sys`, stores what it finds in DuckDB, and gives you charts, alerts, remote
-access, and a SQL console over the lot. These pages cover installing it, configuring it,
-and getting at your data — locally or over TLS.
+bewitch is two programs. **`bewitchd`** is a daemon that reads `/proc` and `/sys` on a
+schedule, writes what it finds to a local DuckDB file, evaluates your alert rules, and serves
+it all over an HTTP API. **`bewitch`** is the client: a terminal UI, a SQL console
+(`bewitch repl`), and a handful of maintenance commands.
 
-## Architecture
+New here? Start with [Installation](@/docs/installation.md), then open the TUI with
+`bewitch`. The defaults are sensible enough that you may never need
+[Configuration](@/docs/configuration.md).
 
 ```
-bewitchd (daemon)
-├── Collectors (procfs/sysfs, parallel goroutines) → Store (DuckDB)
-├── Alert Engine (threshold + predictive + variance → notifications)
-├── Pruner / Compactor / Archiver
-└── API Server
-    ├── Unix socket (always, plain HTTP)
-    └── TCP listener (optional, TLS by default)
-
-bewitch (TUI)
-└── Daemon Client (unix socket or TCP+TLS)
-
-bewitch repl (SQL console)
-└── Daemon Client (POST /api/query)
+bewitchd ── collectors ──▶ DuckDB ──▶ alert engine ──▶ email / chat / command
+    │                         │
+    └── HTTP API ◀────────────┘
+          ├── unix socket   (always)       ◀── bewitch, bewitch repl
+          └── TCP + TLS     (optional)     ◀── remote clients, Prometheus
 ```

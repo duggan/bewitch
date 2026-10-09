@@ -1,11 +1,14 @@
 +++
 title = "Running on Proxmox VE"
 description = "What works out of the box on a Proxmox host, what to set up, and how to pull guest and storage stats from the PVE API."
-weight = 37
+weight = 25
+
+[extra]
+group = "Get started"
 +++
 
-Bewitch runs well on a Proxmox VE host: it's a Debian system underneath, and the packaged daemon
-stays unprivileged. This page covers what works out of the box, the few things to set up, and how
+Proxmox VE is Debian-based, so bewitch installs on the host from the APT repository like any
+Debian system, and the packaged daemon runs unprivileged. This page covers what works out of the box, the few things to set up, and how
 to pull guest and storage stats from the Proxmox API.
 
 ## Install on the host, not in a container
@@ -78,7 +81,8 @@ is a ready-made starting point; the Debian package installs it as
    - **`pve-storage`**: LVM-thin pool usage.
    - **`pve-cluster`**: nodes online and quorum.
 
-   The numbers are stored and chartable, and you can alert on them like any other metric.
+   The numbers are stored, charted and exported to Prometheus. Alert rules can't use custom
+   metrics yet.
 
 Authenticate with `type = "header"` and `header_name = "Authorization"`. Proxmox expects
 `PVEAPIToken=…` rather than `Bearer …`, so the `bearer` auth type won't work.

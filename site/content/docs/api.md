@@ -1,7 +1,10 @@
 +++
 title = "API Reference"
 description = "The HTTP endpoints behind it all — metrics, history, query, export, snapshots, alerts."
-weight = 80
+weight = 95
+
+[extra]
+group = "Reference"
 +++
 
 The daemon exposes an HTTP API over its unix socket. When TCP is enabled, the same API is
@@ -42,10 +45,15 @@ curl --unix-socket /run/bewitch/bewitch.sock \
     "metric": "cpu.aggregate",
     "operator": ">",
     "value": 90,
-    "duration": "5m"
+    "duration": "5m",
+    "aggregate": "avg"
   }' \
   http://localhost/api/alert-rules
 ```
+
+`aggregate` is `avg` (the default), `max` or `min`; see
+[threshold rules](@/docs/alerts.md#threshold). Rule names must be unique (a duplicate returns
+`409`), and a rule's type can't be changed by `PUT`.
 
 ```bash
 # execute SQL query
@@ -60,6 +68,21 @@ curl --unix-socket /run/bewitch/bewitch.sock \
 curl -k -H "Authorization: Bearer my-secret-token" \
   https://myserver:9119/api/status
 ```
+
+Queries are read-only, single-statement, and limited to 30 seconds and 1 million rows; see
+[SQL REPL restrictions](@/docs/repl.md#restrictions). Export and snapshot paths must be absolute,
+inside `export_dir`, and must not already exist.
+
+## Prometheus Metrics
+
+`GET /metrics` (not under `/api/`) returns the current metrics in Prometheus text format:
+
+```bash
+curl --unix-socket /run/bewitch/bewitch.sock http://localhost/metrics
+```
+
+Over TCP it requires the same bearer token as the rest of the API. See
+[Remote Access](@/docs/remote-access.md#prometheus) for a scrape config.
 
 ## Response Types
 

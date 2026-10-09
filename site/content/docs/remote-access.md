@@ -2,6 +2,9 @@
 title = "Remote Access"
 description = "TLS by default, trust-on-first-use fingerprint pinning, and optional bearer-token auth."
 weight = 70
+
+[extra]
+group = "Use it"
 +++
 
 The daemon can listen on TCP for remote TUI, REPL, and CLI access. TCP connections use TLS by default with auto-generated self-signed certificates and SSH-style trust-on-first-use fingerprint pinning.
@@ -29,7 +32,8 @@ On first start with TCP enabled, the daemon generates a self-signed ECDSA P-256 
 bewitch -addr myserver:9119 -token my-secret-token
 ```
 
-If the daemon and client share the same config file (e.g., on the same machine), the token is read from config automatically — no `-token` flag needed.
+If you leave out `-token`, the client uses `auth_token` from its config file (see
+[Client Configuration](@/docs/configuration.md#client-configuration)).
 
 ## Trust on First Use (TOFU)
 
@@ -66,9 +70,30 @@ If this is expected, reconnect with -tls-reset-fingerprint to update.
 
 ## Authentication
 
-When `auth_token` is set in the daemon config, all TCP connections must include the token via the `-token` flag or config file. The token is transmitted as a Bearer token in the HTTP Authorization header and compared using constant-time comparison.
+When `auth_token` is set in the daemon config, every TCP request must carry the token, sent as
+`Authorization: Bearer <token>`. Clients pass it with `-token` or from their config file.
 
-Unix socket connections are **never authenticated** — filesystem permissions are sufficient. The daemon logs a warning at startup if TCP is enabled without an auth token.
+What happens without a token depends on TLS:
+
+| Listener | No `auth_token` |
+| --- | --- |
+| TLS (default) | Starts, with a warning: anyone who accepts the certificate can connect |
+| Plain TCP (`tls_disabled = true`) | **Refuses to start**: the API would be open in the clear |
+
+### The local socket
+
+The unix socket is never authenticated and is world-accessible (`0666`) by design, so any local
+user can run the TUI and REPL. It is **not** a privilege boundary. Instead, the risky operations
+are restricted for every caller:
+
+- SQL queries are read-only and can't read files or make network requests.
+- Exports and snapshots can only write new files inside `export_dir`.
+- The notification test sends a fixed message; callers can't choose its content.
+- Compaction and archiving can't be triggered more than once every 30 seconds.
+- The config endpoint hides notification commands and email addresses.
+
+To limit which local users can connect, restrict the socket directory: set
+`RuntimeDirectoryMode=0750` in a systemd override and add those users to the `bewitch` group.
 
 ## All Subcommands Support Remote
 
@@ -80,8 +105,31 @@ bewitch -addr myserver:9119 -token secret archive    # trigger archival
 bewitch -addr myserver:9119 -token secret snapshot /tmp/remote.duckdb
 ```
 
-## How It Works
+## Prometheus
 
-The daemon runs separate server instances for the unix socket and TCP listener, sharing the same API. The unix socket has no auth (filesystem permissions suffice). The TCP listener applies bearer token middleware. Both are shut down gracefully on daemon exit.
+The daemon serves current metrics in Prometheus text format at `GET /metrics`, on the socket and
+on the TCP listener. Over TCP it needs the same bearer token as everything else:
 
-The client transparently adds the Authorization header to every request. TLS fingerprint pinning verifies the server certificate's fingerprint directly, bypassing CA chain validation — similar to SSH known_hosts.
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: bewitch
+    scheme: https
+    authorization:
+      credentials: my-secret-token
+    tls_config:
+      insecure_skip_verify: true   # self-signed cert; or set ca_file to your own
+    static_configs:
+      - targets: ["myserver:9119"]
+```
+
+Series are prefixed `bewitch_` (e.g. `bewitch_cpu_percent`, `bewitch_smart_healthy`,
+`bewitch_power_watts`), with mounts, interfaces, sensors and so on as labels. Processes are exported
+as aggregate counts only, and custom-source status strings aren't exported. The daemon's own health
+is exported as `bewitch_self_*`.
+
+## How Fingerprint Pinning Works
+
+The client checks the server certificate's SHA-256 fingerprint against the one you accepted,
+rather than validating a CA chain, like SSH's `known_hosts`. This is why a self-signed certificate
+is safe to use once you've verified the fingerprint.

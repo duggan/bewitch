@@ -12,14 +12,18 @@
     <h1>{{ section.title }}</h1>
     {{ section.content | safe }}
 
-    <ul class="doc-index">
-      {% for page in section.pages %}
-      <li>
-        <a href="{{ page.permalink }}">{{ page.title }}</a>
-        {% if page.description %}<div class="desc">{{ page.description }}</div>{% endif %}
-      </li>
-      {% endfor %}
-    </ul>
+    {# Same groups/order as the sidebar (macros.html docs_nav). #}
+    {% for group in ["Get started", "Use it", "Reference"] %}
+    <h2 class="doc-group">{{ group }}</h2>
+    <div class="doc-cards">
+      {% for page in section.pages %}{% if page.extra.group == group %}
+      <a class="doc-card" href="{{ page.permalink }}">
+        <strong>{{ page.title }}</strong>
+        {% if page.description %}<span>{{ page.description }}</span>{% endif %}
+      </a>
+      {% endif %}{% endfor %}
+    </div>
+    {% endfor %}
   </article>
 </div>
 {% endblock body %}

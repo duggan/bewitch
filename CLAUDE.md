@@ -208,6 +208,10 @@ The `/docs/` namespace is split by `site/functions/docs/[[path]].js` (R2 bucket 
 
 The Function is **host-guarded**: on non-`bewitch.dev` hosts (PR previews on `*.pages.dev`) it steps aside entirely, so a docs PR previews its own `/docs/` content instead of production stable. **Bootstrap**: until `docs/stable/` is first populated, `/docs/**` 302-redirects to `/docs/dev/`. Seed/refresh it (or re-snapshot a past version) any time via the manual **`docs-snapshot.yml`** workflow (`workflow_dispatch`, input `target` = `stable` or `vX.Y.Z`, built from the dropdown's git ref) — no tag push needed — or `scripts/upload-docs.sh site/dist/docs stable` locally with wrangler creds. The docs search (`search.js`) is namespace-aware too — on `/docs/dev/` or `/docs/v<X>/` it re-homes results into that namespace (the index only holds canonical `/docs/<page>/` refs).
 
+### Docs pages
+
+Pages live in `site/content/docs/*.md`. The sidebar (`docs_nav` in `macros.html`) and the overview cards (`section.html`) group pages by front-matter `[extra] group`, one of `"Get started"`, `"Use it"`, `"Reference"` (the list is duplicated in both templates); within a group, `weight` sets the order and also drives Previous/Next. **A page without a matching `group` builds fine but is missing from the sidebar and overview.** Heading anchors use `templates/anchor-link.html`. The API reference tables come from `site/data/api-schema.json` — regenerate with `make docgen` after changing endpoints or response types. Keep site copy plain and factual: say what bewitch does, not slogans.
+
 ## Documentation
 
 After completing significant changes, consider updating:

@@ -1,26 +1,49 @@
 +++
 title = "Collectors"
-description = "The nine collectors — CPU, memory, disk, network, ECC, temperature, power, GPU, process — and how to tune their intervals."
-weight = 30
+description = "The ten built-in collectors — CPU, memory, load, disk, network, ECC, temperature, power, GPU, process — and how to tune their intervals."
+weight = 80
+
+[extra]
+group = "Reference"
 +++
 
-Bewitch has 9 metric collectors. All implement the `Collector` interface with `Name()` and `Collect()` methods. Collectors run in parallel via goroutines on each tick. The daemon uses a GCD-based tick scheduler to fire each collector at its configured interval.
+Bewitch has ten built-in collectors: CPU, memory, load average, disk, network, ECC, temperature,
+power, GPU and process. [Custom sources](@/docs/custom-sources.md) add more, one per source.
+
+Each collector runs on its own interval, set with `interval` in its `[collectors.*]` section. If
+you leave it out, the collector uses `[daemon] default_interval` (5s). The minimum is 100ms.
+Collectors that report rates (CPU, disk I/O, network, power, per-process I/O) compute them from the
+difference between two readings, so their first reading after startup is a baseline.
+
+```toml
+[collectors.cpu]
+interval = "1s"
+
+[collectors.disk]
+interval = "30s"
+```
 
 ## CPU
 
-Reads per-core CPU usage from `/proc/stat`. Computes delta percentages between samples. The first sample after startup is discarded (needs a baseline).
+Reads `/proc/stat` and reports usage per core and for the whole CPU.
 
-- **Metrics:** per-core usage %, aggregate %
-- **Storage:** `cpu_metrics` table
-- **Default interval:** inherits `default_interval` (5s)
+- **Metrics:** user, system, idle, iowait and steal %, per core and overall. Overall usage is
+  100 − idle, so time stolen by a hypervisor counts as busy.
+- **Storage:** `cpu_metrics` (overall row has `core = -1`)
 
 ## Memory
 
-Reads `/proc/meminfo` for total, free, available, buffers, cached, and swap. Computes used bytes and used percentage.
+Reads `/proc/meminfo`.
 
-- **Metrics:** total, used, free, available, buffers, cached, swap (bytes + percentages)
-- **Storage:** `memory_metrics` table
+- **Metrics:** total, used, available, buffers, cached, swap total and used
+- **Storage:** `memory_metrics`
 - **ZFS:** the kernel leaves the ARC out of `Cached` and `MemAvailable`, so bewitch adds it to cached, and the part above the ARC's minimum size (`c_min`, which ZFS gives back under memory pressure) to available. Without this, a ZFS host's ARC would show as used memory.
+
+## Load Average
+
+Reads the 1, 5 and 15-minute load averages from `/proc/loadavg`.
+
+- **Storage:** `load_metrics`
 
 ## Disk
 
@@ -28,24 +51,25 @@ Three data sources per mount: space usage (via `statfs`), I/O rates (via `/proc/
 
 ### Space
 
-- **Metrics:** total, used, free bytes; used percentage per mount
-- Mount filtering: `/snap/`, `/run/`, `/etc/pve` (Proxmox VE's cluster config filesystem) and `/var/lib/docker/` (per-layer mounts of Docker's ZFS/btrfs storage drivers) excluded by default
+- **Metrics:** total, used, free bytes and used % per mount; total and free inodes
+- **Storage:** `disk_metrics`
+- Excluded by default: `/snap/`, `/run/`, `/etc/pve` (Proxmox VE's cluster config filesystem) and `/var/lib/docker/` (per-layer mounts of Docker's ZFS/btrfs storage drivers). Add your own with `exclude_mounts`; set `no_default_excludes = true` to drop the defaults.
+- Bind mounts of a directory on a filesystem that's already listed (such as the paths systemd sandboxing creates) are hidden.
 
 ### I/O
 
-- **Metrics:** read/write bytes per second per device
-- Delta-based: keeps previous reading, computes rate. First sample discarded.
+- **Metrics:** read/write bytes per second and IOPS per mount
 - Symlinked mount sources (`/dev/mapper/*` for LVM/LUKS, `/dev/disk/by-*`) are resolved to their kernel name (`dm-1`, `sda1`) before matching `/proc/diskstats`.
 - ZFS datasets have no `/proc/diskstats` entry; their I/O comes from the per-dataset counters in `/proc/spl/kstat/zfs/<pool>/objset-*`. These are logical: reads served from the ARC count too.
 
 ### SMART Health
 
-Reads SMART data per physical device (not per partition). Multiple mounts from the same disk share one SMART read. Snapshots are stored in the `smart_metrics` table at the `smart_interval` cadence. Mount sources that aren't block devices (e.g. Proxmox's `/etc/pve`, mounted from `/dev/fuse`) are skipped. For a ZFS dataset, SMART is read from every disk in its pool (found from udev's `zfs_member` labels); a mount on a multi-disk pool shows a failing disk first, otherwise the first one.
+Reads SMART data per physical device (not per partition). Multiple mounts from the same disk share one SMART read. Snapshots are stored in the `smart_metrics` table every `smart_interval` (default 5m, minimum 30s), so you can chart and [alert on](@/docs/alerts.md#threshold) them. Mount sources that aren't block devices (e.g. Proxmox's `/etc/pve`, mounted from `/dev/fuse`) are skipped. For a ZFS dataset, SMART is read from every disk in its pool (found from udev's `zfs_member` labels); a mount on a multi-disk pool shows a failing disk first, otherwise the first one.
 
 - **NVMe:** available spare %, percent used, critical warning, temperature, power-on hours, power cycles
 - **SATA:** reallocated sectors, pending sectors, uncorrectable errors, temperature, power-on hours
-- **Fallback chain:** smartctl (preferred) → smart.go library → direct SAT passthrough
-- **Requires:** `CAP_SYS_RAWIO` capability (configured by Debian package)
+- **Sources, in order:** `smartctl` (from `smartmontools`, if installed), then built-in readers. The fallback is per device.
+- **Requires:** `CAP_SYS_RAWIO` and membership of the `disk` group (the packaged service has both)
 
 If health data can't be read, the device is reported as SMART-unavailable rather than as a healthy all-zero reading.
 
@@ -64,33 +88,36 @@ If you change `db_path`, either set `smart_helper_dir` to match the helper's `-o
 ```toml
 [collectors.disk]
 interval = "30s"
-smart_interval = "5m"  # min 30s, "0" to disable
+smart_interval = "5m"  # minimum 30s
 # smart_helper_dir = "/var/lib/bewitch/smart"  # NVMe helper snapshots (default: "smart" next to db_path)
 exclude_mounts = ["/boot/efi"]
 ```
 
 ## Network
 
-Reads per-interface bytes from `/proc/net/dev`. Computes RX/TX bytes per second. Delta-based with first sample discarded.
+Reads per-interface counters from `/proc/net/dev`.
 
-- **Metrics:** rx_bytes/sec, tx_bytes/sec per interface
-- **Storage:** `network_metrics` table with dimension IDs for interface names
+- **Metrics:** receive/transmit bytes and packets per second, errors and drops per interface
+- **Storage:** `network_metrics`
 
 ## ECC
 
-Reads ECC memory error counts from `/sys/devices/system/edac/`. Live-only data — not stored in DB. Useful for servers with ECC memory.
+Reads memory error counts from the kernel's EDAC memory controllers (`/sys/devices/system/edac/mc/`).
+On machines without ECC memory there are no controllers, and the Hardware view says so instead of
+reporting zero errors.
 
-- **Metrics:** correctable and uncorrectable error counts per DIMM
-- **Default interval:** 60s (ECC errors change very infrequently)
+- **Metrics:** corrected and uncorrectable error counts, totalled across all memory controllers
+- **Storage:** `ecc_metrics`, alertable as `ecc.corrected` and `ecc.uncorrectable`
+- ECC errors are rare, so a longer interval (e.g. `60s`) is plenty
 
 ## Temperature
 
-Reads hardware sensor temperatures from `/sys/class/hwmon/`. Caches sensor paths and refreshes every 60 seconds to avoid expensive glob operations.
+Reads hardware sensor temperatures from `/sys/class/hwmon/`. New sensors are picked up within a minute.
 
 - **Metrics:** temperature in °C per sensor
-- **Storage:** `temperature_metrics` table with dimension IDs for sensor names
+- **Storage:** `temperature_metrics`
 - Can be disabled via `enabled = false` in config
-- Displayed in the Hardware tab's Temperature sub-section
+- Displayed in the Hardware view's Temperature sub-section
 
 ## Power
 
@@ -99,59 +126,73 @@ Reads RAPL energy counters and computes watts from their differences. Two source
 - **powercap** (`/sys/class/powercap/*/energy_uj`) when readable. Since kernel 5.10 these files are root-only (a side-channel mitigation, CVE-2020-8694), so this path is used when bewitchd runs as root.
 - **perf events** (the kernel's `power` PMU, e.g. `energy-pkg`) otherwise. This is how the packaged daemon, which runs as the unprivileged `bewitch` user, reads power: it needs `CAP_PERFMON`, which the packaged service grants. Custom units need `AmbientCapabilities=CAP_PERFMON` (or `kernel.perf_event_paranoid <= 0`).
 
-If RAPL counters exist but neither source is readable, the daemon logs a warning saying why. VMs and most ARM boards have no RAPL; the collector stays silent there. Caches zone paths (60s refresh).
+If RAPL counters exist but neither source is readable, the daemon logs a warning saying why. VMs and most ARM boards have no RAPL; the collector stays silent there.
 
 - **Metrics:** watts per power zone (package, core, uncore, DRAM)
-- **Storage:** `power_metrics` table with dimension IDs for zone names
+- **Storage:** `power_metrics`
 - Can be disabled via `enabled = false` in config
 
 ## GPU
 
-Monitors GPU utilization, frequency, power, and memory. Supports Intel iGPUs via `intel_gpu_top` (long-lived JSON subprocess) and NVIDIA GPUs via `nvidia-smi` (point-in-time CSV queries). Both backends auto-detect tool availability at startup; if neither is found, the collector produces empty samples.
+Monitors GPU utilization, clock, power, memory and temperature. Three backends, detected at
+startup; any combination can be active at once. With no supported GPU, the GPU section is
+empty.
 
-### Intel iGPU
+| GPU | Source | Requires |
+| --- | --- | --- |
+| Intel iGPU | `intel_gpu_top -J`, kept running | `intel-gpu-tools` package, `CAP_PERFMON` |
+| NVIDIA | `nvidia-smi` queries (10s timeout) | NVIDIA driver with `nvidia-smi` |
+| AMD | `amdgpu` sysfs (`/sys/class/drm/card*/device/`) | Nothing extra |
 
-- Runs `intel_gpu_top -J` as a persistent subprocess streaming JSON
-- Detects i915/xe driver via `/sys/class/drm/`
-- Utilization = max engine busy % (Render/3D, Video, etc.)
-- First sample discarded (needs prior period for deltas)
-- **Requires:** `CAP_PERFMON` capability and `intel-gpu-tools` package
-
-### NVIDIA
-
-- Runs `nvidia-smi --query-gpu=... --format=csv` with 10s timeout
-- Reports utilization, memory used/total, temperature, power, clock speed
-- **Requires:** NVIDIA driver with `nvidia-smi`
-
-- **Metrics:** utilization %, frequency MHz, power watts, memory used/total (NVIDIA), temperature (NVIDIA)
-- **Storage:** `gpu_metrics` table with dimension IDs for GPU names
+- **Intel:** utilization (busiest engine), clock, power. Memory isn't reported (it's shared system memory). The first reading is a baseline.
+- **NVIDIA:** utilization, memory used/total, temperature, power, clock.
+- **AMD:** utilization, VRAM used/total, temperature, power, clock, read straight from the driver with no extra tools.
+- **Storage:** `gpu_metrics`
 - Can be disabled via `enabled = false` in config
-- Multi-vendor: Intel and NVIDIA backends can be active simultaneously
 
 ```toml
 [collectors.gpu]
 # interval = "5s"
-# enabled = true  # Intel iGPU via intel_gpu_top, NVIDIA via nvidia-smi
+# enabled = true
 ```
 
 ## Process
 
-Two-phase collection. Phase 1 cheaply scans all `/proc/[pid]/stat` files. Phase 2 enriches the top N processes (by CPU/memory) plus pinned processes with expensive data.
+Lists every process on the system each interval: PID, name, state, CPU %, memory (RSS) and
+threads. This is cheap, so nothing is missed.
 
-### Phase 1 (all processes)
+The busiest processes (top `max_processes`, default 100) plus any pinned ones are tracked in
+**full**: command line, user, open file descriptors, a memory breakdown, and disk and network I/O.
+Only these are stored in the database (`process_metrics` and `process_info`).
 
-- PID, name, state, CPU%, RSS, thread count
-- Very fast — reads a single file per process
+### Disk I/O per process
 
-### Phase 2 (enriched processes)
+Read and write bytes per second, from `/proc/[pid]/io` (actual storage I/O, not page cache).
+Reading other users' processes needs `CAP_SYS_PTRACE`, which the packaged service grants. Without
+it, those processes show zero.
 
-- Command line, UID, FD count, detailed memory breakdown
-- Reads `/proc/[pid]/cmdline`, `/proc/[pid]/status`, `/proc/[pid]/fd`
-- Default: top 100 processes enriched
+### Network I/O per process
+
+Receive and transmit bytes per second, measured with eBPF. It covers **TCP only** (not UDP) and
+needs:
+
+- kernel 5.5 or newer with BTF (`/sys/kernel/btf/vmlinux`), which most current distributions ship
+- `CAP_BPF` and `CAP_PERFMON` (the packaged service grants both)
+- the daemon running in the host's PID namespace (a systemd service does; in a container, use `--pid=host`)
+
+If any of these is missing, the daemon logs a warning and network I/O reads zero; everything else
+keeps working. To turn it off and load no eBPF programs at all:
+
+```toml
+[collectors.process]
+network_io = false
+```
 
 ### Process pinning
 
-Pinned processes always receive Phase 2 enrichment regardless of ranking. Useful for monitoring low-resource but critical services.
+Pinned processes always get full detail, even when they aren't among the busiest. Use this for
+important services that are usually idle. Patterns are globs matched against the process name, or against the full command
+line if no name matches.
 
 ```toml
 [collectors.process]
@@ -159,12 +200,13 @@ max_processes = 100
 pinned = ["nginx*", "postgres", "redis-server"]
 ```
 
-Pins can also be set interactively in the TUI with the `*` key. TUI pins persist in the daemon's preferences database across restarts.
+You can also pin processes in the TUI with `*`. TUI pins are saved on the daemon and persist across
+restarts. Processes named in [process alert rules](@/docs/alerts.md#process-down) are tracked in
+full automatically.
 
-## Collector Backoff
+## Failures and Backoff
 
-When a collector's `Collect()` returns an error, consecutive failures trigger exponential backoff. The collector skips `2^(n-1)` intervals (capped at 64x) before retrying. On success, the failure count resets immediately. First error is always logged; subsequent errors include attempt count and backoff duration.
-
-## Parallel Collection
-
-Collectors due on each tick run concurrently, reducing total cycle time. The API cache is updated immediately after collection, then samples are written to the database asynchronously.
+If a collector fails (a missing file, a hung tool), it backs off: it skips 1, 2, 4… intervals
+before retrying, up to 64 intervals, and resumes its normal schedule after the first success. The
+first error is logged, later ones with the attempt count, and recovery is logged too. One failing
+collector doesn't hold up the others.

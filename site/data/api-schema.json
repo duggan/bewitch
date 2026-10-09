@@ -430,6 +430,11 @@
           "name": "Acknowledged",
           "json_name": "acknowledged",
           "type": "boolean"
+        },
+        {
+          "name": "Resolved",
+          "json_name": "resolved",
+          "type": "boolean"
         }
       ]
     },
@@ -482,6 +487,12 @@
         {
           "name": "Duration",
           "json_name": "duration",
+          "type": "string",
+          "optional": true
+        },
+        {
+          "name": "Aggregate",
+          "json_name": "aggregate",
           "type": "string",
           "optional": true
         },
@@ -669,6 +680,11 @@
           "name": "IOWaitPct",
           "json_name": "iowait_pct",
           "type": "number"
+        },
+        {
+          "name": "StealPct",
+          "json_name": "steal_pct",
+          "type": "number"
         }
       ]
     },
@@ -747,6 +763,12 @@
           "optional": true
         },
         {
+          "name": "Load",
+          "json_name": "load",
+          "type": "LoadMetric",
+          "optional": true
+        },
+        {
           "name": "Disks",
           "json_name": "disks",
           "type": "DiskMetric[]"
@@ -812,6 +834,16 @@
         {
           "name": "FreeBytes",
           "json_name": "free_bytes",
+          "type": "number"
+        },
+        {
+          "name": "InodesTotal",
+          "json_name": "inodes_total",
+          "type": "number"
+        },
+        {
+          "name": "InodesFree",
+          "json_name": "inodes_free",
           "type": "number"
         },
         {
@@ -935,6 +967,11 @@
           "name": "Uncorrected",
           "json_name": "uncorrected",
           "type": "number"
+        },
+        {
+          "name": "Available",
+          "json_name": "available",
+          "type": "boolean"
         }
       ]
     },
@@ -1127,6 +1164,26 @@
         }
       ]
     },
+    "LoadMetric": {
+      "name": "LoadMetric",
+      "fields": [
+        {
+          "name": "Load1",
+          "json_name": "load1",
+          "type": "number"
+        },
+        {
+          "name": "Load5",
+          "json_name": "load5",
+          "type": "number"
+        },
+        {
+          "name": "Load15",
+          "json_name": "load15",
+          "type": "number"
+        }
+      ]
+    },
     "MemoryMetric": {
       "name": "MemoryMetric",
       "fields": [
@@ -1203,6 +1260,16 @@
         {
           "name": "TxErrors",
           "json_name": "tx_errors",
+          "type": "number"
+        },
+        {
+          "name": "RxDropped",
+          "json_name": "rx_dropped",
+          "type": "number"
+        },
+        {
+          "name": "TxDropped",
+          "json_name": "tx_dropped",
           "type": "number"
         }
       ]
@@ -1394,6 +1461,30 @@
           "type": "number"
         },
         {
+          "name": "ReadBytesSec",
+          "json_name": "read_bytes_sec",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "WriteBytesSec",
+          "json_name": "write_bytes_sec",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "RxBytesSec",
+          "json_name": "rx_bytes_sec",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "TxBytesSec",
+          "json_name": "tx_bytes_sec",
+          "type": "number",
+          "optional": true
+        },
+        {
           "name": "Enriched",
           "json_name": "enriched",
           "type": "boolean"
@@ -1517,6 +1608,12 @@
           "name": "Status",
           "json_name": "status",
           "type": "string"
+        },
+        {
+          "name": "Version",
+          "json_name": "version",
+          "type": "string",
+          "optional": true
         },
         {
           "name": "UptimeSec",

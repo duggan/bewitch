@@ -1,15 +1,18 @@
 +++
 title = "Custom Sources"
 description = "Point bewitch at a local service's HTTP API and chart its numbers alongside everything else — no Go required."
-weight = 35
+weight = 60
+
+[extra]
+group = "Use it"
 +++
 
-Bewitch monitors the host. Custom sources let it monitor the *things running on* the host:
-Pi-hole's blocked queries, Home Assistant's sensors, Docker's container count, Homebridge's
-status — anything with a local HTTP API that returns JSON.
+Custom sources poll a service's HTTP API and record the fields you choose: Pi-hole's blocked
+queries, Home Assistant's sensors, Docker's container count, Homebridge's status, or anything
+else that returns JSON.
 
 You declare a source in TOML. The daemon polls it, pulls out the fields you name, and treats
-the numbers as first-class metrics: charted over time, scrapeable from `/metrics`, and shown
+the numbers like any other metric: charted over time, scrapeable from `/metrics`, and shown
 in a dedicated **Services** tab in the TUI. No plugin to compile, no Go to write.
 
 ## A first source
@@ -49,7 +52,7 @@ Two places, merged at startup:
 - **Inline** in `bewitch.toml` as `[[custom_source]]` blocks (like the example above).
 - **Drop-in files** under a `sources.d/` directory — one `*.toml` per service, each containing
   its own `[[custom_source]]` blocks. The directory defaults to `sources.d/` next to your config
-  file; override it with `[daemon] sources_dir`.
+  file (`/etc/sources.d/` for `/etc/bewitch.toml`); override it with `[daemon] sources_dir`.
 
 Drop-in files make sources shareable — a `pihole.toml` you can hand to someone else, or keep
 your secrets out of the main config. If a drop-in defines a source with the same `name` as an
@@ -66,7 +69,7 @@ path = "clients.#"                        # length of an array
 path = "containers.#(State==\"running\").Id" # first match of a query
 ```
 
-A field whose path isn't found is simply skipped — one missing key doesn't sink the whole poll.
+A field whose path isn't found is skipped, and the rest of the poll is still recorded.
 If *none* of the configured paths are found, the poll is treated as an error (wrong endpoint, or
 the API's shape changed) and the source backs off and retries, same as any other collector.
 
@@ -197,8 +200,8 @@ base_url = "http://127.0.0.1:2375"
   path  = "ServerVersion"
 ```
 
-If you run bewitchd as root, or otherwise have socket access, you can dial the socket directly by
-replacing `base_url` with `unix_socket = "/var/run/docker.sock"` and `base_url = "http://unix"` (a
+If bewitchd runs as root, or otherwise has access to the socket, it can talk to the socket
+directly: add `unix_socket = "/var/run/docker.sock"` and set `base_url = "http://unix"` (a
 placeholder host; the socket is dialed instead). The same `unix_socket` option works for any
 service that serves HTTP on a unix socket.
 
@@ -211,7 +214,8 @@ chart with `↑` / `↓`; change the time range with `<` / `>` and `r`, same as 
 
 ## Prometheus and SQL
 
-Custom metrics show up everywhere host metrics do:
+Custom metrics are stored, charted and exported like host metrics. They can't be used in
+alert rules yet.
 
 ```
 # /metrics

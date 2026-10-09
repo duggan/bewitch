@@ -2,6 +2,9 @@
 title = "Changelog"
 description = "What changed, version by version."
 weight = 100
+
+[extra]
+group = "Reference"
 +++
 
 All notable changes to bewitch are documented here. See the full [CHANGELOG.md](https://github.com/duggan/bewitch/blob/main/CHANGELOG.md) on GitHub.

@@ -1,7 +1,7 @@
 {# Renders the ordered docs sidebar, marking `current` (a page path) active. #}
 {% macro docs_nav(current) %}
 {% set section = get_section(path="docs/_index.md") %}
-<nav class="sidebar" id="sidebar">
+<nav class="sidebar collapsed" id="sidebar">
   <button class="nav-toggle" onclick="document.getElementById('sidebar').classList.toggle('collapsed')">Docs ▾</button>
   <span class="kicker">Documentation</span>
   <div class="docs-search">
@@ -13,12 +13,19 @@
     <li>
       <a href="{{ section.permalink }}"{% if current == section.permalink %} class="active"{% endif %}>Overview</a>
     </li>
-    {% for page in section.pages %}
+  </ul>
+  {# Groups in display order; each docs page sets `[extra] group` to one of these (also
+     listed in section.html). Within a group pages keep their `weight` order. #}
+  {% for group in ["Get started", "Use it", "Reference"] %}
+  <span class="group">{{ group }}</span>
+  <ul>
+    {% for page in section.pages %}{% if page.extra.group == group %}
     <li>
       <a href="{{ page.permalink }}"{% if current == page.permalink %} class="active"{% endif %}>{{ page.title }}</a>
     </li>
-    {% endfor %}
+    {% endif %}{% endfor %}
   </ul>
+  {% endfor %}
 </nav>
 {% endmacro docs_nav %}
 

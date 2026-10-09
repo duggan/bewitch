@@ -27,7 +27,9 @@
         <span class="name">bewitch</span>
       </a>
       <nav class="nav">
-        <a href="{{ get_url(path='/docs/') }}">docs</a>
+        <a href="{{ get_url(path='/docs/installation/') }}" class="hide-sm">install</a>
+        <a href="{{ get_url(path='/docs/') }}"{% if current_path is defined and current_path is starting_with("/docs") %} class="active"{% endif %}>docs</a>
+        <a href="{{ get_url(path='/docs/changelog/') }}" class="hide-sm">changelog</a>
         <a href="{{ config.extra.github }}" target="_blank" rel="noopener">github</a>
       </nav>
     </div>
@@ -37,13 +39,30 @@
 
   <footer class="site-footer">
     <div class="wrap inner">
-      <img src="{{ get_url(path='favicon.png') }}" alt="" width="40" height="40">
-      <p class="tagline">A system monitor that keeps the receipts. In hot pink.</p>
-      <div class="links">
-        <a href="{{ config.extra.github }}">GitHub</a>
-        <span class="sep">|</span>
-        <a href="{{ get_url(path='/docs/') }}">Documentation</a>
+      <div class="foot-brand">
+        <img src="{{ get_url(path='favicon.png') }}" alt="" width="32" height="32">
+        <p class="tagline">A system monitor for Linux homelabs.</p>
       </div>
+      <nav class="foot-cols" aria-label="Footer">
+        <div>
+          <span class="kicker">Get started</span>
+          <a href="{{ get_url(path='/docs/installation/') }}">Installation</a>
+          <a href="{{ get_url(path='/docs/configuration/') }}">Configuration</a>
+          <a href="{{ get_url(path='/docs/proxmox/') }}">Proxmox VE</a>
+        </div>
+        <div>
+          <span class="kicker">Use it</span>
+          <a href="{{ get_url(path='/docs/tui/') }}">TUI guide</a>
+          <a href="{{ get_url(path='/docs/alerts/') }}">Alerts</a>
+          <a href="{{ get_url(path='/docs/repl/') }}">SQL REPL</a>
+        </div>
+        <div>
+          <span class="kicker">Project</span>
+          <a href="{{ config.extra.github }}">GitHub</a>
+          <a href="{{ config.extra.github }}/issues">Issues</a>
+          <a href="{{ get_url(path='/docs/changelog/') }}">Changelog</a>
+        </div>
+      </nav>
     </div>
   </footer>
 

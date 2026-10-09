@@ -1,12 +1,15 @@
 +++
 title = "SQL REPL"
 description = "The SQL console over your own metrics: dot-commands, multi-line editing, tab completion, and export."
-weight = 60
+weight = 50
+
+[extra]
+group = "Use it"
 +++
 
 `bewitch repl` connects to the running daemon and opens an interactive DuckDB SQL console.
-The REPL uses readline for line editing with full multi-line support — arrow up/down between lines,
-edit earlier lines, and the input area auto-resizes.
+It has full multi-line editing: move up and down between lines, edit earlier lines, and the input
+area grows as you type.
 
 ```bash
 bewitch repl
@@ -35,9 +38,22 @@ bewitch> SELECT d.value AS mount,
 (2 rows)
 ```
 
-Only **read-only** queries are allowed — SELECT, EXPLAIN, and PRAGMA. Write/DDL statements are
-rejected server-side using DuckDB's statement parser (not keyword matching), so bypass attempts like
-`WITH cte AS (...) INSERT INTO ...` are caught.
+Timestamps (`ts`) are stored in UTC. The examples here compare against `now()`, which is right on
+a host whose time zone is UTC. Elsewhere, use `(now() AT TIME ZONE 'UTC')` instead, or your
+time windows will be shifted by the host's UTC offset.
+
+### Restrictions
+
+Queries run on the daemon, so the daemon enforces some limits:
+
+- **Read-only.** Only `SELECT`, `EXPLAIN` and `PRAGMA` are allowed. DuckDB's parser decides, not
+  keyword matching, so a write hidden in a CTE (`WITH … INSERT …`) is still rejected.
+- **One statement at a time.** `SELECT 1; SELECT 2` is rejected.
+- **No file or network access.** Functions such as `read_csv`, `read_parquet`, `read_text` and
+  `glob` are blocked, so a query can't read files on the daemon host or fetch URLs. Archived data is
+  still reachable through the `all_` views below.
+- **30-second timeout** per query.
+- **1 million rows** at most. Larger results return an error; add a `LIMIT` or aggregate.
 
 ## Key Bindings
 
@@ -55,25 +71,42 @@ rejected server-side using DuckDB's statement parser (not keyword matching), so 
 | --- | --- |
 | `.metrics` | Metric tables with row counts and time ranges |
 | `.tables` | List all tables with row counts |
-| `.schema [table]` | Show column definitions |
+| `.schema [table]` | Show column definitions (all tables, or one) |
+| `.columns <table>` | Same as `.schema <table>` |
 | `.count [table]` | Row counts with time ranges |
 | `.dimensions` | Dimension lookup values (mounts, sensors, interfaces, zones) |
 | `.export <table> <path>` | Export table to file |
 | `.export (<sql>) <path>` | Export query results to file |
 | `.help` | Show available commands and examples |
-| `.quit` | Exit |
+| `.quit` / `.exit` | Exit |
 
 ## Data Export
 
 Export data to CSV, Parquet (zstd compressed), or JSON. Format is inferred from the file extension.
 
 ```bash
-bewitch> .export all_cpu_metrics /tmp/cpu.csv
-Exported 123456 rows to /tmp/cpu.csv
+bewitch> .export cpu_metrics /var/lib/bewitch/cpu.csv
+Exported 123456 rows to /var/lib/bewitch/cpu.csv
 
-bewitch> .export (SELECT * FROM all_cpu_metrics
-    ...> WHERE ts > now() - INTERVAL '1 hour') /tmp/recent.parquet
-Exported 720 rows to /tmp/recent.parquet
+bewitch> .export (SELECT * FROM cpu_metrics
+    ...> WHERE ts > now() - INTERVAL '1 hour') /var/lib/bewitch/recent.parquet
+Exported 720 rows to /var/lib/bewitch/recent.parquet
+```
+
+The daemon writes the file, as the `bewitch` user on the daemon's host. The path must be absolute,
+inside `[daemon] export_dir` (default: the database directory, `/var/lib/bewitch`), and must not
+already exist. Set `export_dir` to somewhere you can read, or copy the file out afterwards.
+
+## Archived Data
+
+With [Parquet archival](@/docs/archival.md#parquet-archival) enabled, old rows move out of the
+metric tables into Parquet files. Each metric table then has an `all_` view combining both:
+`all_cpu_metrics`, `all_disk_metrics`, and so on, plus `all_dimension_values` and
+`all_process_info`. Query the `all_` views to see your full history; `.tables` lists them. Without
+archival, the views don't exist and the plain tables hold everything.
+
+```sql
+SELECT COUNT(*) FROM all_cpu_metrics WHERE ts > '2025-01-01';
 ```
 
 ## Dimension Tables

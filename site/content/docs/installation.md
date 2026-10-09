@@ -2,6 +2,9 @@
 title = "Installation"
 description = "One-line installer, the Debian APT repo, or prebuilt binaries — plus the systemd unit."
 weight = 10
+
+[extra]
+group = "Get started"
 +++
 
 <!-- The version in the download URLs below is stamped from the repo VERSION file
@@ -30,8 +33,9 @@ curl -fsSL https://bewitch.dev/install.sh | sudo sh
 On Debian/Ubuntu, this adds the APT repository, imports the signing key, and installs the package.
 Updates are handled through `apt upgrade`.
 
-On other distributions, it downloads a pre-built binary tarball, installs the binaries to
-`/usr/local/bin/`, creates a system user, and sets up the systemd service.
+On other distributions, it downloads a pre-built binary tarball, verifies its signed checksum,
+installs the binaries to `/usr/local/bin/`, creates a system user, and sets up and starts the
+systemd units (`bewitchd.service` and `bewitch-smart.timer`).
 
 ## APT Repository (Debian/Ubuntu)
 
@@ -84,15 +88,19 @@ tar xzf bewitch-0.6.0-linux-*.tar.gz
 sudo install -m 755 bewitch-0.6.0-linux-*/bewitchd /usr/local/bin/
 sudo install -m 755 bewitch-0.6.0-linux-*/bewitch /usr/local/bin/
 
-# Set up system user and data directory
+# Set up system user, data directory and config (the config holds secrets: keep it 0640)
 sudo useradd -r -s /usr/sbin/nologin bewitch
 sudo mkdir -p /var/lib/bewitch
 sudo chown bewitch:bewitch /var/lib/bewitch
-sudo cp bewitch-0.6.0-linux-*/bewitch.example.toml /etc/bewitch.toml
+sudo install -m 640 -o root -g bewitch bewitch-0.6.0-linux-*/bewitch.example.toml /etc/bewitch.toml
 
-# Install systemd service
-sudo cp bewitch-0.6.0-linux-*/bewitchd.service /etc/systemd/system/
+# Install systemd units (they expect /usr/bin, so point them at /usr/local/bin)
+for unit in bewitchd.service bewitch-smart.service bewitch-smart.timer; do
+  sed 's#/usr/bin/bewitchd#/usr/local/bin/bewitchd#' bewitch-0.6.0-linux-*/$unit \
+    | sudo tee /etc/systemd/system/$unit > /dev/null
+done
 sudo systemctl daemon-reload
+sudo systemctl enable --now bewitchd bewitch-smart.timer
 ```
 
 ## Direct .deb Download
@@ -108,26 +116,30 @@ sudo dpkg -i bewitch_0.6.0-1_*.deb
 The `.deb` package automatically:
 
 - Creates the `bewitch` system user and group
-- Installs binaries to `/usr/local/bin/`
+- Installs binaries to `/usr/bin/`
 - Sets up `/var/lib/bewitch/` with correct ownership
-- Installs, enables, and starts the systemd service (`bewitchd.service`)
-- Copies example config to `/etc/bewitch.toml`
-- Configures disk and SMART access permissions
+- Installs, enables, and starts `bewitchd.service`, and enables `bewitch-smart.timer` (the
+  [NVMe SMART helper](@/docs/collectors.md#nvme-and-cap-sys-admin))
+- Copies the example config to `/etc/bewitch.toml` as `root:bewitch`, mode `0640`, if you don't
+  have one already
+- Grants the service the capabilities and groups it needs for SMART, power, GPU and per-process I/O
 
 ## Build from Source
 
-Requires **Go 1.21+** and a C compiler (for CGO/DuckDB).
+Requires **Go 1.26.9 or newer** (as set in `go.mod`) and a C compiler (for CGO/DuckDB).
 
 ```bash
 git clone https://github.com/duggan/bewitch
 cd bewitch
 make build
-sudo make install
+sudo make install          # installs to /usr/bin
 sudo useradd -r -s /usr/sbin/nologin bewitch
 sudo mkdir -p /var/lib/bewitch
 sudo chown bewitch:bewitch /var/lib/bewitch
-sudo cp bewitch.example.toml /etc/bewitch.toml
-sudo cp debian/bewitchd.service /etc/systemd/system/
+sudo install -m 640 -o root -g bewitch bewitch.example.toml /etc/bewitch.toml
+sudo cp debian/bewitch.bewitchd.service /etc/systemd/system/bewitchd.service
+sudo cp debian/bewitch.bewitch-smart.service /etc/systemd/system/bewitch-smart.service
+sudo cp debian/bewitch.bewitch-smart.timer /etc/systemd/system/bewitch-smart.timer
 sudo systemctl daemon-reload
 ```
 
@@ -137,11 +149,17 @@ The install script and `.deb` package automatically enable and start the daemon.
 For build-from-source installs, start it manually:
 
 ```bash
-sudo systemctl enable --now bewitchd
+sudo systemctl enable --now bewitchd bewitch-smart.timer
 ```
 
 The service uses `RuntimeDirectory=bewitch` which creates `/run/bewitch/` automatically.
-The default socket path is `/run/bewitch/bewitch.sock` (world-accessible, 0666).
+The default socket path is `/run/bewitch/bewitch.sock`. It is world-accessible (`0666`) so any
+local user can run the TUI; see [the local socket](@/docs/remote-access.md#the-local-socket) for
+what that allows.
+
+The service runs as the unprivileged `bewitch` user in a systemd sandbox. It can only write to
+`/var/lib/bewitch/`, and holds only the capabilities its collectors need (`CAP_SYS_RAWIO`,
+`CAP_PERFMON`, `CAP_SYS_PTRACE`, `CAP_BPF`).
 
 ### Service management
 
@@ -166,10 +184,12 @@ Use `BEWITCH_NONINTERACTIVE=1` to auto-install all detected optional dependencie
 
 | Path | Purpose |
 | --- | --- |
-| `/usr/local/bin/bewitchd` | Daemon binary |
-| `/usr/local/bin/bewitch` | TUI + CLI binary |
-| `/etc/bewitch.toml` | Configuration file |
+| `/usr/bin/bewitchd` | Daemon binary (`.deb`; `/usr/local/bin/` from the tarball) |
+| `/usr/bin/bewitch` | TUI + CLI binary (`.deb`; `/usr/local/bin/` from the tarball) |
+| `/etc/bewitch.toml` | Configuration file (`root:bewitch`, `0640`) |
+| `~/.config/bewitch/config.toml` | Optional per-user client config |
 | `/var/lib/bewitch/` | Data directory (DuckDB, TLS certs, Parquet archives) |
+| `/var/lib/bewitch/smart/` | NVMe SMART snapshots from `bewitch-smart.timer` |
 | `/run/bewitch/bewitch.sock` | Unix socket (created by systemd) |
 | `~/.config/bewitch/known_hosts` | TLS fingerprints for remote connections |
 | `~/.bewitch_sql_history` | REPL command history |
