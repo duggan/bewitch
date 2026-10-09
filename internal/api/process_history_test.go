@@ -99,9 +99,24 @@ func TestProcessHistoryRanking(t *testing.T) {
 			t.Fatalf("worker bucket value %v, want 30 (15%% + 15%%)", p.Value)
 		}
 	}
+	// A process absent from a bucket used 0 CPU there, and the series says so:
+	// with only its one bucket, the chart drew a line from it to the process's
+	// next appearance, so an intermittent job looked as if it ran throughout.
 	if b, ok := by["burst-0"]; ok {
-		if len(b.Points) != 1 || math.Abs(b.Points[0].Value-50) > 1e-9 {
-			t.Errorf("burst-0 = %+v, want one point of 50 (absent sample counts as 0)", b.Points)
+		if len(b.Points) != 60 {
+			t.Fatalf("burst-0 has %d points, want 60 (zero-filled where absent)", len(b.Points))
+		}
+		var nonzero int
+		for _, p := range b.Points {
+			if p.Value != 0 {
+				nonzero++
+				if math.Abs(p.Value-50) > 1e-9 {
+					t.Errorf("burst-0 bucket value %v, want 50 (absent sample counts as 0)", p.Value)
+				}
+			}
+		}
+		if nonzero != 1 {
+			t.Errorf("burst-0 has %d non-zero buckets, want 1", nonzero)
 		}
 	}
 

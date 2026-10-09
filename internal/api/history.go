@@ -763,9 +763,14 @@ func (s *Server) buildProcessHistory(names []string, start, end time.Time, bucke
 			GROUP BY sm.bucket, sm.name, bs.n
 		),
 		chosen AS (%s)
-		SELECT b.bucket, b.name, b.cpu_avg
-		FROM bucketed b JOIN chosen c ON c.name = b.name
-		ORDER BY b.bucket`, bucket, metrics, info, selectNames), args
+		-- Every bucket with any process samples, for every chosen name: a process
+		-- absent from a bucket used 0 CPU there. Leaving those buckets out made the
+		-- chart draw a straight line across the gap, so a nightly job looked as if
+		-- it had run all day. Buckets with no samples at all (daemon down) stay gaps.
+		SELECT bs.bucket, c.name, COALESCE(b.cpu_avg, 0) AS cpu_avg
+		FROM bucket_samples bs CROSS JOIN chosen c
+		LEFT JOIN bucketed b ON b.bucket = bs.bucket AND b.name = c.name
+		ORDER BY bs.bucket, c.name`, bucket, metrics, info, selectNames), args
 }
 
 const historyCacheTTL = 10 * time.Second
