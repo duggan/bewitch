@@ -1689,16 +1689,27 @@ func (m *Model) initDashSparklines() {
 	m.dashSparkData = make(map[string][]float64)
 	end := time.Now()
 	start := end.Add(-time.Hour)
-	// CPU history
+	// CPU history. updateDashSparklines appends live utilization (100 - idle),
+	// so seed with the same quantity — user+system+iowait, as close as the
+	// history series get — not user time alone, which made the line jump down
+	// where history met live data.
 	if series, err := m.client.GetHistory("cpu", start, end); err == nil {
+		var vals []float64
 		for _, s := range series {
-			if s.Label == "cpu_user" {
-				vals := make([]float64, len(s.Points))
-				for i, p := range s.Points {
-					vals[i] = p.Value
+			switch s.Label {
+			case "cpu_user", "cpu_system", "cpu_iowait":
+				if vals == nil {
+					vals = make([]float64, len(s.Points))
 				}
-				m.dashSparkData["cpu"] = vals
+				for i, p := range s.Points {
+					if i < len(vals) {
+						vals[i] += p.Value
+					}
+				}
 			}
+		}
+		if vals != nil {
+			m.dashSparkData["cpu"] = vals
 		}
 	}
 	// Memory history
