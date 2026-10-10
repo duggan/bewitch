@@ -51,8 +51,8 @@ curl --unix-socket /run/bewitch/bewitch.sock \
   http://localhost/api/alert-rules
 ```
 
-`aggregate` is `avg` (the default), `max` or `min`; see
-[threshold rules](@/docs/alerts.md#threshold). Rule names must be unique (a duplicate returns
+`aggregate` is `avg` (the default), `max` or `min`, or `increase` for the SMART and ECC error
+counts; see [threshold rules](@/docs/alerts.md#threshold). Any other value returns `400`. Rule names must be unique (a duplicate returns
 `409`), and a rule's type can't be changed by `PUT`.
 
 ```bash

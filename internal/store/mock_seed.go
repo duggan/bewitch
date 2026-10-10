@@ -221,8 +221,8 @@ func SeedMockAlerts(db *sql.DB, now time.Time) error {
 	}{
 		{day(12, 15, 42), 9 * time.Minute, "CPU Critical", "critical", "cpu.aggregate avg 91.4 > 90.0 over 5m", true},
 		{day(6, 10, 3), 70 * time.Second, "Nginx Workers", "critical", "process 'nginx' is down: 1 of 4 expected instances running", true},
-		{day(2, 2, 51), 4 * time.Minute, "Package Temperature", "warning", "temperature.sensor max 86.3 > 85.0 over 1m", true},
-		{day(1, 14, 18), 3 * time.Minute, "Package Temperature", "warning", "temperature.sensor max 85.6 > 85.0 over 1m", false},
+		{day(2, 2, 51), 4 * time.Minute, "Package Temperature", "warning", "temperature.sensor on coretemp/Package id 0 max 86.3 > 85.0 over 1m", true},
+		{day(1, 14, 18), 3 * time.Minute, "Package Temperature", "warning", "temperature.sensor on coretemp/Package id 0 max 85.6 > 85.0 over 1m", false},
 	}
 	for _, a := range history {
 		if _, err := tx.Exec(

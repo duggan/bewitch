@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/duggan/bewitch/internal/alert"
 	"github.com/duggan/bewitch/internal/api"
 )
 
@@ -174,10 +175,16 @@ func renderRuleDetail(r api.AlertRuleMetric, width int) string {
 	case "threshold":
 		// "over" (across the window), not "for" (sustained for its whole length):
 		// the engine compares the windowed aggregate, mirroring the fired-alert text.
-		// Prefix the aggregate for value metrics; SMART has an intrinsic MAX/COUNT, so
-		// don't mislabel it with the stored placeholder 'avg'.
+		// Prefix the aggregate for value metrics and "increase" for counters in that
+		// mode. SMART/ECC otherwise have a fixed reduction, so don't mislabel them
+		// with the stored placeholder 'avg'.
 		cond := fmt.Sprintf("%s %s over %s", r.Operator, ftoa(r.Value), r.Duration)
-		if r.Aggregate != "" && !strings.HasPrefix(r.Metric, "smart.") {
+		switch {
+		case alert.IsCounterMetric(r.Metric):
+			if r.Aggregate == "increase" {
+				cond = "increase " + cond
+			}
+		case r.Aggregate != "" && !strings.HasPrefix(r.Metric, "smart."):
 			cond = r.Aggregate + " " + cond
 		}
 		row("condition", cond)

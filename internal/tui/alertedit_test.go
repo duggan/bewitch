@@ -584,3 +584,26 @@ func TestAlertFooterFiltersByPanel(t *testing.T) {
 		t.Error("tab:switch should appear on both panels")
 	}
 }
+
+// TestFormCounterTrigger: SMART/ECC counter rules default to "increase" when
+// created, round-trip either trigger on edit, and a pre-trigger rule (stored
+// 'avg', which compared the total) keeps comparing the total after an edit.
+func TestFormCounterTrigger(t *testing.T) {
+	created := (&alertFormState{alertType: "threshold", category: "smart", smartMetric: "smart.reallocated"}).toAlertRuleMetric()
+	if created.Aggregate != "increase" {
+		t.Errorf("new SMART counter rule aggregate = %q, want increase", created.Aggregate)
+	}
+	if ecc := (&alertFormState{alertType: "threshold", category: "ecc"}).toAlertRuleMetric(); ecc.Aggregate != "increase" {
+		t.Errorf("new ECC rule aggregate = %q, want increase", ecc.Aggregate)
+	}
+	if wear := (&alertFormState{alertType: "threshold", category: "smart", smartMetric: "smart.percent_used"}).toAlertRuleMetric(); wear.Aggregate != "avg" {
+		t.Errorf("percent_used is not a counter; aggregate = %q, want the avg placeholder", wear.Aggregate)
+	}
+	for stored, want := range map[string]string{"increase": "increase", "max": "max", "avg": "max", "": "max"} {
+		in := api.AlertRuleMetric{ID: 3, Name: "r", Type: "threshold", Severity: "warning",
+			Metric: "smart.pending", Operator: ">", Value: 0, Duration: "24h", Aggregate: stored}
+		if out := fromAlertRuleMetric(in).toAlertRuleMetric(); out.Aggregate != want {
+			t.Errorf("stored %q → saved %q, want %q", stored, out.Aggregate, want)
+		}
+	}
+}

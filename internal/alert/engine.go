@@ -38,7 +38,7 @@ type Engine struct {
 	resolveAfter time.Duration
 	now          func() time.Time // injectable clock for tests
 	stop         chan struct{}
-	mu        sync.RWMutex
+	mu           sync.RWMutex
 
 	// notifyFailures counts live notification deliveries that returned an error
 	// (a failing webhook/SMTP), so "alerts aren't getting out" is observable rather

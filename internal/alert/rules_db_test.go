@@ -234,3 +234,112 @@ func TestEngineProcessPins(t *testing.T) {
 		}
 	}
 }
+
+func seedSMART(t *testing.T, database *sql.DB, device string, ts time.Time, reallocated int64, healthy bool) {
+	t.Helper()
+	if _, err := database.Exec(
+		`INSERT INTO smart_metrics (ts, device, healthy, reallocated_sectors) VALUES (?, ?, ?, ?)`,
+		ts, device, healthy, reallocated); err != nil {
+		t.Fatalf("seed smart_metrics: %v", err)
+	}
+}
+
+// TestCounterIncrease: "increase" fires on growth since the last reading before
+// the window — even when the window is shorter than the SMART cadence — names the
+// device, and ignores a drive whose count is high but stable.
+func TestCounterIncrease(t *testing.T) {
+	now := time.Now()
+	rule := func(agg, dur string) *ThresholdRule {
+		return NewThresholdRule(AlertRuleBase{Name: "realloc"},
+			ThresholdConfig{Metric: "smart.reallocated", Operator: ">", Value: 0, Duration: dur, Aggregate: agg})
+	}
+
+	database := newRuleTestDB(t)
+	// sda: 8 reallocated sectors for years, stable. sdb: 0 → 3 in the latest reading.
+	for _, ago := range []time.Duration{15 * time.Minute, 10 * time.Minute, 5 * time.Minute, 30 * time.Second} {
+		seedSMART(t, database, "sda", now.Add(-ago), 8, true)
+	}
+	seedSMART(t, database, "sdb", now.Add(-10*time.Minute), 0, true)
+	seedSMART(t, database, "sdb", now.Add(-5*time.Minute), 0, true)
+	seedSMART(t, database, "sdb", now.Add(-30*time.Second), 3, true)
+
+	// Level: fires on the stable drive (the old, permanently-firing behaviour).
+	alert, err := rule("max", "1m").Evaluate(database)
+	if err != nil || alert == nil || !strings.Contains(alert.Message, "on sda") {
+		t.Fatalf("level = (%+v, %v), want an alert naming sda", alert, err)
+	}
+
+	// Increase over a 1m window (one SMART row in it): sdb's step from its
+	// pre-window reading is seen; sda's stable 8 is not.
+	alert, err = rule("increase", "1m").Evaluate(database)
+	if err != nil || alert == nil {
+		t.Fatalf("increase = (%+v, %v), want an alert", alert, err)
+	}
+	if want := "smart.reallocated on sdb increase 3.0 > 0.0 over 1m"; alert.Message != want {
+		t.Errorf("message = %q, want %q", alert.Message, want)
+	}
+
+	// Without sdb's step, increase is healthy even though sda sits at 8.
+	if _, err := database.Exec("DELETE FROM smart_metrics WHERE device = 'sdb'"); err != nil {
+		t.Fatal(err)
+	}
+	if alert, err := rule("increase", "1m").Evaluate(database); err != nil || alert != nil {
+		t.Errorf("stable count under increase = (%+v, %v), want (nil, nil)", alert, err)
+	}
+}
+
+// TestECCIncreaseAcrossReboot: ECC counts reset at boot. A reset inside the window
+// counts the post-reset reading as new errors rather than a negative increase.
+func TestECCIncreaseAcrossReboot(t *testing.T) {
+	now := time.Now()
+	database := newRuleTestDB(t)
+	seed := func(ago time.Duration, n int64) {
+		if _, err := database.Exec(`INSERT INTO ecc_metrics (ts, corrected, uncorrected) VALUES (?, ?, 0)`, now.Add(-ago), n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rule := NewThresholdRule(AlertRuleBase{Name: "ecc"},
+		ThresholdConfig{Metric: "ecc.corrected", Operator: ">", Value: 0, Duration: "5m", Aggregate: "increase"})
+
+	seed(10*time.Minute, 5) // baseline before the window
+	seed(4*time.Minute, 5)
+	if alert, err := rule.Evaluate(database); err != nil || alert != nil {
+		t.Fatalf("no new errors = (%+v, %v), want (nil, nil)", alert, err)
+	}
+	seed(2*time.Minute, 0) // reboot
+	seed(1*time.Minute, 2) // two new errors since boot
+	alert, err := rule.Evaluate(database)
+	if err != nil || alert == nil {
+		t.Fatalf("errors after reboot = (%+v, %v), want an alert", alert, err)
+	}
+	if want := "ecc.corrected increase 2.0 > 0.0 over 5m"; alert.Message != want {
+		t.Errorf("message = %q, want %q", alert.Message, want)
+	}
+}
+
+// TestThresholdMessageNamesSubject: SMART alerts name the failing device(s), and
+// value metrics name the rule's mount/interface/sensor.
+func TestThresholdMessageNamesSubject(t *testing.T) {
+	now := time.Now()
+	database := newRuleTestDB(t)
+	seedSMART(t, database, "sdb", now, 0, false)
+	seedSMART(t, database, "sda", now, 0, false)
+	seedSMART(t, database, "nvme0n1", now, 0, true)
+	r := NewThresholdRule(AlertRuleBase{Name: "u"}, ThresholdConfig{Metric: "smart.unhealthy", Operator: ">", Value: 0, Duration: "5m"})
+	alert, err := r.Evaluate(database)
+	if err != nil || alert == nil || !strings.HasPrefix(alert.Message, "smart.unhealthy on sda, sdb count 2") {
+		t.Errorf("unhealthy = (%+v, %v), want a message naming sda, sdb", alert, err)
+	}
+
+	if _, err := database.Exec("INSERT INTO dimension_values (id, category, value) VALUES (1, 'mount', '/srv')"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`INSERT INTO disk_metrics (ts, mount_id, total_bytes, used_bytes, free_bytes) VALUES (?, 1, 100, 95, 5)`, now); err != nil {
+		t.Fatal(err)
+	}
+	r = NewThresholdRule(AlertRuleBase{Name: "d"}, ThresholdConfig{Metric: "disk.used_pct", Operator: ">", Value: 90, Duration: "5m", Mount: "/srv"})
+	alert, err = r.Evaluate(database)
+	if err != nil || alert == nil || alert.Message != "disk.used_pct on /srv avg 95.0 > 90.0 over 5m" {
+		t.Errorf("disk = (%+v, %v), want the mount named", alert, err)
+	}
+}

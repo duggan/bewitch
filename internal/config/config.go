@@ -52,13 +52,13 @@ type DaemonConfig struct {
 }
 
 type AlertsConfig struct {
-	EvaluationInterval string        `toml:"evaluation_interval"`
+	EvaluationInterval string `toml:"evaluation_interval"`
 	// ResolveAfter is how long a firing rule must evaluate healthy, continuously,
 	// before its alert resolves and the all-clear is sent. Damps flapping around
 	// a threshold. Empty = default (2m); "0s" resolves on the first healthy cycle.
 	ResolveAfter string        `toml:"resolve_after"`
-	Email              []EmailDest   `toml:"email"`
-	Commands           []CommandDest `toml:"commands"`
+	Email        []EmailDest   `toml:"email"`
+	Commands     []CommandDest `toml:"commands"`
 	// ShoutrrrURLs are Shoutrrr service URLs (Discord/Telegram/ntfy/Slack/etc.);
 	// alerts are delivered to each. See https://containrrr.dev/shoutrrr/services.
 	ShoutrrrURLs []string `toml:"shoutrrr_urls"`

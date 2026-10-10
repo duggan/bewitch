@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/duggan/bewitch/internal/alert"
 	"github.com/duggan/bewitch/internal/api"
 )
 
@@ -32,6 +33,7 @@ type alertFormState struct {
 	valueStr     string
 	durationStr  string
 	aggregate    string // threshold value metrics: avg (default), max, min
+	counterMode  string // counter metrics (alert.IsCounterMetric): increase (default) or max (current count)
 	severity     string
 	mount        string
 	ifaceName    string
@@ -221,9 +223,24 @@ func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 		).WithHideFunc(func() bool {
 			return state.category != "smart"
 		}),
+		// Counter trigger (SMART sector/error counts, ECC). These counts only grow,
+		// so comparing the total fires forever on a drive with old errors; the
+		// default is to alert on new errors within the window instead.
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Trigger").
+				Description("Counts never go down, so a disk with old errors stays above 0 for good").
+				Options(
+					huh.NewOption("New errors within the window", "increase"),
+					huh.NewOption("Total count (any errors at all)", "max"),
+				).
+				Value(&state.counterMode),
+		).WithHideFunc(func() bool {
+			return state.alertType != "threshold" || !alert.IsCounterMetric(state.thresholdMetric())
+		}),
 		// Aggregate function (value metrics only). Its own group because huh only
-		// supports hiding at the group level — the SMART metrics have a fixed
-		// MAX/COUNT aggregate, so this is hidden for them (and for non-threshold types).
+		// supports hiding at the group level — SMART and ECC have their own
+		// reductions, so this is hidden for them (and for non-threshold types).
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Aggregate").
@@ -235,7 +252,7 @@ func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 				).
 				Value(&state.aggregate),
 		).WithHideFunc(func() bool {
-			return state.alertType != "threshold" || state.category == "smart"
+			return state.alertType != "threshold" || state.category == "smart" || state.category == "ecc"
 		}),
 		// Threshold parameters
 		huh.NewGroup(
@@ -261,8 +278,8 @@ func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 				Validate(validateFloat),
 			huh.NewInput().
 				Title("Duration").
-				Description("How long the condition must persist (e.g. 5m, 1h)").
-				Placeholder("5m").
+				DescriptionFunc(func() string { return durationDesc(state) }, thresholdBindings(state)).
+				PlaceholderFunc(func() string { return durationPlaceholder(state) }, thresholdBindings(state)).
 				Value(&state.durationStr).
 				Validate(validateDuration),
 		).WithHideFunc(func() bool {
@@ -453,7 +470,27 @@ func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 // before, in the reordered group). hashstructure dereferences the pointers, so
 // the funcs re-run whenever either string changes.
 func thresholdBindings(state *alertFormState) []any {
-	return []any{&state.category, &state.smartMetric, &state.cpuMetric, &state.eccMetric}
+	return []any{&state.category, &state.smartMetric, &state.cpuMetric, &state.eccMetric, &state.counterMode}
+}
+
+// increaseMode reports whether the form is set to alert on a counter's growth.
+// An unset trigger means the default, increase.
+func (s *alertFormState) increaseMode() bool {
+	return alert.IsCounterMetric(s.thresholdMetric()) && s.counterMode != "max"
+}
+
+func durationDesc(state *alertFormState) string {
+	if state.increaseMode() {
+		return "Window to look for new errors (e.g. 24h)"
+	}
+	return "Window the value is aggregated over (e.g. 5m, 1h)"
+}
+
+func durationPlaceholder(state *alertFormState) string {
+	if state.increaseMode() {
+		return "24h"
+	}
+	return "5m"
 }
 
 func thresholdDesc(state *alertFormState) string {
@@ -474,8 +511,14 @@ func thresholdDesc(state *alertFormState) string {
 	case "gpu":
 		return "GPU utilization percentage (0-100)"
 	case "smart":
+		if state.increaseMode() {
+			return "New sectors/errors on the worst disk within the window; alert > 0"
+		}
 		return smartThresholdDesc(state.smartMetric)
 	case "ecc":
+		if state.increaseMode() {
+			return "New ECC errors within the window; alert > 0"
+		}
 		return "ECC error count, cumulative since boot (uncorrectable: alert > 0)"
 	}
 	return ""
@@ -490,7 +533,7 @@ func smartThresholdDesc(metric string) string {
 	case "smart.unhealthy":
 		return "Count of drives reporting a SMART health failure; alert > 0"
 	case "smart.reallocated", "smart.pending", "smart.uncorrectable":
-		return "Raw sector/error count, worst across disks; alert > 0"
+		return "Total sector/error count, worst across disks; alert > 0"
 	}
 	return "Threshold for the chosen SMART attribute"
 }
@@ -543,42 +586,27 @@ func (s *alertFormState) toAlertRuleMetric() api.AlertRuleMetric {
 		rule.Operator = s.operator
 		rule.Value, _ = strconv.ParseFloat(s.valueStr, 64)
 		rule.Duration = s.durationStr
-		// Default empty → "avg" (back-compat). SMART stores 'avg' too but the engine
-		// ignores it (SMART has a fixed MAX/COUNT aggregate); the form hides the picker.
-		rule.Aggregate = s.aggregate
-		if rule.Aggregate == "" {
-			rule.Aggregate = "avg"
-		}
+		rule.Metric = s.thresholdMetric()
 		switch s.category {
-		case "cpu":
-			rule.Metric = s.cpuMetric
-			if rule.Metric == "" {
-				rule.Metric = "cpu.aggregate"
-			}
-		case "memory":
-			rule.Metric = "memory.used_pct"
 		case "disk":
-			rule.Metric = "disk.used_pct"
 			rule.Mount = s.mount
 		case "network":
-			if s.direction == "rx" {
-				rule.Metric = "network.rx"
-			} else {
-				rule.Metric = "network.tx"
-			}
 			rule.InterfaceName = s.ifaceName
-		case "temperature":
-			rule.Metric = "temperature.sensor"
+		case "temperature", "gpu":
 			rule.Sensor = s.sensor
-		case "gpu":
-			rule.Metric = "gpu.utilization"
-			rule.Sensor = s.sensor
-		case "smart":
-			rule.Metric = s.smartMetric
-		case "ecc":
-			rule.Metric = s.eccMetric
-			if rule.Metric == "" {
-				rule.Metric = "ecc.uncorrectable"
+		}
+		// Counters store their trigger (increase by default); value metrics their
+		// avg/max/min (empty → "avg", back-compat). SMART wear/health store 'avg',
+		// which the engine ignores (their reduction is fixed); the form hides it.
+		if alert.IsCounterMetric(rule.Metric) {
+			rule.Aggregate = "increase"
+			if s.counterMode == "max" {
+				rule.Aggregate = "max"
+			}
+		} else {
+			rule.Aggregate = s.aggregate
+			if rule.Aggregate == "" {
+				rule.Aggregate = "avg"
 			}
 		}
 	case "variance":
@@ -615,6 +643,42 @@ func (s *alertFormState) toAlertRuleMetric() api.AlertRuleMetric {
 	return rule
 }
 
+// thresholdMetric maps the form's category (and per-category picker) to the
+// threshold metric it creates. In edit mode the original metric is used as-is.
+func (s *alertFormState) thresholdMetric() string {
+	if s.editID != 0 && s.origMetric != "" {
+		return s.origMetric
+	}
+	switch s.category {
+	case "cpu":
+		if s.cpuMetric != "" {
+			return s.cpuMetric
+		}
+		return "cpu.aggregate"
+	case "memory":
+		return "memory.used_pct"
+	case "disk":
+		return "disk.used_pct"
+	case "network":
+		if s.direction == "rx" {
+			return "network.rx"
+		}
+		return "network.tx"
+	case "temperature":
+		return "temperature.sensor"
+	case "gpu":
+		return "gpu.utilization"
+	case "smart":
+		return s.smartMetric
+	case "ecc":
+		if s.eccMetric != "" {
+			return s.eccMetric
+		}
+		return "ecc.uncorrectable"
+	}
+	return ""
+}
+
 // fromAlertRuleMetric builds form state pre-populated for editing an existing rule. The
 // category, alert type, and (for network) direction are derived from the rule's type and
 // metric so the form opens straight on the locked rule's parameter group. Numeric values
@@ -640,6 +704,13 @@ func fromAlertRuleMetric(rule api.AlertRuleMetric) *alertFormState {
 		s.aggregate = rule.Aggregate
 		if s.aggregate == "" {
 			s.aggregate = "avg" // old rules created before the aggregate column
+		}
+		if alert.IsCounterMetric(rule.Metric) {
+			// Rules from before the trigger existed compared the total count.
+			s.counterMode = "max"
+			if rule.Aggregate == "increase" {
+				s.counterMode = "increase"
+			}
 		}
 		switch rule.Metric {
 		case "cpu.aggregate", "cpu.steal":

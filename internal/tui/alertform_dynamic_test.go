@@ -58,27 +58,31 @@ func TestCategoryOptionsGating(t *testing.T) {
 // returns at render time.
 func TestThresholdDescByMetric(t *testing.T) {
 	cases := []struct {
-		category, smartMetric string
-		want                  string
+		category, smartMetric, counterMode string
+		want                               string
 	}{
-		{"cpu", "", "CPU usage percentage (0-100)"},
-		{"memory", "", "Memory usage percentage (0-100)"},
-		{"disk", "", "Disk usage percentage (0-100)"},
-		{"network", "", "Throughput in bytes/sec"},
-		{"temperature", "", "Temperature in °C"},
-		{"gpu", "", "GPU utilization percentage (0-100)"},
-		{"smart", "smart.reallocated", "Raw sector/error count, worst across disks; alert > 0"},
-		{"smart", "smart.pending", "Raw sector/error count, worst across disks; alert > 0"},
-		{"smart", "smart.uncorrectable", "Raw sector/error count, worst across disks; alert > 0"},
-		{"smart", "smart.percent_used", "NVMe wear level, percent (0-100); alert e.g. > 90"},
-		{"smart", "smart.unhealthy", "Count of drives reporting a SMART health failure; alert > 0"},
-		{"smart", "", "Threshold for the chosen SMART attribute"}, // attribute not yet picked
-		{"", "", ""}, // create mode, before a category is chosen
+		{"cpu", "", "", "CPU usage percentage (0-100)"},
+		{"memory", "", "", "Memory usage percentage (0-100)"},
+		{"disk", "", "", "Disk usage percentage (0-100)"},
+		{"network", "", "", "Throughput in bytes/sec"},
+		{"temperature", "", "", "Temperature in °C"},
+		{"gpu", "", "", "GPU utilization percentage (0-100)"},
+		{"smart", "smart.reallocated", "max", "Total sector/error count, worst across disks; alert > 0"},
+		{"smart", "smart.pending", "max", "Total sector/error count, worst across disks; alert > 0"},
+		{"smart", "smart.uncorrectable", "max", "Total sector/error count, worst across disks; alert > 0"},
+		{"smart", "smart.reallocated", "", "New sectors/errors on the worst disk within the window; alert > 0"}, // default trigger
+		{"smart", "smart.pending", "increase", "New sectors/errors on the worst disk within the window; alert > 0"},
+		{"smart", "smart.percent_used", "", "NVMe wear level, percent (0-100); alert e.g. > 90"},
+		{"smart", "smart.unhealthy", "", "Count of drives reporting a SMART health failure; alert > 0"},
+		{"smart", "", "", "Threshold for the chosen SMART attribute"}, // attribute not yet picked
+		{"ecc", "", "", "New ECC errors within the window; alert > 0"},
+		{"ecc", "", "max", "ECC error count, cumulative since boot (uncorrectable: alert > 0)"},
+		{"", "", "", ""}, // create mode, before a category is chosen
 	}
 	for _, c := range cases {
-		state := &alertFormState{category: c.category, smartMetric: c.smartMetric}
+		state := &alertFormState{category: c.category, smartMetric: c.smartMetric, counterMode: c.counterMode}
 		if got := thresholdDesc(state); got != c.want {
-			t.Errorf("thresholdDesc(category=%q smart=%q) = %q, want %q", c.category, c.smartMetric, got, c.want)
+			t.Errorf("thresholdDesc(category=%q smart=%q mode=%q) = %q, want %q", c.category, c.smartMetric, c.counterMode, got, c.want)
 		}
 	}
 	// The SMART description must never be a CPU/percentage hint — the reported bug.

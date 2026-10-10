@@ -41,13 +41,13 @@ Compares a metric, aggregated over the rule's window, against a value with `>`, 
 | `gpu.utilization` | GPU utilization % (per GPU) |
 | `gpu.temperature` | GPU temperature in °C (per GPU) |
 | `gpu.power` | GPU power draw in watts (per GPU) |
-| `smart.reallocated` | Reallocated sectors, worst disk |
-| `smart.pending` | Pending sectors, worst disk |
-| `smart.uncorrectable` | Uncorrectable errors, worst disk |
+| `smart.reallocated` | Reallocated sectors, worst disk (total, or `increase`) |
+| `smart.pending` | Pending sectors, worst disk (total, or `increase`) |
+| `smart.uncorrectable` | Uncorrectable errors, worst disk (total, or `increase`) |
 | `smart.percent_used` | NVMe wear %, worst disk |
 | `smart.unhealthy` | Number of failed SMART health checks in the window |
-| `ecc.uncorrectable` | Uncorrectable ECC memory errors (all controllers) |
-| `ecc.corrected` | Corrected ECC memory errors (all controllers) |
+| `ecc.uncorrectable` | Uncorrectable ECC memory errors (all controllers; total, or `increase`) |
+| `ecc.corrected` | Corrected ECC memory errors (all controllers; total, or `increase`) |
 
 The TUI form creates every metric except `gpu.temperature` and `gpu.power`, which you can create
 through the [API](@/docs/api.md).
@@ -63,11 +63,22 @@ window is summarised:
 
 The rule compares that one number against the threshold. "cpu.aggregate > 90 over 5m" with `avg`
 means the 5-minute *average* exceeded 90%, not that CPU stayed above 90% for 5 minutes. The alert
-message says which aggregate was used, e.g. `cpu.aggregate avg 91.0 > 90.0 over 5m`.
+message says which aggregate was used and what it was measured on, e.g.
+`disk.used_pct on / avg 91.0 > 90.0 over 5m`.
 
-The SMART and ECC metrics ignore the aggregate setting. Their counters only grow, so they always
-use the worst (`max`) value in the window; `smart.unhealthy` is a count. A typical rule is
-`smart.reallocated > 0` or `ecc.uncorrectable > 0`.
+**SMART and ECC counters.** `smart.reallocated`, `smart.pending`, `smart.uncorrectable` and the two
+ECC metrics are running totals that never go down. Comparing the total (`max`) means a disk that
+reallocated a few sectors years ago trips `> 0` permanently. The `increase` aggregate compares how
+much the count grew within the window instead, so a typical rule is "`smart.reallocated` increase
+`> 0` over 24h": it fires when a disk reallocates a new sector, and it names the disk. The TUI
+form offers this as **Trigger** and defaults to it. Rules created before 0.10 compare the total.
+
+`increase` is measured from the last reading before the window, so it works even with a window
+shorter than the SMART reading interval (5 minutes by default). ECC counts reset when the machine
+reboots, and errors counted after a reboot are treated as new.
+
+`smart.percent_used` always uses the most-worn disk, and `smart.unhealthy` counts failed health
+checks in the window and names the failing disks.
 
 ### Predictive
 

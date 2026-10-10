@@ -390,6 +390,19 @@ func (s *Server) handleListAlertRules(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, AlertRulesResponse{Rules: rules})
 }
 
+// validThresholdAggregate reports whether a threshold rule's aggregate is one the
+// engine honours for its metric. "increase" only means something for cumulative
+// counters; elsewhere the engine would silently fall back to avg.
+func validThresholdAggregate(metric, aggregate string) bool {
+	switch aggregate {
+	case "", "avg", "max", "min":
+		return true
+	case "increase":
+		return alert.IsCounterMetric(metric)
+	}
+	return false
+}
+
 func (s *Server) handleCreateAlertRule(w http.ResponseWriter, r *http.Request) {
 	release := s.acquireWrite() // compaction-safe: see Server.SetWriteGate
 	defer release()
@@ -405,6 +418,10 @@ func (s *Server) handleCreateAlertRule(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validRuleField(rule.Name) || !validRuleField(rule.Severity) {
 		writeError(w, r, http.StatusBadRequest, "name and severity must not contain control characters")
+		return
+	}
+	if !validThresholdAggregate(rule.Metric, rule.Aggregate) {
+		writeError(w, r, http.StatusBadRequest, "aggregate must be avg, max or min (or increase, for SMART/ECC error counts)")
 		return
 	}
 
@@ -515,6 +532,10 @@ func (s *Server) handleUpdateAlertRule(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validRuleField(rule.Name) || !validRuleField(rule.Severity) {
 		writeError(w, r, http.StatusBadRequest, "name and severity must not contain control characters")
+		return
+	}
+	if !validThresholdAggregate(rule.Metric, rule.Aggregate) {
+		writeError(w, r, http.StatusBadRequest, "aggregate must be avg, max or min (or increase, for SMART/ECC error counts)")
 		return
 	}
 

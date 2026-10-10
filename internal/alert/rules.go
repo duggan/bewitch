@@ -29,10 +29,11 @@ type ThresholdConfig struct {
 	Mount         string
 	InterfaceName string
 	Sensor        string
-	// Aggregate is the windowed reduction applied to the AVG-backed metrics:
-	// "avg" (default), "max" (catch a transient spike that averages out), or
-	// "min". The SMART metrics ignore it (their MAX/COUNT aggregate is intrinsic).
-	// Empty is treated as "avg" for back-compat with pre-migration rows.
+	// Aggregate is the windowed reduction applied to the value metrics: "avg"
+	// (default), "max" (catch a transient spike that averages out), or "min".
+	// Counter metrics (IsCounterMetric) take "increase" (growth since the last
+	// reading before the window) and otherwise compare the current count. Empty
+	// is treated as "avg" for back-compat with pre-migration rows.
 	Aggregate string
 }
 
@@ -49,6 +50,32 @@ func aggFunc(aggregate string) (sqlFn, label string) {
 		return "AVG", "avg"
 	}
 }
+
+// IsCounterMetric reports whether a threshold metric is a cumulative counter
+// (SMART sector/error counts, ECC error counts since boot). Comparing such a
+// counter's level fires forever once a drive has ever had a reallocated sector,
+// so these metrics also accept aggregate "increase".
+func IsCounterMetric(metric string) bool {
+	switch metric {
+	case "smart.reallocated", "smart.pending", "smart.uncorrectable", "ecc.uncorrectable", "ecc.corrected":
+		return true
+	}
+	return false
+}
+
+// counterColumns maps each counter metric to its table and column.
+var counterColumns = map[string][2]string{
+	"smart.reallocated":   {"smart_metrics", "reallocated_sectors"},
+	"smart.pending":       {"smart_metrics", "pending_sectors"},
+	"smart.uncorrectable": {"smart_metrics", "uncorrectable_errs"},
+	"ecc.uncorrectable":   {"ecc_metrics", "uncorrected"},
+	"ecc.corrected":       {"ecc_metrics", "corrected"},
+}
+
+// increaseBaselineLookback bounds how far before the window the "increase" query
+// looks for a baseline reading, so it doesn't scan the counter's whole history
+// every evaluation. A longer collection gap falls back to the window's minimum.
+const increaseBaselineLookback = 24 * time.Hour
 
 // PredictiveConfig holds parameters for predictive alerts.
 type PredictiveConfig struct {
@@ -133,8 +160,14 @@ func (r *ThresholdRule) Evaluate(db *sql.DB) (*Alert, error) {
 		return nil, err
 	}
 
+	// Every query yields (value, subject). subject names the worst SMART device
+	// (or the failing ones, for smart.unhealthy) and is NULL elsewhere.
 	var val sql.NullFloat64
-	if err := db.QueryRow(query, args...).Scan(&val); err != nil {
+	var subject sql.NullString
+	if err := db.QueryRow(query, args...).Scan(&val, &subject); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNoData // per-device queries return no row on an empty window
+		}
 		return nil, fmt.Errorf("querying %s: %w", r.cfg.Metric, err)
 	}
 	if !val.Valid {
@@ -145,6 +178,10 @@ func (r *ThresholdRule) Evaluate(db *sql.DB) (*Alert, error) {
 
 	if r.compare(val.Float64) {
 		valueText, thresholdText := breachText(val.Float64, r.cfg.Value)
+		metric := r.cfg.Metric
+		if on := r.subject(subject.String); on != "" {
+			metric += " on " + on
+		}
 		return &Alert{
 			RuleName: r.base.Name,
 			Severity: r.base.Severity,
@@ -153,10 +190,21 @@ func (r *ThresholdRule) Evaluate(db *sql.DB) (*Alert, error) {
 			// value sustained for its whole length — a 30s spike on an idle box
 			// averages below threshold and won't fire (unless the rule uses max),
 			// and the text no longer implies otherwise.
-			Message: fmt.Sprintf("%s %s %s %s %s over %s", r.cfg.Metric, agg, valueText, r.cfg.Operator, thresholdText, r.cfg.Duration),
+			Message: fmt.Sprintf("%s %s %s %s %s over %s", metric, agg, valueText, r.cfg.Operator, thresholdText, r.cfg.Duration),
 		}, nil
 	}
 	return nil, nil
+}
+
+// subject names what the alert is about: the device the query reported, else
+// the rule's own mount, interface or sensor.
+func (r *ThresholdRule) subject(fromQuery string) string {
+	for _, s := range []string{fromQuery, r.cfg.Mount, r.cfg.InterfaceName, r.cfg.Sensor} {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // breachText formats a breaching value and its threshold with one decimal, or
@@ -173,91 +221,131 @@ func breachText(value, threshold float64) (string, string) {
 }
 
 // buildQuery returns the SQL, its bind args, and a label naming the aggregate it
-// computes ("avg"/"max"/"min" for the value metrics, "max"/"count" for SMART) so
-// the fired-alert message can be truthful about what the compared number is. The
-// value metrics honour the rule's configured aggregate; the SMART metrics keep
-// their intrinsic MAX/COUNT and ignore it.
+// computes so the fired-alert message is truthful about the compared number. The
+// SQL yields one row of (value, subject): subject is the SMART device the value
+// came from (NULL for the other metrics). Value metrics honour the rule's
+// avg/max/min; counter metrics compare their current level ("max") or, with
+// aggregate "increase", their growth; percent_used/unhealthy are fixed MAX/COUNT.
 func (r *ThresholdRule) buildQuery(cutoff time.Time) (string, []any, string, error) {
+	if IsCounterMetric(r.cfg.Metric) {
+		return r.counterQuery(cutoff)
+	}
 	fn, agg := aggFunc(r.cfg.Aggregate)
+	value := func(query string, args ...any) (string, []any, string, error) {
+		return "SELECT (" + query + "), NULL::VARCHAR", args, agg, nil
+	}
 	switch r.cfg.Metric {
 	case "cpu.aggregate":
 		// core = -1 is the whole-CPU aggregate (core = 0 was just physical core 0).
 		// 100 - idle counts everything non-idle — including nice/irq/softirq and,
 		// crucially, steal — so a contended VPS (high steal, low user+system) can
 		// actually trip the alert instead of looking idle.
-		return fmt.Sprintf("SELECT %s(100 - idle_pct) FROM cpu_metrics WHERE core = -1 AND ts > ?", fn), []any{cutoff}, agg, nil
+		return value(fmt.Sprintf("SELECT %s(100 - idle_pct) FROM cpu_metrics WHERE core = -1 AND ts > ?", fn), cutoff)
 	case "cpu.steal":
 		// Hypervisor-stolen time on the whole-CPU aggregate row — alert on VPS
 		// noisy-neighbour contention directly (e.g. cpu.steal > 20), distinct from
 		// overall utilization. steal_pct is nullable (rows predating migration 000012
 		// are NULL); the aggregate ignores NULLs, so a pre-migration-only window
 		// returns NULL and doesn't fire.
-		return fmt.Sprintf("SELECT %s(steal_pct) FROM cpu_metrics WHERE core = -1 AND ts > ?", fn), []any{cutoff}, agg, nil
+		return value(fmt.Sprintf("SELECT %s(steal_pct) FROM cpu_metrics WHERE core = -1 AND ts > ?", fn), cutoff)
 	case "memory.used_pct":
-		return fmt.Sprintf("SELECT %s(CAST(used_bytes AS DOUBLE) / NULLIF(total_bytes, 0) * 100) FROM memory_metrics WHERE ts > ?", fn), []any{cutoff}, agg, nil
+		return value(fmt.Sprintf("SELECT %s(CAST(used_bytes AS DOUBLE) / NULLIF(total_bytes, 0) * 100) FROM memory_metrics WHERE ts > ?", fn), cutoff)
 	case "disk.used_pct":
-		return fmt.Sprintf(`SELECT %s(CAST(m.used_bytes AS DOUBLE) / NULLIF(m.total_bytes, 0) * 100)
+		return value(fmt.Sprintf(`SELECT %s(CAST(m.used_bytes AS DOUBLE) / NULLIF(m.total_bytes, 0) * 100)
 			FROM disk_metrics m
 			JOIN dimension_values d ON d.category = 'mount' AND d.id = m.mount_id
-			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.Mount, cutoff}, agg, nil
+			WHERE d.value = ? AND m.ts > ?`, fn), r.cfg.Mount, cutoff)
 	case "network.rx":
-		return fmt.Sprintf(`SELECT %s(m.rx_bytes_sec)
+		return value(fmt.Sprintf(`SELECT %s(m.rx_bytes_sec)
 			FROM network_metrics m
 			JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id
-			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.InterfaceName, cutoff}, agg, nil
+			WHERE d.value = ? AND m.ts > ?`, fn), r.cfg.InterfaceName, cutoff)
 	case "network.tx":
-		return fmt.Sprintf(`SELECT %s(m.tx_bytes_sec)
+		return value(fmt.Sprintf(`SELECT %s(m.tx_bytes_sec)
 			FROM network_metrics m
 			JOIN dimension_values d ON d.category = 'interface' AND d.id = m.interface_id
-			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.InterfaceName, cutoff}, agg, nil
+			WHERE d.value = ? AND m.ts > ?`, fn), r.cfg.InterfaceName, cutoff)
 	case "temperature.sensor":
-		return fmt.Sprintf(`SELECT %s(m.temp_celsius)
+		return value(fmt.Sprintf(`SELECT %s(m.temp_celsius)
 			FROM temperature_metrics m
 			JOIN dimension_values d ON d.category = 'sensor' AND d.id = m.sensor_id
-			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.Sensor, cutoff}, agg, nil
+			WHERE d.value = ? AND m.ts > ?`, fn), r.cfg.Sensor, cutoff)
 	case "gpu.utilization":
-		return fmt.Sprintf(`SELECT %s(m.utilization_pct)
+		return value(fmt.Sprintf(`SELECT %s(m.utilization_pct)
 			FROM gpu_metrics m
 			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
-			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.Sensor, cutoff}, agg, nil
+			WHERE d.value = ? AND m.ts > ?`, fn), r.cfg.Sensor, cutoff)
 	case "gpu.temperature":
-		return fmt.Sprintf(`SELECT %s(m.temp_celsius)
+		return value(fmt.Sprintf(`SELECT %s(m.temp_celsius)
 			FROM gpu_metrics m
 			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
-			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.Sensor, cutoff}, agg, nil
+			WHERE d.value = ? AND m.ts > ?`, fn), r.cfg.Sensor, cutoff)
 	case "gpu.power":
-		return fmt.Sprintf(`SELECT %s(m.power_watts)
+		return value(fmt.Sprintf(`SELECT %s(m.power_watts)
 			FROM gpu_metrics m
 			JOIN dimension_values d ON d.category = 'gpu' AND d.id = m.gpu_id
-			WHERE d.value = ? AND m.ts > ?`, fn), []any{r.cfg.Sensor, cutoff}, agg, nil
-	// SMART metrics aggregate across all physical devices (the worst value over the
-	// window) so a failing drive trips the alert without a per-device scope — fire
-	// e.g. smart.reallocated > 0 or smart.percent_used > 90.
-	case "smart.reallocated":
-		return "SELECT MAX(reallocated_sectors) FROM smart_metrics WHERE ts > ?", []any{cutoff}, "max", nil
-	case "smart.pending":
-		return "SELECT MAX(pending_sectors) FROM smart_metrics WHERE ts > ?", []any{cutoff}, "max", nil
-	case "smart.uncorrectable":
-		return "SELECT MAX(uncorrectable_errs) FROM smart_metrics WHERE ts > ?", []any{cutoff}, "max", nil
+			WHERE d.value = ? AND m.ts > ?`, fn), r.cfg.Sensor, cutoff)
 	case "smart.percent_used":
-		return "SELECT MAX(percent_used) FROM smart_metrics WHERE ts > ?", []any{cutoff}, "max", nil
+		// NVMe wear: the most-worn device in the window (no per-device scope, so the
+		// worst drive trips the alert and the message names it). No row → no data.
+		return `SELECT CAST(percent_used AS DOUBLE), device FROM smart_metrics
+			WHERE ts > ? AND percent_used IS NOT NULL
+			ORDER BY percent_used DESC, ts DESC LIMIT 1`, []any{cutoff}, "max", nil
 	case "smart.unhealthy":
 		// Count of unhealthy snapshots in the window; > 0 means a drive reported a
 		// SMART health failure (the "your disk is dying" signal). NULL when the
 		// window has no SMART rows at all (they're written every smart_interval),
-		// so an empty window reads as no data rather than as a healthy 0.
-		return `SELECT CASE WHEN COUNT(*) = 0 THEN NULL ELSE COUNT(*) FILTER (WHERE healthy = false) END
+		// so an empty window reads as no data rather than as a healthy 0. The
+		// subject lists the failing devices.
+		return `SELECT CASE WHEN COUNT(*) = 0 THEN NULL ELSE COUNT(*) FILTER (WHERE healthy = false) END,
+				array_to_string(list_sort(list_distinct(list(device) FILTER (WHERE healthy = false))), ', ')
 			FROM smart_metrics WHERE ts > ?`, []any{cutoff}, "count", nil
-	// ECC error counters are cumulative since boot (like the SMART counters), so use
-	// MAX over the window and ignore the rule's aggregate choice. ecc.uncorrectable
-	// > 0 means a DIMM has had an uncorrectable error — page-worthy.
-	case "ecc.uncorrectable":
-		return "SELECT MAX(uncorrected) FROM ecc_metrics WHERE ts > ?", []any{cutoff}, "max", nil
-	case "ecc.corrected":
-		return "SELECT MAX(corrected) FROM ecc_metrics WHERE ts > ?", []any{cutoff}, "max", nil
 	default:
 		return "", nil, "", fmt.Errorf("unsupported threshold metric: %s", r.cfg.Metric)
 	}
+}
+
+// counterQuery builds the query for a cumulative counter (IsCounterMetric). SMART
+// rows are per device, so both modes pick the worst device and report it; ECC
+// is one host-wide series (subject NULL).
+//
+// Level ("max", the default for anything but "increase"): the highest count in
+// the window. Any drive that has ever reallocated a sector stays above 0.
+//
+// "increase": per device, the latest reading in the window minus the last
+// reading before it (within increaseBaselineLookback). Measuring against the
+// pre-window reading rather than MAX−MIN inside the window means a window
+// shorter than smart_interval (one SMART row per 5m) still sees the step. With
+// no baseline it falls back to the window's minimum. A count that went down
+// (ECC counters reset on reboot; a replaced drive reusing the device name)
+// counts from zero: the latest reading is all new.
+func (r *ThresholdRule) counterQuery(cutoff time.Time) (string, []any, string, error) {
+	tc := counterColumns[r.cfg.Metric]
+	table, col := tc[0], tc[1]
+	device := "device"
+	if table != "smart_metrics" {
+		device = "NULL::VARCHAR"
+	}
+	if r.cfg.Aggregate != "increase" {
+		return fmt.Sprintf(`SELECT CAST(%[2]s AS DOUBLE), %[3]s FROM %[1]s
+			WHERE ts > ? AND %[2]s IS NOT NULL
+			ORDER BY %[2]s DESC, ts DESC LIMIT 1`, table, col, device), []any{cutoff}, "max", nil
+	}
+	return fmt.Sprintf(`WITH w AS (
+			SELECT %[3]s AS dev, arg_max(%[2]s, ts) AS last, MIN(%[2]s) AS lo
+			FROM %[1]s WHERE ts > ? AND %[2]s IS NOT NULL GROUP BY 1
+		), b AS (
+			SELECT %[3]s AS dev, arg_max(%[2]s, ts) AS base
+			FROM %[1]s WHERE ts <= ? AND ts > ? AND %[2]s IS NOT NULL GROUP BY 1
+		)
+		SELECT CAST(CASE
+				WHEN b.base IS NULL THEN w.last - w.lo
+				WHEN w.lo < b.base THEN w.last
+				ELSE w.last - b.base END AS DOUBLE) AS inc,
+			w.dev
+		FROM w LEFT JOIN b ON b.dev IS NOT DISTINCT FROM w.dev
+		ORDER BY inc DESC, w.dev LIMIT 1`, table, col, device),
+		[]any{cutoff, cutoff, cutoff.Add(-increaseBaselineLookback)}, "increase", nil
 }
 
 func (r *ThresholdRule) compare(val float64) bool {

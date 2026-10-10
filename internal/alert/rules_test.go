@@ -190,7 +190,7 @@ func TestThresholdRuleBuildQuery(t *testing.T) {
 
 // TestThresholdAggregateChoice verifies the per-rule aggregate threads into the
 // SQL function and the message label for value metrics, defaults to avg on
-// empty/unknown, and is IGNORED by the SMART metrics (intrinsic MAX/COUNT).
+// empty/unknown, and that SMART/ECC take only level or "increase".
 func TestThresholdAggregateChoice(t *testing.T) {
 	cutoff := time.Now()
 	cases := []struct {
@@ -207,10 +207,16 @@ func TestThresholdAggregateChoice(t *testing.T) {
 		{"network.rx max", "network.rx", "max", "max", "MAX("},
 		{"temperature max", "temperature.sensor", "max", "max", "MAX("},
 		{"gpu.utilization max", "gpu.utilization", "max", "max", "MAX("},
-		// SMART ignores the user's choice and keeps its intrinsic aggregate.
-		{"smart.reallocated ignores avg", "smart.reallocated", "avg", "max", "MAX("},
-		{"smart.percent_used ignores min", "smart.percent_used", "min", "max", "MAX("},
+		// SMART/ECC ignore avg/max/min: counters compare their level (the worst
+		// device's count) unless the rule asks for "increase".
+		{"smart.reallocated ignores avg", "smart.reallocated", "avg", "max", "DESC LIMIT 1"},
+		{"smart.reallocated increase", "smart.reallocated", "increase", "increase", "arg_max("},
+		{"ecc.uncorrectable ignores min", "ecc.uncorrectable", "min", "max", "DESC LIMIT 1"},
+		{"ecc.corrected increase", "ecc.corrected", "increase", "increase", "arg_max("},
+		{"smart.percent_used ignores min", "smart.percent_used", "min", "max", "DESC LIMIT 1"},
+		{"smart.percent_used ignores increase", "smart.percent_used", "increase", "max", "DESC LIMIT 1"},
 		{"smart.unhealthy ignores max", "smart.unhealthy", "max", "count", "COUNT("},
+		{"cpu ignores increase", "cpu.aggregate", "increase", "avg", "AVG("},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

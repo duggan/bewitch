@@ -139,3 +139,44 @@ func TestThresholdAggregateMaxVsAvg(t *testing.T) {
 		t.Error("avg-aggregate rule fired, but the 40% window average is below 60 — it must not")
 	}
 }
+
+// TestThresholdIncreaseAggregate: "increase" is accepted only for counter metrics
+// (anything else would silently evaluate as avg), and a SMART increase rule
+// created through the handler fires on a new reallocated sector.
+func TestThresholdIncreaseAggregate(t *testing.T) {
+	database := alertRulesDB(t)
+	s := &Server{dbFn: func() *sql.DB { return database }}
+
+	for _, body := range []string{
+		`{"name":"bad1","type":"threshold","severity":"warning","metric":"cpu.aggregate","operator":">","value":90,"duration":"5m","aggregate":"increase"}`,
+		`{"name":"bad2","type":"threshold","severity":"warning","metric":"cpu.aggregate","operator":">","value":90,"duration":"5m","aggregate":"median"}`,
+	} {
+		rec := httptest.NewRecorder()
+		s.handleCreateAlertRule(rec, httptest.NewRequest("POST", "/api/alert-rules", strings.NewReader(body)))
+		if rec.Code != 400 {
+			t.Errorf("create %s: got %d, want 400", body, rec.Code)
+		}
+	}
+
+	createThresholdRule(t, s, database, `{"name":"realloc","type":"threshold","severity":"critical",
+		"metric":"smart.reallocated","operator":">","value":0,"duration":"1h","aggregate":"increase"}`)
+	now := time.Now()
+	for _, row := range []struct {
+		ago time.Duration
+		n   int
+	}{{2 * time.Hour, 8}, {30 * time.Minute, 8}, {time.Minute, 9}} {
+		if _, err := database.Exec(`INSERT INTO smart_metrics (ts, device, healthy, reallocated_sectors) VALUES (?, 'sda', true, ?)`,
+			now.Add(-row.ago), row.n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	engine := alert.NewEngine(func() *sql.DB { return database }, &config.AlertsConfig{})
+	engine.EvaluateOnce()
+	var msg string
+	if err := database.QueryRow("SELECT message FROM alerts WHERE rule_name = 'realloc'").Scan(&msg); err != nil {
+		t.Fatalf("expected the increase rule to fire: %v", err)
+	}
+	if want := "smart.reallocated on sda increase 1.0 > 0.0 over 1h"; msg != want {
+		t.Errorf("message = %q, want %q", msg, want)
+	}
+}
