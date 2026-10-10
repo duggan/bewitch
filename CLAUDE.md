@@ -10,6 +10,7 @@ go vet ./...        # static analysis
 make test           # run all unit tests (go test ./...)
 make test-verbose   # run tests with verbose output
 make test-integration  # run integration tests requiring DuckDB (go:build integration)
+make demo-video     # record + encode the homepage reel (site/demo.tape) against a mock daemon running mock_scenario = "incident"; needs vhs, ttyd, ffmpeg
 ```
 
 The project targets Linux (procfs/sysfs); it compiles and tests pass on macOS but collectors won't function. Tests are table-driven, colocated with source (`*_test.go`), and avoid filesystem/sysfs dependencies so they work cross-platform.

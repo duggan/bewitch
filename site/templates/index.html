@@ -27,20 +27,32 @@
   </p>
 </section>
 
-{# ---- Demo: the product is the pitch, so it goes right under the fold ---- #}
-<section class="demo-section" aria-label="Interactive demo">
-  <div class="glow-box" id="demo-terminal">
-    <div id="demo-tab-overlay">
-      {% for tab in ["Dashboard", "CPU", "Memory", "Disk", "Network", "Hardware", "Process", "Alerts"] %}
-      <button type="button" data-demo-tab="{{ loop.index0 }}"{% if loop.index0 == 0 %} class="active"{% endif %}>{{ loop.index }} {{ tab }}</button>
-      {% endfor %}
+{# ---- Demo: the product is the pitch, so it goes right under the fold.
+     A recorded reel (make demo-video) of a mock host through a backup that
+     trips two alerts. The chapter list doubles as the captions: the active
+     line follows playback, and clicking one seeks to it. ---- #}
+<section class="demo-section" aria-label="bewitch in action">
+  <figure class="reel">
+    <div class="reel-frame glow-box">
+      <video id="reel" src="{{ get_url(path='demo/reel.mp4') }}" poster="{{ get_url(path='demo/reel-poster.png') }}"
+        width="1920" height="1200" muted loop playsinline preload="metadata" controls
+        aria-label="Recording of the bewitch terminal UI during a backup that saturates the CPU and fills the root disk, until two alerts fire"></video>
+      <button type="button" class="reel-toggle" id="reel-toggle" hidden aria-label="Pause the demo">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path class="i-pause" d="M4 2h3v12H4zM9 2h3v12H9z"/><path class="i-play" d="M4 2l10 6-10 6z"/></svg>
+      </button>
     </div>
-    <div id="demo-terminal-mount" class="demo-terminal-mount" style="display:none"></div>
-    <div id="demo-fallback">
-      <img src="{{ get_url(path='screenshots/dashboard.png') }}" alt="The bewitch dashboard: CPU, memory, disk, network and temperature panels" loading="eager" width="2072" height="1280">
-    </div>
-  </div>
-  <p class="demo-hint">Live demo. Click a tab or press <kbd>1</kbd>–<kbd>8</kbd>, <kbd>&lt;</kbd> <kbd>&gt;</kbd> to change the time range.</p>
+    <figcaption>
+      <ol class="reel-chapters" id="reel-chapters">
+        <li><button type="button" data-t="0"><span class="t">0:00</span> The dashboard of a homelab box training a model on its GPU</button></li>
+        <li><button type="button" data-t="6"><span class="t">0:06</span> A restic backup starts: CPU, disk reads and upload climb</button></li>
+        <li><button type="button" data-t="12"><span class="t">0:12</span> Every core saturates</button></li>
+        <li><button type="button" data-t="16"><span class="t">0:16</span> restic tops the process list, reading /home at 450 MB/s</button></li>
+        <li><button type="button" data-t="21"><span class="t">0:21</span> The CPU package heats past 85 °C</button></li>
+        <li><button type="button" data-t="27"><span class="t">0:27</span> The root disk passes 90% as backup packs are staged</button></li>
+        <li><button type="button" data-t="31"><span class="t">0:31</span> Both alerts fire, and one is acknowledged</button></li>
+      </ol>
+    </figcaption>
+  </figure>
 </section>
 
 {# ---- Three pillars ---- #}
@@ -160,4 +172,4 @@
 </section>
 {% endblock body %}
 
-{% block extra_body %}<script src="{{ get_url(path='js/demo-bundle.js') }}" defer></script>{% endblock extra_body %}
+{% block extra_body %}<script src="{{ get_url(path='js/reel.js') }}" defer></script>{% endblock extra_body %}

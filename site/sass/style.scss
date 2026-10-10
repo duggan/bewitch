@@ -216,29 +216,45 @@ code {
 .install-cmd code { background: none; padding: 0; color: var(--text); font-size: 0.875rem; white-space: nowrap; }
 .install-cmd .copy-btn { opacity: 1; top: 50%; transform: translateY(-50%); }
 
-// ---- Demo terminal ---------------------------------------------------------
+// ---- Demo reel -------------------------------------------------------------
 
 .demo-section { max-width: var(--maxw); margin: 0 auto; padding: 0 1.5rem 2rem; }
-#demo-terminal { border: 1px solid rgba(124, 77, 255, 0.5); border-radius: var(--radius); overflow: hidden;
-  background: var(--dark-bg); }
-#demo-terminal:focus { outline: none; border-color: var(--pink); }
-#demo-tab-overlay { display: flex; font-family: var(--mono); font-size: 0.75rem; background: var(--surface);
-  border-bottom: 1px solid rgba(124, 77, 255, 0.3); overflow-x: auto; }
-#demo-tab-overlay button { padding: 0.5rem 0.85rem; border: none; border-bottom: 2px solid transparent;
-  background: none; color: var(--dim); font: inherit; white-space: nowrap; cursor: pointer; transition: color 0.2s; }
-#demo-tab-overlay button:hover { color: var(--muted); }
-#demo-tab-overlay button.active { border-bottom-color: var(--pink); color: var(--pink); background: rgba(255, 110, 199, 0.06); }
-.demo-terminal-mount { background: var(--dark-bg); padding: 4px; overflow: hidden; }
-#demo-fallback { background: var(--body-bg); }
-#demo-fallback img { width: 100%; height: auto; display: block; }
-.demo-hint { text-align: center; color: var(--dim); font-size: 0.75rem; margin: 0.85rem 0 0; font-family: var(--mono); }
+.reel { margin: 0; }
+.reel-frame { position: relative; border: 1px solid rgba(124, 77, 255, 0.5); border-radius: var(--radius);
+  overflow: hidden; background: var(--dark-bg); }
+.reel-frame video { display: block; width: 100%; height: auto; aspect-ratio: 1920 / 1200; background: var(--dark-bg); }
+.reel-toggle { position: absolute; right: 0.6rem; bottom: 0.6rem; width: 2.25rem; height: 2.25rem;
+  display: grid; place-items: center; border-radius: 50%; cursor: pointer; color: var(--text);
+  background: rgba(18, 18, 31, 0.8); border: 1px solid rgba(124, 77, 255, 0.5); opacity: 0.75;
+  transition: opacity 0.2s, border-color 0.2s; }
+.reel-toggle[hidden] { display: none; }
+.reel-frame:hover .reel-toggle, .reel-toggle:focus-visible { opacity: 1; border-color: var(--pink); }
+.reel-toggle:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
+.reel-toggle svg { fill: currentColor; }
+.reel-toggle .i-play, .reel-toggle.paused .i-pause { display: none; }
+.reel-toggle.paused .i-play { display: inline; }
+
+// Chapters double as captions: the active one follows playback.
+.reel-chapters { list-style: none; margin: 1rem 0 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.15rem 1.25rem; }
+.reel-chapters button { width: 100%; text-align: left; display: flex; gap: 0.6rem; align-items: baseline;
+  padding: 0.3rem 0.5rem; border: none; border-left: 2px solid transparent; border-radius: 0 3px 3px 0;
+  background: none; color: var(--muted); font: inherit; font-size: 0.85rem; line-height: 1.4; cursor: pointer;
+  transition: color 0.2s, background 0.2s, border-color 0.2s; }
+.reel-chapters .t { font-family: var(--mono); font-size: 0.75rem; color: var(--purple); flex: none; }
+.reel-chapters button:hover { color: var(--text); }
+.reel-chapters button:focus-visible { outline: 2px solid var(--pink); outline-offset: 1px; }
+.reel-chapters button.active { color: var(--text); border-left-color: var(--pink); background: rgba(255, 110, 199, 0.06); }
+.reel-chapters button.active .t { color: var(--pink); }
 kbd { font-size: 0.72rem; color: var(--muted); background: var(--surface); padding: 0.05rem 0.35rem;
   border: 1px solid rgba(124, 77, 255, 0.35); border-bottom-width: 2px; border-radius: 3px; }
-@media (max-width: 1200px) { .demo-terminal-mount { transform: scale(0.82); transform-origin: top left; } }
-@media (max-width: 1024px) { .demo-terminal-mount { transform: scale(0.68); transform-origin: top left; } }
-@media (max-width: 768px) {
-  .demo-terminal-mount { display: none !important; } #demo-fallback { display: block !important; }
-  .demo-hint { display: none; }
+
+// On a phone the list would be longer than the video: show the current
+// chapter as a single caption line instead.
+@media (max-width: 640px) {
+  .demo-section { padding: 0 1rem 1.5rem; }
+  .reel-chapters { display: block; min-height: 2.6rem; }
+  .reel-chapters li:not(:has(.active)) { display: none; }
 }
 
 // ---- Generic section -------------------------------------------------------

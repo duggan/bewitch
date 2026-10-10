@@ -15,6 +15,6 @@
 /witch.png
   Cache-Control: public, max-age=86400
 
-/demo.mp4
+/demo/*
   Cache-Control: public, max-age=86400
 

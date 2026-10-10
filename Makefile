@@ -1,4 +1,4 @@
-.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install demo-frames demo-video docgen site site-serve site-demo og
+.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install demo-video docgen site site-serve og
 
 VERSION := $(shell cat VERSION)
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
@@ -57,16 +57,6 @@ stamp-install:
 	sed 's/^VERSION="[^"]*"/VERSION="'"$$V"'"/' site/static/install.sh > site/static/install.sh.tmp && \
 	mv site/static/install.sh.tmp site/static/install.sh
 
-demo-frames: build
-	@echo "Starting mock daemon..."
-	@bin/bewitchd -config data/bewitch.toml & DAEMON_PID=$$!; \
-	sleep 3; \
-	bin/bewitch -config data/bewitch.toml capture-frames \
-		--cols 120 --rows 32 --frames 5 --delay 400ms \
-		site/static/demo-frames.json; \
-	kill $$DAEMON_PID 2>/dev/null; \
-	wait $$DAEMON_PID 2>/dev/null || true
-
 # Record the homepage highlight reel (site/demo.tape) against a fresh mock
 # daemon running the "incident" scenario, then encode the web version and
 # poster into site/static/demo/ (committed). Needs vhs (with ttyd) and ffmpeg.
@@ -97,12 +87,6 @@ site: site-versions
 # Serve the site locally with live reload at http://127.0.0.1:1111.
 site-serve: site-versions
 	cd site && zola serve
-
-# Rebuild the homepage terminal-demo bundle (site/static/js/demo-bundle.js) from
-# site/demo/. Run after changing site/demo/terminal-demo.ts or demo-frames.json,
-# then commit the bundle. Self-contained (its own package.json; ghostty-web + esbuild).
-site-demo:
-	cd site/demo && npm install --no-audit --no-fund && npm run build
 
 # Regenerate the social/OG card (site/static/og.png). Needs rsvg-convert.
 og:
