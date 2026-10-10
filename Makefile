@@ -68,7 +68,8 @@ demo-frames: build
 	wait $$DAEMON_PID 2>/dev/null || true
 
 # Record the homepage highlight reel (site/demo.tape) against a fresh mock
-# daemon running the "incident" scenario. Needs vhs (with ttyd) and ffmpeg.
+# daemon running the "incident" scenario, then encode the web version and
+# poster into site/static/demo/ (committed). Needs vhs (with ttyd) and ffmpeg.
 # The raw recording lands in site/demo-video/out/ (not committed).
 DEMO_DIR := /tmp/bewitch-demo
 demo-video: build
@@ -78,7 +79,8 @@ demo-video: build
 	vhs site/demo.tape; STATUS=$$?; \
 	kill $$DAEMON_PID 2>/dev/null; wait $$DAEMON_PID 2>/dev/null; \
 	grep -E 'ALERT|RESOLVED|ERRO' $(DEMO_DIR)/daemon.log || true; \
-	exit $$STATUS
+	[ $$STATUS -eq 0 ] || exit $$STATUS; \
+	scripts/demo-video/encode.sh site/demo-video/out/raw.mp4 site/static/demo
 
 docgen:
 	go run cmd/docgen/main.go . > site/data/api-schema.json
