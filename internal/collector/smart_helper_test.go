@@ -139,15 +139,20 @@ func TestListNVMeDevices(t *testing.T) {
 	}
 }
 
-// fakeSmartctl writes a script that prints the given JSON, standing in for smartctl.
+// fakeSmartctl returns a command that stands in for smartctl, printing the
+// given JSON (see TestMain): the running test binary itself. It used to write
+// a shell script to a temp dir, but macOS assesses every newly written
+// executable on its first exec, and when that stalled past runSmartctl's 30s
+// timeout the test failed intermittently with "signal: killed". The test
+// binary is already running, so exec'ing it again never waits on that.
 func fakeSmartctl(t *testing.T, json string) string {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "smartctl")
-	script := "#!/bin/sh\ncat <<'JSON'\n" + json + "\nJSON\nexit 4\n"
-	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+	exe, err := os.Executable()
+	if err != nil {
 		t.Fatal(err)
 	}
-	return p
+	t.Setenv(fakeSmartctlEnv, json)
+	return exe
 }
 
 func TestRunSmartctlNVMeWithoutHealthLog(t *testing.T) {
