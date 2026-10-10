@@ -3380,11 +3380,13 @@ func (m Model) updateModel(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		// Refresh the active-alert summary on every view so the status bar always
 		// reflects current problems. On the Alerts view, derive it from the list we
-		// just fetched to avoid a redundant query.
+		// just fetched to avoid a redundant query. Same definition as the
+		// server's active query (unacknowledged and unresolved): counting
+		// resolved alerts here made the count jump on opening this view.
 		if m.current == viewAlerts {
 			var active []api.AlertMetric
 			for _, a := range m.alertsData {
-				if !a.Acknowledged {
+				if !a.Acknowledged && !a.Resolved {
 					active = append(active, a)
 				}
 			}
