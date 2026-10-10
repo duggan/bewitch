@@ -49,7 +49,7 @@ func renderAlertView(alerts []api.AlertMetric, width int, alertTable *table.Mode
 			}
 			rows[i] = table.Row{
 				marker,
-				a.Timestamp.Format("Jan 02 15:04"),
+				a.Timestamp.Local().Format("Jan 02 15:04"),
 				a.Severity,
 				a.RuleName,
 				a.Message,
