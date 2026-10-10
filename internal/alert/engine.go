@@ -22,6 +22,10 @@ const collectionStalledRule = "collection-stalled"
 // default), so warning on every empty window would be noise.
 const noDataWarnAfter = 15 * time.Minute
 
+// defaultResolveAfter is how long a firing rule must stay healthy before it
+// resolves, when [alerts] resolve_after is unset.
+const defaultResolveAfter = 2 * time.Minute
+
 // Engine periodically evaluates alert rules.
 type Engine struct {
 	dbFn      func() *sql.DB
@@ -29,7 +33,11 @@ type Engine struct {
 	rules     []Rule
 	notifiers []Notifier
 	interval  time.Duration
-	stop      chan struct{}
+	// resolveAfter is the clear period: an active alert resolves only after its
+	// rule has evaluated healthy continuously for this long. 0 = immediately.
+	resolveAfter time.Duration
+	now          func() time.Time // injectable clock for tests
+	stop         chan struct{}
 	mu        sync.RWMutex
 
 	// notifyFailures counts live notification deliveries that returned an error
@@ -41,6 +49,9 @@ type Engine struct {
 	// noData tracks rules whose last evaluation returned ErrNoData, keyed by rule
 	// name. Touched only by evaluate(), which runs on one goroutine.
 	noData map[string]*noDataState
+	// clearSince records when each active alert's rule was first seen healthy in
+	// the current run of healthy evaluations. Also touched only by evaluate().
+	clearSince map[string]time.Time
 }
 
 type noDataState struct {
@@ -56,6 +67,15 @@ func NewEngine(dbFn func() *sql.DB, cfg *config.AlertsConfig) *Engine {
 	if cfg.EvaluationInterval != "" {
 		if d, err := config.ParseDuration(cfg.EvaluationInterval); err == nil {
 			interval = d
+		}
+	}
+
+	resolveAfter := defaultResolveAfter
+	if cfg.ResolveAfter != "" {
+		if d, err := config.ParseDuration(cfg.ResolveAfter); err == nil && d >= 0 {
+			resolveAfter = d
+		} else {
+			log.Warnf("invalid [alerts] resolve_after %q; using %s", cfg.ResolveAfter, defaultResolveAfter)
 		}
 	}
 
@@ -76,10 +96,12 @@ func NewEngine(dbFn func() *sql.DB, cfg *config.AlertsConfig) *Engine {
 	}
 
 	e := &Engine{
-		dbFn:      dbFn,
-		notifiers: notifiers,
-		interval:  interval,
-		stop:      make(chan struct{}),
+		dbFn:         dbFn,
+		notifiers:    notifiers,
+		interval:     interval,
+		resolveAfter: resolveAfter,
+		now:          time.Now,
+		stop:         make(chan struct{}),
 	}
 	e.ReloadRules()
 	return e
@@ -318,7 +340,7 @@ func (e *Engine) evaluate() {
 			// Hold the current state: an active alert stays active and nothing new
 			// fires. Resolving here would send "condition cleared" for a sensor
 			// that vanished or a SMART window between refreshes.
-			e.noteNoData(rule.Name(), time.Now())
+			e.noteNoData(rule.Name(), e.clock())
 			continue
 		}
 		e.noteData(rule.Name())
@@ -333,9 +355,22 @@ func (e *Engine) evaluate() {
 			delete(e.noData, name) // rule deleted, disabled or renamed
 		}
 	}
+	for name := range e.clearSince {
+		if !seen[name] && name != collectionStalledRule {
+			delete(e.clearSince, name)
+		}
+	}
 
 	// Built-in dead-man's-switch: fire when metric collection has silently stopped.
 	e.applyAlertState(collectionStalledRule, e.collectionStalled(db))
+}
+
+// clock returns the engine's notion of now (injectable for tests).
+func (e *Engine) clock() time.Time {
+	if e.now != nil {
+		return e.now()
+	}
+	return time.Now()
 }
 
 // noteNoData records an empty evaluation and warns once the rule has had no data
@@ -398,12 +433,18 @@ func (e *Engine) applyAlertState(ruleName string, alert *Alert) {
 		ruleName,
 	).Scan(&activeID, &activeSeverity) == nil
 
+	now := e.clock()
+	if alert != nil || !hasActive {
+		// Breaching, or nothing to resolve: any clear period in progress is over.
+		delete(e.clearSince, ruleName)
+	}
+
 	switch {
 	case alert != nil && !hasActive:
 		// Rising edge: fire.
 		if _, err := db.Exec(
 			"INSERT INTO alerts (ts, rule_name, severity, message) VALUES (?, ?, ?, ?)",
-			time.Now(), alert.RuleName, alert.Severity, alert.Message,
+			now, alert.RuleName, alert.Severity, alert.Message,
 		); err != nil {
 			log.Errorf("inserting alert: %v", err)
 			return
@@ -413,8 +454,25 @@ func (e *Engine) applyAlertState(ruleName string, alert *Alert) {
 			e.sendNotifications(alert)
 		}
 	case alert == nil && hasActive:
-		// Falling edge: resolve and emit an all-clear.
-		if _, err := db.Exec("UPDATE alerts SET resolved_at = ? WHERE id = ?", time.Now(), activeID); err != nil {
+		// Falling edge: resolve and emit an all-clear — but only once the rule has
+		// stayed healthy for resolveAfter, so a value hovering at the threshold
+		// doesn't send a fire/resolve pair every cycle. A re-breach during the clear
+		// period just keeps the existing alert active (no new notification).
+		if e.resolveAfter > 0 {
+			if e.clearSince == nil {
+				e.clearSince = make(map[string]time.Time)
+			}
+			since, ok := e.clearSince[ruleName]
+			if !ok {
+				e.clearSince[ruleName] = now
+				return
+			}
+			if now.Sub(since) < e.resolveAfter {
+				return
+			}
+		}
+		delete(e.clearSince, ruleName)
+		if _, err := db.Exec("UPDATE alerts SET resolved_at = ? WHERE id = ?", now, activeID); err != nil {
 			log.Errorf("resolving alert %s: %v", ruleName, err)
 			return
 		}

@@ -32,6 +32,8 @@ db_path = "/var/lib/bewitch/bewitch.duckdb"
 
 [alerts]
 evaluation_interval = "10s"
+# resolve_after = "2m"  # a firing rule must stay clear this long before it resolves and the
+                        # all-clear is sent (damps flapping); "0s" resolves immediately
 # Alert rules are now managed via the TUI (Alerts tab → press 'n' to create)
 
 # Local mail system (postfix/exim/sendmail/msmtp). Under the packaged (sandboxed)

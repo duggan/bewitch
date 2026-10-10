@@ -51,7 +51,7 @@ func lifecycleSetup(t *testing.T, ruleName string) (*sql.DB, *alert.Engine, func
 			}
 		}
 	}
-	engine := alert.NewEngine(dbFn, &config.AlertsConfig{EvaluationInterval: "1s"})
+	engine := alert.NewEngine(dbFn, &config.AlertsConfig{EvaluationInterval: "1s", ResolveAfter: "0s"})
 	return database, engine, setUsage
 }
 
@@ -115,7 +115,7 @@ func TestDeadMansSwitch(t *testing.T) {
 	}
 	defer database.Close()
 	dbFn := func() *sql.DB { return database }
-	engine := alert.NewEngine(dbFn, &config.AlertsConfig{EvaluationInterval: "1s"})
+	engine := alert.NewEngine(dbFn, &config.AlertsConfig{EvaluationInterval: "1s", ResolveAfter: "0s"})
 
 	insertCPU := func(ts time.Time) {
 		if _, err := database.Exec(

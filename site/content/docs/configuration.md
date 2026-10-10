@@ -103,6 +103,7 @@ file sets the evaluation interval and the notification channels. See [Alerts](@/
 ```toml
 [alerts]
 evaluation_interval = "10s"  # how often the alert engine evaluates rules
+# resolve_after = "2m"       # how long a rule must stay clear before its alert resolves; "0s" = immediately
 
 # Discord, Telegram, ntfy, Slack, Gotify, webhooks… one URL each (secrets!)
 # shoutrrr_urls = [

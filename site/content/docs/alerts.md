@@ -105,11 +105,21 @@ named in process rules are always tracked in full, even when they aren't among t
 
 A rule fires once when it starts breaching and stays a single **active** alert while the condition
 holds. It doesn't re-fire every cycle, and acknowledging it doesn't make it fire again. When the
-condition clears, the alert is marked **resolved** and a recovery notification is sent:
+condition has stayed clear for `resolve_after` (2 minutes by default), the alert is marked
+**resolved** and a recovery notification is sent:
 
 - Email subjects read `[bewitch] RESOLVED warning: high-cpu`.
 - Shoutrrr titles read `[bewitch] RESOLVED …`.
 - Commands receive `BEWITCH_STATUS=resolved` (`firing` otherwise).
+
+If the condition breaches again before `resolve_after` has passed, the original alert stays active
+and no new notification is sent, so a value hovering around its threshold doesn't send a
+fire/resolve pair every cycle. Set `resolve_after = "0s"` under `[alerts]` to resolve on the first
+healthy evaluation.
+
+If a rule has no data to evaluate (an unmounted disk, a sensor that disappeared, or a SMART rule
+between SMART readings), its alert neither fires nor resolves. An active alert stays active until real
+data shows the condition has cleared. A rule with no data for 15 minutes logs a warning.
 
 Deleting a rule also deletes its fired alerts. Renaming a rule keeps its alerts attached to it.
 
