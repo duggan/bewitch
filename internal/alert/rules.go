@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/duggan/bewitch/internal/config"
@@ -128,6 +129,7 @@ func (r *ThresholdRule) Evaluate(db *sql.DB) (*Alert, error) {
 	}
 
 	if r.compare(avg.Float64) {
+		valueText, thresholdText := breachText(avg.Float64, r.cfg.Value)
 		return &Alert{
 			RuleName: r.base.Name,
 			Severity: r.base.Severity,
@@ -136,10 +138,23 @@ func (r *ThresholdRule) Evaluate(db *sql.DB) (*Alert, error) {
 			// value sustained for its whole length — a 30s spike on an idle box
 			// averages below threshold and won't fire, and the text no longer
 			// implies otherwise. A per-rule avg/max/min choice is a future follow-up.
-			Message: fmt.Sprintf("%s %s %.1f %s %.1f over %s", r.cfg.Metric, agg, avg.Float64, r.cfg.Operator, r.cfg.Value, r.cfg.Duration),
+			Message: fmt.Sprintf("%s %s %s %s %s over %s", r.cfg.Metric, agg, valueText, r.cfg.Operator, thresholdText, r.cfg.Duration),
 		}, nil
 	}
 	return nil, nil
+}
+
+// breachText formats a breaching value and its threshold with one decimal, or
+// more when one decimal would print them equal — "85.0 > 85.0" for 85.04 reads
+// as a false alarm.
+func breachText(value, threshold float64) (string, string) {
+	for prec := 1; prec < 4; prec++ {
+		v, t := strconv.FormatFloat(value, 'f', prec, 64), strconv.FormatFloat(threshold, 'f', prec, 64)
+		if v != t {
+			return v, t
+		}
+	}
+	return strconv.FormatFloat(value, 'f', 4, 64), strconv.FormatFloat(threshold, 'f', 4, 64)
 }
 
 // buildQuery returns the SQL, its bind args, and a label naming the aggregate it

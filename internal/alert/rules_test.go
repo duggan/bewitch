@@ -289,3 +289,21 @@ func TestVarianceRuleRejectsNonMemoryMetric(t *testing.T) {
 		t.Errorf("error = %q, want it to mention memory-only", err.Error())
 	}
 }
+
+func TestBreachText(t *testing.T) {
+	cases := []struct {
+		value, threshold float64
+		wantV, wantT     string
+	}{
+		{91.4, 90, "91.4", "90.0"},
+		{85.04, 85, "85.04", "85.00"},
+		{90.004, 90, "90.004", "90.000"},
+		{12, 15, "12.0", "15.0"},
+	}
+	for _, c := range cases {
+		v, th := breachText(c.value, c.threshold)
+		if v != c.wantV || th != c.wantT {
+			t.Errorf("breachText(%v, %v) = %q, %q; want %q, %q", c.value, c.threshold, v, th, c.wantV, c.wantT)
+		}
+	}
+}
