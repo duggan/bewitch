@@ -1,4 +1,4 @@
-.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install demo-frames docgen site site-serve site-demo og
+.PHONY: build clean install install-local deb deb-docker test test-integration test-verbose apt-repo apt-upload release deploy stamp-install demo-frames demo-video docgen site site-serve site-demo og
 
 VERSION := $(shell cat VERSION)
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
@@ -66,6 +66,19 @@ demo-frames: build
 		site/static/demo-frames.json; \
 	kill $$DAEMON_PID 2>/dev/null; \
 	wait $$DAEMON_PID 2>/dev/null || true
+
+# Record the homepage highlight reel (site/demo.tape) against a fresh mock
+# daemon running the "incident" scenario. Needs vhs (with ttyd) and ffmpeg.
+# The raw recording lands in site/demo-video/out/ (not committed).
+DEMO_DIR := /tmp/bewitch-demo
+demo-video: build
+	@rm -rf $(DEMO_DIR) && mkdir -p $(DEMO_DIR) site/demo-video/out
+	@echo "Starting mock daemon (log: $(DEMO_DIR)/daemon.log)..."
+	@bin/bewitchd -config scripts/demo-video/bewitch.toml > $(DEMO_DIR)/daemon.log 2>&1 & DAEMON_PID=$$!; \
+	vhs site/demo.tape; STATUS=$$?; \
+	kill $$DAEMON_PID 2>/dev/null; wait $$DAEMON_PID 2>/dev/null; \
+	grep -E 'ALERT|RESOLVED|ERRO' $(DEMO_DIR)/daemon.log || true; \
+	exit $$STATUS
 
 docgen:
 	go run cmd/docgen/main.go . > site/data/api-schema.json

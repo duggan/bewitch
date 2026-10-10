@@ -1,0 +1,17 @@
+# Config for recording the homepage demo video (make demo-video).
+# A mock daemon with a fresh database; the "incident" scenario plays a
+# scripted backup 20s after history seeding finishes.
+[daemon]
+mock = true
+mock_scenario = "incident"
+socket = "/tmp/bewitch-demo/bewitch.sock"
+db_path = "/tmp/bewitch-demo/bewitch.duckdb"
+archive_threshold = "1d"
+archive_path = "/tmp/bewitch-demo/archive"
+default_interval = "1s"
+
+[alerts]
+evaluation_interval = "2s"
+
+[tui]
+refresh_interval = "1s"
