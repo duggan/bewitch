@@ -509,8 +509,17 @@ func (e *Engine) applyAlertState(ruleName string, alert *Alert) {
 			})
 		}
 	case alert != nil && hasActive:
-		// Still firing: normally silent. With repeat_interval set, remind until
-		// someone acknowledges it, carrying the current reading.
+		// Still firing. If the rule's severity was edited meanwhile, carry it onto
+		// the active alert so the TUI and the eventual all-clear match the rule.
+		if alert.Severity != activeSeverity {
+			if _, err := db.Exec("UPDATE alerts SET severity = ? WHERE id = ?", alert.Severity, activeID); err != nil {
+				log.Errorf("updating severity of alert %s: %v", ruleName, err)
+			} else {
+				log.Infof("alert %s severity changed %s → %s", ruleName, activeSeverity, alert.Severity)
+			}
+		}
+		// Otherwise silent. With repeat_interval set, remind until someone
+		// acknowledges it, carrying the current reading.
 		if e.repeatInterval <= 0 || activeAcked {
 			return
 		}

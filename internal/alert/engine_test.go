@@ -119,3 +119,33 @@ func TestRepeatInterval(t *testing.T) {
 		t.Errorf("default repeatInterval = %s, want 0 (off)", d.repeatInterval)
 	}
 }
+
+// stubSeverityRule is a stubRule whose alerts carry a configurable severity.
+type stubSeverityRule struct {
+	stubRule
+	severity string
+}
+
+func (r *stubSeverityRule) Evaluate(*sql.DB) (*Alert, error) {
+	return &Alert{RuleName: r.name, Severity: r.severity, Message: "breached"}, nil
+}
+
+// TestSeverityEditAppliesToActiveAlert: raising a rule's severity while its alert
+// is active updates the active alert (and so the eventual all-clear).
+func TestSeverityEditAppliesToActiveAlert(t *testing.T) {
+	database := newRuleTestDB(t)
+	e := NewEngine(func() *sql.DB { return database }, &config.AlertsConfig{})
+	rule := &stubSeverityRule{stubRule: stubRule{name: "disk"}, severity: "warning"}
+	e.rules = []Rule{rule}
+	e.evaluate()
+	rule.severity = "critical"
+	e.evaluate()
+	var sev string
+	var n int
+	if err := database.QueryRow("SELECT any_value(severity), count(*) FROM alerts WHERE rule_name = 'disk'").Scan(&sev, &n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || sev != "critical" {
+		t.Errorf("alerts = %d with severity %q, want 1 critical", n, sev)
+	}
+}
