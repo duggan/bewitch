@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"image/png"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/duggan/bewitch/internal/config"
@@ -299,4 +300,115 @@ func firstRune(s string) rune {
 		return r
 	}
 	return ' '
+}
+
+// initSelectionMaps ensures selection maps are populated for chart rendering.
+func (m *Model) initSelectionMaps() {
+	if m.netSelected == nil && m.netData != nil {
+		m.netSelected = make(map[string]bool)
+		m.netIfaceNames = make([]string, len(m.netData))
+		for i, n := range m.netData {
+			m.netSelected[n.Interface] = true
+			m.netIfaceNames[i] = n.Interface
+		}
+	}
+	if m.tempSelected == nil && m.tempData != nil {
+		m.tempSelected = make(map[string]bool)
+		m.tempSensorNames = make([]string, len(m.tempData))
+		for i, t := range m.tempData {
+			m.tempSelected[t.Sensor] = true
+			m.tempSensorNames[i] = t.Sensor
+		}
+	}
+	if m.powerSelected == nil && m.powerData != nil {
+		m.powerSelected = make(map[string]bool)
+		m.powerZoneNames = make([]string, len(m.powerData))
+		for i, p := range m.powerData {
+			m.powerSelected[p.Zone] = true
+			m.powerZoneNames[i] = p.Zone
+		}
+	}
+	if m.gpuSelected == nil && m.gpuData != nil {
+		m.gpuSelected = make(map[string]bool)
+		m.gpuDeviceNames = make([]string, len(m.gpuData))
+		for i, g := range m.gpuData {
+			m.gpuSelected[g.Name] = true
+			m.gpuDeviceNames[i] = g.Name
+		}
+	}
+}
+
+// fetchHistoryForCapture fetches and renders history chart for a view.
+func (m *Model) fetchHistoryForCapture(v view) {
+	end := time.Now()
+	start := end.Add(-m.historyRanges[m.historyRange].Duration)
+
+	if v == viewServices {
+		// Custom-source history is per (source, metric), outside the generic
+		// per-view history path.
+		m.refreshCustomData()
+		m.cachedHistoryCharts[m.current] = ""
+		source, metric, _ := m.selectedCustomSeries()
+		if source == "" || metric == "" {
+			return
+		}
+		series, err := m.client.GetCustomHistory(source, metric, start, end)
+		if err != nil || len(series) == 0 {
+			return
+		}
+		m.servicesHist[servicesHistKey(source, metric)] = customHistEntry{series: series, start: start, end: end}
+		m.historySeries = series
+		m.historyStart = start
+		m.historyEnd = end
+		m.regenerateHistoryChart()
+		return
+	}
+
+	metric := viewMetric(v)
+	if v == viewHardware {
+		switch m.hardwareSection {
+		case hwSectionTemp:
+			metric = "temperature"
+		case hwSectionPower:
+			metric = "power"
+		case hwSectionGPU:
+			metric = "gpu"
+		default:
+			metric = "" // ECC has no history
+		}
+	}
+	if metric != "" {
+		series, err := m.client.GetHistory(metric, start, end)
+		if err == nil && len(series) > 0 {
+			m.historySeries = series
+			m.historyStart = start
+			m.historyEnd = end
+			m.regenerateHistoryChart()
+		} else {
+			m.cachedHistoryCharts[m.current] = ""
+		}
+	} else {
+		m.cachedHistoryCharts[m.current] = ""
+	}
+}
+
+// clearETagCache clears the client's ETag cache so the next fetch returns fresh data.
+func (m *Model) clearETagCache() {
+	if dc, ok := m.client.(*DaemonClient); ok {
+		dc.etagsMu.Lock()
+		dc.etags = make(map[string]string)
+		dc.etagsMu.Unlock()
+	}
+}
+
+// normalizeFrameHeight pads or truncates content to exactly m.height lines.
+func (m *Model) normalizeFrameHeight(content string) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) > m.height {
+		lines = lines[:m.height]
+	}
+	for len(lines) < m.height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
 }
