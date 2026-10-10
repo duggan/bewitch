@@ -67,7 +67,7 @@ func renderBrailleChart(cfg chartConfig) string {
 		timeserieslinechart.WithTimeRange(cfg.start, cfg.end),
 		timeserieslinechart.WithYRange(cfg.yMin, cfg.yMax),
 		timeserieslinechart.WithXLabelFormatter(xLabelFormatter(cfg.end.Sub(cfg.start))),
-		timeserieslinechart.WithYLabelFormatter(cfg.yFormatter),
+		timeserieslinechart.WithYLabelFormatter(padYLabels(cfg.yFormatter, cfg.yMin, cfg.yMax)),
 	}
 
 	for i, s := range cfg.series {
@@ -232,4 +232,23 @@ func historyHelp(rangeLabel string) string {
 func historyHelpInline(rangeLabel string) string {
 	return "\n\n" + lipgloss.NewStyle().Foreground(colorDeepPurple).Render(
 		fmt.Sprintf("< >:range [%s]  r:pick dates", rangeLabel))
+}
+
+// padYLabels right-aligns every Y label to the width of the widest one at the
+// ends of the range. ntcharts sizes the label column by stepping through the
+// tick positions and can step past the top one, but always draws the top label
+// — so "100%" was drawn into a column sized for "92%" and showed as "00%".
+// With every label the same width, the column is always wide enough.
+func padYLabels(f func(int, float64) string, yMin, yMax float64) func(int, float64) string {
+	if f == nil {
+		return nil
+	}
+	width := max(len(f(0, yMin)), len(f(0, yMax)))
+	return func(i int, v float64) string {
+		s := f(i, v)
+		if n := width - len(s); n > 0 {
+			s = strings.Repeat(" ", n) + s
+		}
+		return s
+	}
 }
