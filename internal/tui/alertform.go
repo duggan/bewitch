@@ -41,6 +41,7 @@ type alertFormState struct {
 	smartMetric  string // for smart category: smart.reallocated, smart.percent_used, ...
 	cpuMetric    string // for cpu category: cpu.aggregate (default) or cpu.steal
 	eccMetric    string // for ecc category: ecc.uncorrectable (default) or ecc.corrected
+	customMetric string // for custom category: custom.<source>.<metric>
 	direction    string // rx, tx (for network)
 	predictHours string // for predictive
 	thresholdPct string // for predictive
@@ -71,6 +72,24 @@ type formCapabilities struct {
 	gpu         bool // a GPU is present
 	temperature bool // at least one temperature sensor is present
 	ecc         bool // host exposes EDAC controllers (ECC RAM)
+	// custom lists the numeric metrics of the configured custom HTTP sources, as
+	// select options valued custom.<source>.<metric>. Empty hides the category.
+	custom []huh.Option[string]
+}
+
+// customMetricOptions builds the Services metric picker from the source catalog.
+func customMetricOptions(sources []api.CustomSourceInfo) []huh.Option[string] {
+	var opts []huh.Option[string]
+	for _, src := range sources {
+		for _, m := range src.Metrics {
+			label := src.Name + " › " + m.Name
+			if m.Unit != "" && m.Unit != "raw" {
+				label += " (" + m.Unit + ")"
+			}
+			opts = append(opts, huh.NewOption(label, alert.CustomMetric(src.Name, m.Name)))
+		}
+	}
+	return opts
 }
 
 // categoryOptions builds the metric-category list, including the hardware-gated
@@ -93,6 +112,9 @@ func categoryOptions(caps formCapabilities) []huh.Option[string] {
 	}
 	if caps.ecc {
 		opts = append(opts, huh.NewOption("ECC memory", "ecc"))
+	}
+	if len(caps.custom) > 0 {
+		opts = append(opts, huh.NewOption("Services (custom sources)", "custom"))
 	}
 	opts = append(opts, huh.NewOption("Process", "process"))
 	return opts
@@ -166,6 +188,10 @@ func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 						return []huh.Option[string]{
 							huh.NewOption("ECC error count over threshold", "threshold"),
 						}
+					case "custom":
+						return []huh.Option[string]{
+							huh.NewOption("Service metric over threshold", "threshold"),
+						}
 					case "process":
 						return []huh.Option[string]{
 							huh.NewOption("Process went down", "process_down"),
@@ -222,6 +248,16 @@ func buildAlertForm(state *alertFormState, caps formCapabilities) *huh.Form {
 				Value(&state.smartMetric),
 		).WithHideFunc(func() bool {
 			return state.category != "smart"
+		}),
+		// Service metric (custom HTTP sources). Only when creating: on edit the
+		// metric is locked and the catalog isn't passed in.
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Service Metric").
+				Options(caps.custom...).
+				Value(&state.customMetric),
+		).WithHideFunc(func() bool {
+			return state.category != "custom" || state.editID != 0 || len(caps.custom) == 0
 		}),
 		// Counter trigger (SMART sector/error counts, ECC). These counts only grow,
 		// so comparing the total fires forever on a drive with old errors; the
@@ -520,6 +556,8 @@ func thresholdDesc(state *alertFormState) string {
 			return "New ECC errors within the window; alert > 0"
 		}
 		return "ECC error count, cumulative since boot (uncorrectable: alert > 0)"
+	case "custom":
+		return "Value of the service metric, in its own unit"
 	}
 	return ""
 }
@@ -675,6 +713,8 @@ func (s *alertFormState) thresholdMetric() string {
 			return s.eccMetric
 		}
 		return "ecc.uncorrectable"
+	case "custom":
+		return s.customMetric
 	}
 	return ""
 }
@@ -742,6 +782,9 @@ func fromAlertRuleMetric(rule api.AlertRuleMetric) *alertFormState {
 			} else if strings.HasPrefix(rule.Metric, "ecc.") {
 				s.category = "ecc"
 				s.eccMetric = rule.Metric
+			} else if _, _, ok := alert.ParseCustomMetric(rule.Metric); ok {
+				s.category = "custom"
+				s.customMetric = rule.Metric
 			}
 		}
 	case "variance":

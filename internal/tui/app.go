@@ -1353,6 +1353,7 @@ func (m *Model) detectFormCapabilities() formCapabilities {
 		gpu:         len(m.gpuData) > 0,
 		temperature: len(m.tempData) > 0,
 		ecc:         m.eccData != nil && m.eccData.Available,
+		custom:      customMetricOptions(m.customSources),
 	}
 	for _, d := range m.diskData {
 		if d.SMARTAvailable {

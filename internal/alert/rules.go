@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/duggan/bewitch/internal/config"
@@ -61,6 +62,27 @@ func IsCounterMetric(metric string) bool {
 		return true
 	}
 	return false
+}
+
+// CustomMetric is the threshold metric name for a custom HTTP source's numeric
+// metric: "custom.<source>.<metric>". Source and metric names are [a-z0-9_-]+
+// (config.CustomSourceConfig.Validate), so the dots split unambiguously.
+func CustomMetric(source, metric string) string {
+	return "custom." + source + "." + metric
+}
+
+// ParseCustomMetric splits a "custom.<source>.<metric>" name; ok is false for
+// anything else.
+func ParseCustomMetric(name string) (source, metric string, ok bool) {
+	rest, found := strings.CutPrefix(name, "custom.")
+	if !found {
+		return "", "", false
+	}
+	source, metric, found = strings.Cut(rest, ".")
+	if !found || source == "" || metric == "" || strings.Contains(metric, ".") {
+		return "", "", false
+	}
+	return source, metric, true
 }
 
 // counterColumns maps each counter metric to its table and column.
@@ -236,6 +258,11 @@ func (r *ThresholdRule) buildQuery(cutoff time.Time) (string, []any, string, err
 	fn, agg := aggFunc(r.cfg.Aggregate)
 	value := func(query string, args ...any) (string, []any, string, error) {
 		return "SELECT (" + query + "), NULL::VARCHAR", args, agg, nil
+	}
+	if source, metric, ok := ParseCustomMetric(r.cfg.Metric); ok {
+		// A custom HTTP source's numeric metric (custom_metrics). A source that
+		// was removed from the config just stops producing rows: no data, held.
+		return value(fmt.Sprintf("SELECT %s(value) FROM custom_metrics WHERE source = ? AND metric = ? AND ts > ?", fn), source, metric, cutoff)
 	}
 	switch r.cfg.Metric {
 	case "cpu.aggregate":

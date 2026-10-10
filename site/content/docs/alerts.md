@@ -48,6 +48,7 @@ Compares a metric, aggregated over the rule's window, against a value with `>`, 
 | `smart.unhealthy` | Number of failed SMART health checks in the window |
 | `ecc.uncorrectable` | Uncorrectable ECC memory errors (all controllers; total, or `increase`) |
 | `ecc.corrected` | Corrected ECC memory errors (all controllers; total, or `increase`) |
+| `custom.<source>.<metric>` | A [custom source](@/docs/custom-sources.md#alerts)'s numeric metric, e.g. `custom.pihole.blocked_pct` |
 
 The TUI form creates every metric except `gpu.temperature` and `gpu.power`, which you can create
 through the [API](@/docs/api.md).

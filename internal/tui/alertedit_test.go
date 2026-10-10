@@ -271,6 +271,7 @@ func TestFromAlertRuleMetricCategory(t *testing.T) {
 		{"smart.unhealthy", "threshold", "smart", ""},
 		{"memory.variance", "variance", "memory", ""},
 		{"disk.used_pct", "predictive", "disk", ""},
+		{"custom.pihole.blocked_pct", "threshold", "custom", ""},
 	}
 	for _, c := range cases {
 		s := fromAlertRuleMetric(api.AlertRuleMetric{Type: c.ruleType, Metric: c.metric})
@@ -605,5 +606,38 @@ func TestFormCounterTrigger(t *testing.T) {
 		if out := fromAlertRuleMetric(in).toAlertRuleMetric(); out.Aggregate != want {
 			t.Errorf("stored %q → saved %q, want %q", stored, out.Aggregate, want)
 		}
+	}
+}
+
+// TestFormCustomMetric: the Services category appears only when a custom source
+// declares a numeric metric, its picker lists them as custom.<source>.<metric>,
+// and a custom rule round-trips through edit with its metric and aggregate.
+func TestFormCustomMetric(t *testing.T) {
+	opts := customMetricOptions([]api.CustomSourceInfo{
+		{Name: "pihole", Metrics: []api.CustomFieldInfo{{Name: "blocked_pct", Unit: "percent"}, {Name: "queries", Unit: "raw"}}},
+		{Name: "docker", Status: []api.CustomFieldInfo{{Name: "state"}}}, // status-only: nothing to alert on
+	})
+	if len(opts) != 2 || opts[0].Value != "custom.pihole.blocked_pct" || opts[0].Key != "pihole › blocked_pct (percent)" || opts[1].Key != "pihole › queries" {
+		t.Fatalf("options = %+v", opts)
+	}
+	has := func(caps formCapabilities) bool {
+		for _, o := range categoryOptions(caps) {
+			if o.Value == "custom" {
+				return true
+			}
+		}
+		return false
+	}
+	if has(formCapabilities{}) || !has(formCapabilities{custom: opts}) {
+		t.Error("Services category must be offered only when custom metrics exist")
+	}
+
+	created := (&alertFormState{alertType: "threshold", category: "custom", customMetric: "custom.pihole.blocked_pct", aggregate: "max"}).toAlertRuleMetric()
+	if created.Metric != "custom.pihole.blocked_pct" || created.Aggregate != "max" {
+		t.Fatalf("created = %+v", created)
+	}
+	created.ID = 9
+	if out := fromAlertRuleMetric(created).toAlertRuleMetric(); out.Metric != created.Metric || out.Aggregate != "max" {
+		t.Errorf("round-trip = %+v, want metric and aggregate preserved", out)
 	}
 }

@@ -212,10 +212,19 @@ Each source is a sub-section — cycle them with `tab` / `shift+tab`. You get th
 the current value of each metric, and a history chart for the selected metric. Pick which metric to
 chart with `↑` / `↓`; change the time range with `<` / `>` and `r`, same as every other chart.
 
+## Alerts
+
+A source's numeric metrics can drive [threshold alert rules](@/docs/alerts.md#threshold). In the
+TUI, press `n` on the Alerts tab and pick **Services**, then the metric. Over the API, the metric
+is named `custom.<source>.<metric>`, for example `custom.pihole.blocked_pct`. The avg/max/min
+aggregate works as it does for host metrics. Status fields can't be alerted on.
+
+If a source is removed from the config, or its endpoint stops answering, its rules have no data:
+they neither fire nor resolve until data returns.
+
 ## Prometheus and SQL
 
-Custom metrics are stored, charted and exported like host metrics. They can't be used in
-alert rules yet.
+Custom metrics are stored, charted and exported like host metrics.
 
 ```
 # /metrics

@@ -343,3 +343,37 @@ func TestThresholdMessageNamesSubject(t *testing.T) {
 		t.Errorf("disk = (%+v, %v), want the mount named", alert, err)
 	}
 }
+
+// TestCustomMetricRule: a threshold rule on custom.<source>.<metric> reads that
+// series from custom_metrics with the rule's aggregate, and ignores other series.
+func TestCustomMetricRule(t *testing.T) {
+	database := newRuleTestDB(t)
+	now := time.Now()
+	for _, row := range []struct {
+		source, metric string
+		v              float64
+	}{{"pihole", "blocked_pct", 10}, {"pihole", "blocked_pct", 30}, {"pihole", "queries", 900}, {"other", "blocked_pct", 99}} {
+		if _, err := database.Exec(`INSERT INTO custom_metrics (ts, source, metric, value) VALUES (?, ?, ?, ?)`,
+			now, row.source, row.metric, row.v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rule := func(metric, agg string) *ThresholdRule {
+		return NewThresholdRule(AlertRuleBase{Name: "c"}, ThresholdConfig{Metric: metric, Operator: ">", Value: 25, Duration: "5m", Aggregate: agg})
+	}
+	if alert, err := rule(CustomMetric("pihole", "blocked_pct"), "avg").Evaluate(database); err != nil || alert != nil {
+		t.Errorf("avg 20 > 25 = (%+v, %v), want healthy", alert, err)
+	}
+	alert, err := rule(CustomMetric("pihole", "blocked_pct"), "max").Evaluate(database)
+	if err != nil || alert == nil || alert.Message != "custom.pihole.blocked_pct max 30.0 > 25.0 over 5m" {
+		t.Errorf("max = (%+v, %v), want a breach of 30", alert, err)
+	}
+	if _, err := rule(CustomMetric("gone", "x"), "avg").Evaluate(database); !errors.Is(err, ErrNoData) {
+		t.Errorf("removed source: err = %v, want ErrNoData", err)
+	}
+	for _, bad := range []string{"custom.", "custom.pihole", "custom..x", "custom.a.b.c", "pihole.x"} {
+		if _, _, ok := ParseCustomMetric(bad); ok {
+			t.Errorf("ParseCustomMetric(%q) accepted a malformed name", bad)
+		}
+	}
+}
