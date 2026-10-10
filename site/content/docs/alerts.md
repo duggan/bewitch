@@ -154,6 +154,24 @@ sample is older than 2 minutes (or 12 × `evaluation_interval`, whichever is lon
 collection has stopped even though the daemon is still running. It resolves when data flows again.
 If the whole daemon dies, it can't alert, so monitor the service itself from outside as well.
 
+## Copying Rules Between Hosts
+
+Rules live in the daemon's database, not the config file. To set up several hosts the same way,
+export the rules from one and import them on the others:
+
+```bash
+bewitch rules export rules.json
+bewitch -addr other-host:9119 rules import -dry-run rules.json   # show what would change
+bewitch -addr other-host:9119 rules import rules.json
+```
+
+Import matches rules by name. It creates missing rules, updates changed ones in place (their fired
+alerts stay attached), and applies each rule's enabled or disabled state. Rules on the host that
+aren't in the file are left alone. A rule can't change type, so if the host has a same-named rule
+of a different type, import skips it and reports an error. Running the same import twice changes
+nothing. The file is JSON in the [alert rules API](@/docs/api.md) format, without ids, so you can
+also write it by hand or keep it in version control.
+
 ## Notification Channels
 
 Configure notification channels in the `[alerts]` section of the config file. Every firing alert,

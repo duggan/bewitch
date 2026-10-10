@@ -110,6 +110,9 @@ func main() {
 		case "stats":
 			runStats(cfg, *addr, tlsCfg, effectiveToken)
 			return
+		case "rules":
+			runRules(makeClient(cfg, *addr, tlsCfg, effectiveToken), flag.Args()[1:])
+			return
 		case "capture-views":
 			runCaptureViews(cfg, *addr, tlsCfg, effectiveToken)
 			return
