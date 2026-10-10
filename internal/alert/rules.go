@@ -2,6 +2,7 @@ package alert
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -91,7 +92,16 @@ type Alert struct {
 	Resolved bool `json:"-"`
 }
 
-// Rule evaluates whether an alert condition is met.
+// ErrNoData is returned by Rule.Evaluate when the rule's window holds no samples
+// to judge (a mount was unmounted, a sensor vanished, SMART rows are only written
+// every smart_interval, collection has not started yet). It is distinct from
+// "evaluated and not breaching": the engine holds the rule's current state rather
+// than resolving an active alert, so missing data can never send an all-clear.
+var ErrNoData = errors.New("no data in window")
+
+// Rule evaluates whether an alert condition is met. Evaluate returns a non-nil
+// Alert when breaching, (nil, nil) when evaluated and healthy, and ErrNoData when
+// there was nothing to evaluate.
 type Rule interface {
 	ID() int
 	Name() string
@@ -123,21 +133,26 @@ func (r *ThresholdRule) Evaluate(db *sql.DB) (*Alert, error) {
 		return nil, err
 	}
 
-	var avg sql.NullFloat64
-	if err := db.QueryRow(query, args...).Scan(&avg); err != nil || !avg.Valid {
-		return nil, nil
+	var val sql.NullFloat64
+	if err := db.QueryRow(query, args...).Scan(&val); err != nil {
+		return nil, fmt.Errorf("querying %s: %w", r.cfg.Metric, err)
+	}
+	if !val.Valid {
+		// Every aggregate here is NULL over an empty window (smart.unhealthy's
+		// COUNT is wrapped to match), so NULL means "no samples", not "healthy".
+		return nil, ErrNoData
 	}
 
-	if r.compare(avg.Float64) {
-		valueText, thresholdText := breachText(avg.Float64, r.cfg.Value)
+	if r.compare(val.Float64) {
+		valueText, thresholdText := breachText(val.Float64, r.cfg.Value)
 		return &Alert{
 			RuleName: r.base.Name,
 			Severity: r.base.Severity,
 			// "agg" (avg/max/count) names what was actually computed, and "over"
 			// (not "for") makes clear the comparison is across the window, not a
 			// value sustained for its whole length — a 30s spike on an idle box
-			// averages below threshold and won't fire, and the text no longer
-			// implies otherwise. A per-rule avg/max/min choice is a future follow-up.
+			// averages below threshold and won't fire (unless the rule uses max),
+			// and the text no longer implies otherwise.
 			Message: fmt.Sprintf("%s %s %s %s %s over %s", r.cfg.Metric, agg, valueText, r.cfg.Operator, thresholdText, r.cfg.Duration),
 		}, nil
 	}
@@ -228,8 +243,11 @@ func (r *ThresholdRule) buildQuery(cutoff time.Time) (string, []any, string, err
 		return "SELECT MAX(percent_used) FROM smart_metrics WHERE ts > ?", []any{cutoff}, "max", nil
 	case "smart.unhealthy":
 		// Count of unhealthy snapshots in the window; > 0 means a drive reported a
-		// SMART health failure (the "your disk is dying" signal).
-		return "SELECT COUNT(*) FROM smart_metrics WHERE healthy = false AND ts > ?", []any{cutoff}, "count", nil
+		// SMART health failure (the "your disk is dying" signal). NULL when the
+		// window has no SMART rows at all (they're written every smart_interval),
+		// so an empty window reads as no data rather than as a healthy 0.
+		return `SELECT CASE WHEN COUNT(*) = 0 THEN NULL ELSE COUNT(*) FILTER (WHERE healthy = false) END
+			FROM smart_metrics WHERE ts > ?`, []any{cutoff}, "count", nil
 	// ECC error counters are cumulative since boot (like the SMART counters), so use
 	// MAX over the window and ignore the rule's aggregate choice. ecc.uncorrectable
 	// > 0 means a DIMM has had an uncorrectable error — page-worthy.
@@ -297,7 +315,7 @@ func (r *PredictiveRule) Evaluate(db *sql.DB) (*Alert, error) {
 	}
 
 	if len(xs) < 2 {
-		return nil, nil
+		return nil, ErrNoData
 	}
 
 	// Already-breached path (covers both blind spots that made this rule go silent
@@ -411,7 +429,7 @@ func (r *VarianceRule) Evaluate(db *sql.DB) (*Alert, error) {
 	}
 
 	if len(values) < 2 {
-		return nil, nil
+		return nil, ErrNoData
 	}
 
 	// Count successive deltas exceeding the threshold
@@ -456,17 +474,24 @@ func (r *ProcessDownRule) Evaluate(db *sql.DB) (*Alert, error) {
 	dur, derr := config.ParseDuration(r.cfg.CheckDuration)
 	if derr != nil || dur <= 0 {
 		// Back-compat: no/invalid check_duration → single newest-snapshot check.
+		// has_data guards startup: with no process snapshot at all the count is 0,
+		// which would otherwise read as "down".
 		query := fmt.Sprintf(`WITH latest AS (
 				SELECT MAX(ts) AS ts FROM process_metrics
 			)
-			SELECT COUNT(DISTINCT (pm.pid, pm.start_time))
+			SELECT (SELECT ts IS NOT NULL FROM latest) AS has_data,
+				COUNT(DISTINCT (pm.pid, pm.start_time))
 			FROM process_info pi
 			JOIN process_metrics pm ON pm.pid = pi.pid AND pm.start_time = pi.start_time
 			CROSS JOIN latest l
 			WHERE %s AND pm.ts = l.ts`, matchClause)
+		var hasData bool
 		var count int
-		if err := db.QueryRow(query, matchArg).Scan(&count); err != nil {
+		if err := db.QueryRow(query, matchArg).Scan(&hasData, &count); err != nil {
 			return nil, fmt.Errorf("querying process count: %w", err)
+		}
+		if !hasData {
+			return nil, ErrNoData
 		}
 		return r.alertIfDown(count), nil
 	}
@@ -509,7 +534,7 @@ func (r *ProcessDownRule) Evaluate(db *sql.DB) (*Alert, error) {
 		return nil, fmt.Errorf("querying process count: %w", err)
 	}
 	if snaps == 0 {
-		return nil, nil
+		return nil, ErrNoData
 	}
 	return r.alertIfDown(peak), nil
 }

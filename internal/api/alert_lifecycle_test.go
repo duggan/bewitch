@@ -141,3 +141,30 @@ func TestDeadMansSwitch(t *testing.T) {
 		t.Errorf("expected 1 resolved collection-stalled alert, got %d", got)
 	}
 }
+
+// TestAlertHeldWhenDataMissing: an active alert whose window empties (mount gone,
+// sensor vanished, SMART between refreshes) must stay active rather than resolve
+// with a "condition cleared" all-clear; it resolves only on real healthy data.
+func TestAlertHeldWhenDataMissing(t *testing.T) {
+	database, engine, setUsage := lifecycleSetup(t, "disk_gone")
+
+	setUsage(50)
+	engine.EvaluateOnce()
+	if got := countAlerts(t, database, "rule_name='disk_gone' AND resolved_at IS NULL"); got != 1 {
+		t.Fatalf("expected 1 active alert after breach, got %d", got)
+	}
+
+	if _, err := database.Exec("DELETE FROM disk_metrics"); err != nil {
+		t.Fatalf("clear disk_metrics: %v", err)
+	}
+	engine.EvaluateOnce()
+	if got := countAlerts(t, database, "rule_name='disk_gone' AND resolved_at IS NULL"); got != 1 {
+		t.Fatalf("missing data resolved the alert: %d active (want 1)", got)
+	}
+
+	setUsage(30)
+	engine.EvaluateOnce()
+	if got := countAlerts(t, database, "rule_name='disk_gone' AND resolved_at IS NOT NULL"); got != 1 {
+		t.Errorf("expected the alert to resolve on healthy data, got %d resolved", got)
+	}
+}

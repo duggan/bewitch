@@ -2,6 +2,7 @@ package alert
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,11 @@ import (
 // collectionStalledRule is the reserved rule_name for the built-in dead-man's-
 // switch alert that fires when metric collection has silently stopped.
 const collectionStalledRule = "collection-stalled"
+
+// noDataWarnAfter is how long a rule may go without data before the engine logs
+// a warning. Short gaps are normal (SMART rows land every smart_interval, 5m by
+// default), so warning on every empty window would be noise.
+const noDataWarnAfter = 15 * time.Minute
 
 // Engine periodically evaluates alert rules.
 type Engine struct {
@@ -31,6 +37,15 @@ type Engine struct {
 	// than only logged. The manual test endpoint (SendTestNotifications) does not
 	// count toward it.
 	notifyFailures atomic.Uint64
+
+	// noData tracks rules whose last evaluation returned ErrNoData, keyed by rule
+	// name. Touched only by evaluate(), which runs on one goroutine.
+	noData map[string]*noDataState
+}
+
+type noDataState struct {
+	since  time.Time
+	warned bool
 }
 
 // NotifyFailures returns the lifetime count of failed live notification deliveries.
@@ -295,17 +310,62 @@ func (e *Engine) evaluate() {
 	rules := e.rules
 	e.mu.RUnlock()
 
+	seen := make(map[string]bool, len(rules))
 	for _, rule := range rules {
+		seen[rule.Name()] = true
 		alert, err := rule.Evaluate(db)
+		if errors.Is(err, ErrNoData) {
+			// Hold the current state: an active alert stays active and nothing new
+			// fires. Resolving here would send "condition cleared" for a sensor
+			// that vanished or a SMART window between refreshes.
+			e.noteNoData(rule.Name(), time.Now())
+			continue
+		}
+		e.noteData(rule.Name())
 		if err != nil {
 			log.Errorf("alert rule %s error: %v", rule.Name(), err)
 			continue
 		}
 		e.applyAlertState(rule.Name(), alert)
 	}
+	for name := range e.noData {
+		if !seen[name] {
+			delete(e.noData, name) // rule deleted, disabled or renamed
+		}
+	}
 
 	// Built-in dead-man's-switch: fire when metric collection has silently stopped.
 	e.applyAlertState(collectionStalledRule, e.collectionStalled(db))
+}
+
+// noteNoData records an empty evaluation and warns once the rule has had no data
+// for noDataWarnAfter.
+func (e *Engine) noteNoData(name string, now time.Time) {
+	if e.noData == nil {
+		e.noData = make(map[string]*noDataState)
+	}
+	st, ok := e.noData[name]
+	if !ok {
+		st = &noDataState{since: now}
+		e.noData[name] = st
+	}
+	if !st.warned && now.Sub(st.since) >= noDataWarnAfter {
+		st.warned = true
+		log.Warnf("alert rule %q has had no data for %s; its state is held (an active alert stays active) — check that the metric's mount, sensor or interface still exists",
+			name, now.Sub(st.since).Round(time.Minute))
+	}
+}
+
+// noteData clears a rule's no-data tracking once it evaluates against real data.
+func (e *Engine) noteData(name string) {
+	st, ok := e.noData[name]
+	if !ok {
+		return
+	}
+	if st.warned {
+		log.Infof("alert rule %q has data again", name)
+	}
+	delete(e.noData, name)
 }
 
 // SetWriteGate installs the store's write gate (store.Store.AcquireWrite) so

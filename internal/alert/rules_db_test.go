@@ -2,6 +2,7 @@ package alert
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -93,16 +94,72 @@ func TestProcessDownWindowedAbsence(t *testing.T) {
 		}
 	})
 
-	t.Run("empty window (no process data yet) → no false fire at startup", func(t *testing.T) {
+	t.Run("empty window (no process data yet) → no data, no false fire at startup", func(t *testing.T) {
 		database := newRuleTestDB(t)
 		alert, err := rule.Evaluate(database)
-		if err != nil {
-			t.Fatalf("evaluate: %v", err)
+		if !errors.Is(err, ErrNoData) {
+			t.Fatalf("evaluate: err = %v, want ErrNoData", err)
 		}
 		if alert != nil {
 			t.Errorf("expected no alert when there is no process data at all, got %+v", alert)
 		}
 	})
+}
+
+// TestProcessDownSingleSnapshotNoData: the CheckDuration-less path used to count 0
+// instances against a DB with no process snapshots and fire "down" at startup.
+func TestProcessDownSingleSnapshotNoData(t *testing.T) {
+	rule := NewProcessDownRule(AlertRuleBase{Name: "nginx-down"}, ProcessDownConfig{ProcessName: "nginx", MinInstances: 1})
+	database := newRuleTestDB(t)
+	if alert, err := rule.Evaluate(database); !errors.Is(err, ErrNoData) || alert != nil {
+		t.Fatalf("Evaluate on empty DB = (%+v, %v), want (nil, ErrNoData)", alert, err)
+	}
+	seedProcess(t, database, 1, 100, "systemd", []time.Time{time.Now()})
+	alert, err := rule.Evaluate(database)
+	if err != nil || alert == nil {
+		t.Fatalf("Evaluate with a snapshot lacking nginx = (%+v, %v), want a down alert", alert, err)
+	}
+}
+
+// TestThresholdNoData: an empty window is ErrNoData for every threshold metric,
+// including smart.unhealthy, whose bare COUNT used to read 0 ("healthy") and
+// resolve an active alert between SMART refreshes.
+func TestThresholdNoData(t *testing.T) {
+	database := newRuleTestDB(t)
+	for _, metric := range []string{"cpu.aggregate", "memory.used_pct", "disk.used_pct", "smart.reallocated", "smart.unhealthy", "ecc.uncorrectable"} {
+		rule := NewThresholdRule(AlertRuleBase{Name: metric}, ThresholdConfig{Metric: metric, Operator: ">", Value: 0, Duration: "5m", Mount: "/"})
+		if alert, err := rule.Evaluate(database); !errors.Is(err, ErrNoData) || alert != nil {
+			t.Errorf("%s: Evaluate on empty window = (%+v, %v), want (nil, ErrNoData)", metric, alert, err)
+		}
+	}
+
+	// A healthy SMART row makes smart.unhealthy evaluate (count 0, not breaching).
+	if _, err := database.Exec(`INSERT INTO smart_metrics (ts, device, healthy) VALUES (?, 'nvme0n1', true)`, time.Now()); err != nil {
+		t.Fatalf("seed smart_metrics: %v", err)
+	}
+	rule := NewThresholdRule(AlertRuleBase{Name: "u"}, ThresholdConfig{Metric: "smart.unhealthy", Operator: ">", Value: 0, Duration: "5m"})
+	if alert, err := rule.Evaluate(database); err != nil || alert != nil {
+		t.Errorf("smart.unhealthy with a healthy row = (%+v, %v), want (nil, nil)", alert, err)
+	}
+}
+
+// TestNoDataWarnsOnce: the engine warns once a rule has gone noDataWarnAfter
+// without data, and forgets the rule as soon as it has data again.
+func TestNoDataWarnsOnce(t *testing.T) {
+	e := &Engine{}
+	t0 := time.Now()
+	e.noteNoData("r", t0)
+	if e.noData["r"].warned {
+		t.Fatal("warned immediately; want a grace period")
+	}
+	e.noteNoData("r", t0.Add(noDataWarnAfter))
+	if !e.noData["r"].warned || !e.noData["r"].since.Equal(t0) {
+		t.Fatalf("state after %s = %+v, want warned with the original since", noDataWarnAfter, *e.noData["r"])
+	}
+	e.noteData("r")
+	if _, ok := e.noData["r"]; ok {
+		t.Error("noteData did not clear the rule")
+	}
 }
 
 // TestPredictiveAlreadyBreached verifies the rule no longer goes silent when the
