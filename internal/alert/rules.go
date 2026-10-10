@@ -117,6 +117,9 @@ type Alert struct {
 	// Resolved marks a recovery/all-clear notification (the condition cleared).
 	// Not persisted; it only shapes how notifiers render the message.
 	Resolved bool `json:"-"`
+	// Reminder marks a repeat notification for an alert that is still firing
+	// and unacknowledged ([alerts] repeat_interval). Not persisted.
+	Reminder bool `json:"-"`
 }
 
 // ErrNoData is returned by Rule.Evaluate when the rule's window holds no samples

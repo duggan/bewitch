@@ -134,6 +134,18 @@ data shows the condition has cleared. A rule with no data for 15 minutes logs a 
 
 Deleting a rule also deletes its fired alerts. Renaming a rule keeps its alerts attached to it.
 
+### Reminders
+
+By default an alert notifies once when it fires and once when it resolves. Set `repeat_interval`
+under `[alerts]` (e.g. `"4h"`) to send a reminder at that interval while the alert is still firing
+and nobody has acknowledged it. Reminders carry the current reading:
+
+- Email subjects read `[bewitch] STILL FIRING warning: high-cpu`.
+- Shoutrrr titles read `[bewitch] STILL FIRING …`.
+- Commands receive `BEWITCH_REMINDER=true` (and `BEWITCH_STATUS=firing`).
+
+Acknowledging the alert in the TUI stops the reminders.
+
 ### Collection stalled
 
 bewitch has one built-in rule, `collection-stalled`. It fires a critical alert when the newest CPU
@@ -144,7 +156,12 @@ If the whole daemon dies, it can't alert, so monitor the service itself from out
 ## Notification Channels
 
 Configure notification channels in the `[alerts]` section of the config file. Every firing alert,
-recovery and `collection-stalled` alert goes to every configured channel.
+recovery, reminder and `collection-stalled` alert goes to every configured channel.
+
+A delivery that fails (an SMTP or webhook error, a command exiting non-zero) is retried after
+15 seconds and again after a minute. Only a delivery that fails all three attempts is logged as an
+error and counted in `notify_failures` (`bewitch stats`, and `bewitch_self_notify_failures_total`
+on `/metrics`).
 
 ### Email (local mail command)
 
@@ -209,6 +226,7 @@ Available environment variables:
 | `BEWITCH_SEVERITY` | `warning` or `critical` |
 | `BEWITCH_MESSAGE` | Alert message |
 | `BEWITCH_STATUS` | `firing` or `resolved` |
+| `BEWITCH_REMINDER` | `true` for a [reminder](#reminders), `false` otherwise |
 | `BEWITCH_TIMESTAMP` | RFC 3339 timestamp (UTC) |
 
 Commands run with a 10-second timeout. On timeout, the command and any processes it started are

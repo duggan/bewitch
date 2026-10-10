@@ -91,6 +91,9 @@ func (n *EmailNotifier) Send(a *Alert) NotifyResult {
 	if a.Resolved {
 		statusPrefix = "RESOLVED "
 		statusLine = "RESOLVED"
+	} else if a.Reminder {
+		statusPrefix = "STILL FIRING "
+		statusLine = "STILL FIRING (reminder)"
 	}
 	// Sanitize the severity and rule name: both are caller-supplied (settable via
 	// the alert-rule API / persisted rules) and a CR/LF here would inject extra

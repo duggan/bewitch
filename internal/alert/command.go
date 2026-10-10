@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ func (n *CommandNotifier) Send(a *Alert) NotifyResult {
 		"BEWITCH_SEVERITY="+a.Severity,
 		"BEWITCH_MESSAGE="+a.Message,
 		"BEWITCH_STATUS="+status,
+		"BEWITCH_REMINDER="+strconv.FormatBool(a.Reminder),
 		"BEWITCH_TIMESTAMP="+time.Now().UTC().Format(time.RFC3339),
 	)
 

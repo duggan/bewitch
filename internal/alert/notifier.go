@@ -34,16 +34,39 @@ type Notifier interface {
 // fired alerts could spawn an unbounded number of goroutines.
 var notifySem = make(chan struct{}, 8)
 
-// sendNotifications sends the alert to all notifiers asynchronously (fire-and-forget).
+// notifyRetryDelays are the waits before each retry of a failed delivery: a
+// webhook or SMTP blip shouldn't lose the alert (or its all-clear). A package var
+// so tests can shorten it.
+var notifyRetryDelays = []time.Duration{15 * time.Second, time.Minute}
+
+// sendNotifications sends the alert to all notifiers asynchronously, retrying a
+// failed delivery per notifyRetryDelays. Only a delivery that fails every attempt
+// counts toward notifyFailures. Pending retries are dropped when the engine stops.
 func (e *Engine) sendNotifications(a *Alert) {
 	for _, n := range e.notifiers {
 		go func(notifier Notifier) {
-			notifySem <- struct{}{}
-			defer func() { <-notifySem }()
-			r := notifier.Send(a)
-			if r.Error != "" {
-				e.notifyFailures.Add(1)
-				log.Errorf("%s: %s", notifier.Name(), r.Error)
+			for attempt := 0; ; attempt++ {
+				notifySem <- struct{}{}
+				r := notifier.Send(a)
+				<-notifySem // not held across the retry wait
+				if r.Error == "" {
+					if attempt > 0 {
+						log.Infof("%s: delivered %s on attempt %d", notifier.Name(), a.RuleName, attempt+1)
+					}
+					return
+				}
+				if attempt >= len(notifyRetryDelays) {
+					e.notifyFailures.Add(1)
+					log.Errorf("%s: %s (gave up on %s after %d attempts)", notifier.Name(), r.Error, a.RuleName, attempt+1)
+					return
+				}
+				delay := notifyRetryDelays[attempt]
+				log.Warnf("%s: %s (retrying %s in %s)", notifier.Name(), r.Error, a.RuleName, delay)
+				select {
+				case <-time.After(delay):
+				case <-e.stop:
+					return
+				}
 			}
 		}(n)
 	}

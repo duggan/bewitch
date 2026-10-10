@@ -104,6 +104,7 @@ file sets the evaluation interval and the notification channels. See [Alerts](@/
 [alerts]
 evaluation_interval = "10s"  # how often the alert engine evaluates rules
 # resolve_after = "2m"       # how long a rule must stay clear before its alert resolves; "0s" = immediately
+# repeat_interval = "4h"     # remind about a still-firing, unacknowledged alert this often; default off
 
 # Discord, Telegram, ntfy, Slack, Gotify, webhooks… one URL each (secrets!)
 # shoutrrr_urls = [

@@ -99,7 +99,7 @@ type StatsResponse struct {
 type SelfStats struct {
 	DroppedWriteBatches  uint64         `json:"dropped_write_batches"`     // counter: batches dropped, write queue full
 	PauseDroppedSamples  uint64         `json:"pause_dropped_samples"`     // counter: samples dropped, pause buffer capped
-	NotifyFailures       uint64         `json:"notify_failures"`           // counter: failed live notification deliveries
+	NotifyFailures       uint64         `json:"notify_failures"`           // counter: live notification deliveries that failed every retry
 	ProcInfoCacheEntries int            `json:"proc_info_cache_entries"`   // gauge
 	WriteQueueDepth      int            `json:"write_queue_depth"`         // gauge: len(writeCh)
 	WriteQueueCap        int            `json:"write_queue_cap"`           // gauge: cap(writeCh)

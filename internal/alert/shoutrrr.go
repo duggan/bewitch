@@ -49,11 +49,13 @@ func (n *ShoutrrrNotifier) Send(a *Alert) NotifyResult {
 }
 
 // shoutrrrTitle builds the notification title, distinguishing a firing alert
-// from a recovery (Resolved) all-clear.
+// from a recovery (Resolved) all-clear and a reminder.
 func shoutrrrTitle(a *Alert) string {
 	status := "FIRING"
 	if a.Resolved {
 		status = "RESOLVED"
+	} else if a.Reminder {
+		status = "STILL FIRING"
 	}
 	return fmt.Sprintf("[bewitch] %s %s: %s", status, a.Severity, a.RuleName)
 }

@@ -56,9 +56,12 @@ type AlertsConfig struct {
 	// ResolveAfter is how long a firing rule must evaluate healthy, continuously,
 	// before its alert resolves and the all-clear is sent. Damps flapping around
 	// a threshold. Empty = default (2m); "0s" resolves on the first healthy cycle.
-	ResolveAfter string        `toml:"resolve_after"`
-	Email        []EmailDest   `toml:"email"`
-	Commands     []CommandDest `toml:"commands"`
+	ResolveAfter string `toml:"resolve_after"`
+	// RepeatInterval re-sends a still-firing, unacknowledged alert this often, as
+	// a reminder. Empty or "0s" = never (one notification per firing).
+	RepeatInterval string        `toml:"repeat_interval"`
+	Email          []EmailDest   `toml:"email"`
+	Commands       []CommandDest `toml:"commands"`
 	// ShoutrrrURLs are Shoutrrr service URLs (Discord/Telegram/ntfy/Slack/etc.);
 	// alerts are delivered to each. See https://containrrr.dev/shoutrrr/services.
 	ShoutrrrURLs []string `toml:"shoutrrr_urls"`

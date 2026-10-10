@@ -34,6 +34,7 @@ db_path = "/var/lib/bewitch/bewitch.duckdb"
 evaluation_interval = "10s"
 # resolve_after = "2m"  # a firing rule must stay clear this long before it resolves and the
                         # all-clear is sent (damps flapping); "0s" resolves immediately
+# repeat_interval = "4h"  # re-send a still-firing, unacknowledged alert this often; default off
 # Alert rules are now managed via the TUI (Alerts tab → press 'n' to create)
 
 # Local mail system (postfix/exim/sendmail/msmtp). Under the packaged (sandboxed)
@@ -55,7 +56,7 @@ evaluation_interval = "10s"
 # starttls = true                 # default true; set false for implicit TLS (port 465)
 
 # [[alerts.commands]]
-# cmd = "/usr/local/bin/alert-handler"  # receives BEWITCH_RULE, BEWITCH_SEVERITY, BEWITCH_MESSAGE, BEWITCH_STATUS (firing|resolved), BEWITCH_TIMESTAMP env vars
+# cmd = "/usr/local/bin/alert-handler"  # receives BEWITCH_RULE, BEWITCH_SEVERITY, BEWITCH_MESSAGE, BEWITCH_STATUS (firing|resolved), BEWITCH_REMINDER (true|false), BEWITCH_TIMESTAMP env vars
 
 # Notification fan-out via Shoutrrr URLs — Discord, Telegram, ntfy, Slack, Pushover,
 # Gotify, generic webhook, and more, each from a single URL. Firing alerts, recovery

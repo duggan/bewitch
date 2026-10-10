@@ -36,9 +36,12 @@ type Engine struct {
 	// resolveAfter is the clear period: an active alert resolves only after its
 	// rule has evaluated healthy continuously for this long. 0 = immediately.
 	resolveAfter time.Duration
-	now          func() time.Time // injectable clock for tests
-	stop         chan struct{}
-	mu           sync.RWMutex
+	// repeatInterval re-notifies a still-firing, unacknowledged alert this often.
+	// 0 = never.
+	repeatInterval time.Duration
+	now            func() time.Time // injectable clock for tests
+	stop           chan struct{}
+	mu             sync.RWMutex
 
 	// notifyFailures counts live notification deliveries that returned an error
 	// (a failing webhook/SMTP), so "alerts aren't getting out" is observable rather
@@ -52,6 +55,10 @@ type Engine struct {
 	// clearSince records when each active alert's rule was first seen healthy in
 	// the current run of healthy evaluations. Also touched only by evaluate().
 	clearSince map[string]time.Time
+	// lastNotified is when each active alert was last notified (fire or
+	// reminder), for repeatInterval. Missing after a restart: the alert's own ts
+	// is used. Also touched only by evaluate().
+	lastNotified map[string]time.Time
 }
 
 type noDataState struct {
@@ -79,6 +86,15 @@ func NewEngine(dbFn func() *sql.DB, cfg *config.AlertsConfig) *Engine {
 		}
 	}
 
+	var repeatInterval time.Duration
+	if cfg.RepeatInterval != "" {
+		if d, err := config.ParseDuration(cfg.RepeatInterval); err == nil && d >= 0 {
+			repeatInterval = d
+		} else {
+			log.Warnf("invalid [alerts] repeat_interval %q; reminders are off", cfg.RepeatInterval)
+		}
+	}
+
 	var notifiers []Notifier
 	for _, em := range cfg.Email {
 		notifiers = append(notifiers, NewEmailNotifier(em))
@@ -96,12 +112,13 @@ func NewEngine(dbFn func() *sql.DB, cfg *config.AlertsConfig) *Engine {
 	}
 
 	e := &Engine{
-		dbFn:         dbFn,
-		notifiers:    notifiers,
-		interval:     interval,
-		resolveAfter: resolveAfter,
-		now:          time.Now,
-		stop:         make(chan struct{}),
+		dbFn:           dbFn,
+		notifiers:      notifiers,
+		interval:       interval,
+		resolveAfter:   resolveAfter,
+		repeatInterval: repeatInterval,
+		now:            time.Now,
+		stop:           make(chan struct{}),
 	}
 	e.ReloadRules()
 	return e
@@ -355,9 +372,11 @@ func (e *Engine) evaluate() {
 			delete(e.noData, name) // rule deleted, disabled or renamed
 		}
 	}
-	for name := range e.clearSince {
-		if !seen[name] && name != collectionStalledRule {
-			delete(e.clearSince, name)
+	for _, m := range []map[string]time.Time{e.clearSince, e.lastNotified} {
+		for name := range m {
+			if !seen[name] && name != collectionStalledRule {
+				delete(m, name)
+			}
 		}
 	}
 
@@ -428,10 +447,12 @@ func (e *Engine) applyAlertState(ruleName string, alert *Alert) {
 	db := e.dbFn()
 	var activeID int
 	var activeSeverity string
+	var activeTS time.Time
+	var activeAcked bool
 	hasActive := db.QueryRow(
-		"SELECT id, severity FROM alerts WHERE rule_name = ? AND resolved_at IS NULL ORDER BY ts DESC LIMIT 1",
+		"SELECT id, severity, ts, acknowledged FROM alerts WHERE rule_name = ? AND resolved_at IS NULL ORDER BY ts DESC LIMIT 1",
 		ruleName,
-	).Scan(&activeID, &activeSeverity) == nil
+	).Scan(&activeID, &activeSeverity, &activeTS, &activeAcked) == nil
 
 	now := e.clock()
 	if alert != nil || !hasActive {
@@ -450,6 +471,7 @@ func (e *Engine) applyAlertState(ruleName string, alert *Alert) {
 			return
 		}
 		log.Warnf("ALERT [%s] %s: %s", alert.Severity, alert.RuleName, alert.Message)
+		e.markNotified(ruleName, now)
 		if len(e.notifiers) > 0 {
 			e.sendNotifications(alert)
 		}
@@ -472,6 +494,7 @@ func (e *Engine) applyAlertState(ruleName string, alert *Alert) {
 			}
 		}
 		delete(e.clearSince, ruleName)
+		delete(e.lastNotified, ruleName)
 		if _, err := db.Exec("UPDATE alerts SET resolved_at = ? WHERE id = ?", now, activeID); err != nil {
 			log.Errorf("resolving alert %s: %v", ruleName, err)
 			return
@@ -485,8 +508,35 @@ func (e *Engine) applyAlertState(ruleName string, alert *Alert) {
 				Resolved: true,
 			})
 		}
+	case alert != nil && hasActive:
+		// Still firing: normally silent. With repeat_interval set, remind until
+		// someone acknowledges it, carrying the current reading.
+		if e.repeatInterval <= 0 || activeAcked {
+			return
+		}
+		last, ok := e.lastNotified[ruleName]
+		if !ok {
+			last = activeTS // after a restart, count from when it fired
+		}
+		if now.Sub(last) < e.repeatInterval {
+			return
+		}
+		e.markNotified(ruleName, now)
+		log.Warnf("ALERT [%s] %s still firing: %s", alert.Severity, alert.RuleName, alert.Message)
+		if len(e.notifiers) > 0 {
+			reminder := *alert
+			reminder.Reminder = true
+			e.sendNotifications(&reminder)
+		}
 	}
-	// breaching && active: still firing, suppress. !breaching && !active: nothing to do.
+	// !breaching && !active: nothing to do.
+}
+
+func (e *Engine) markNotified(ruleName string, at time.Time) {
+	if e.lastNotified == nil {
+		e.lastNotified = make(map[string]time.Time)
+	}
+	e.lastNotified[ruleName] = at
 }
 
 // collectionStalled returns a non-nil Alert when metric collection appears to
