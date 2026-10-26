@@ -2,6 +2,33 @@
 
 All notable changes to bewitch are documented here.
 
+## [0.10.0] - 2026-10-26
+
+### Added
+
+- **Notification retries and reminders** — a failed delivery is retried after 15s and 1m, and `notify_failures` counts only deliveries that failed every attempt. `[alerts] repeat_interval` (off by default) re-sends a still-firing, unacknowledged alert as a STILL FIRING reminder with the current reading
+- **Alerts on new SMART and ECC errors** — counter metrics (`smart.reallocated`, `smart.pending`, `smart.uncorrectable`, `ecc.*`) accept the aggregate `increase`, which fires on errors that appeared in the window rather than on any error a drive has ever had. The TUI form offers "new errors" (the default) or "total count"; existing rules keep comparing the total
+- **Alert messages name their subject** — the SMART device, the failing devices for `smart.unhealthy`, or the rule's mount, interface or sensor
+- **Alerts on custom source metrics** — threshold rules accept `custom.<source>.<metric>`, and the TUI alert form gets a Services category when custom sources are configured
+- **`bewitch rules export` and `bewitch rules import [-dry-run]`** — copy alert rules between hosts as JSON. Import matches rules by name, updates them in place, and never deletes rules missing from the file
+- **`[daemon] mock_scenario = "incident"`** — mock mode is now one consistent simulated host, and can play a scripted incident that fires and resolves two alerts
+
+### Changed
+
+- **Alerts resolve only after a clear period** — `[alerts] resolve_after` (default 2m; `"0s"` resolves immediately as before), so a value hovering around a threshold no longer sends a fire/resolve pair every cycle
+- **Website**: redesigned landing page and docs, and the homepage plays a recorded demo instead of the interactive one
+
+### Fixed
+
+- **Go 1.26.10** — fixes a standard-library vulnerability in `crypto/x509` (GO-2026-6809) reachable from the API's TLS listener
+- **Lower daemon memory on many-core hosts** — DuckDB runs a worker thread per core and glibc gave each its own malloc arena, so memory freed after archiving and compaction stayed fragmented. On a 16-core host RSS settled around 650 MB with about 200 MB in use. The daemon now caps malloc arenas at 2 (set `MALLOC_ARENA_MAX` to override); in testing RSS stayed around 250 MB
+- **Alerts no longer resolve when a rule has no data** — a vanished mount or sensor, or the gap between SMART refreshes, sent a false "condition cleared". The alert now holds its state, and a rule with no data for 15 minutes logs a warning
+- **Alert and rule ids no longer repeat after compaction** — sequences restarted at 1, so new alerts reused existing ids and selecting or clearing them in the TUI hit the wrong alert
+- Editing a firing rule's severity now updates the active alert and its all-clear
+- Threshold messages no longer round a breach into "85.0 > 85.0"
+- Process history charts drop to zero where a process wasn't running, instead of drawing a line across the gap
+- TUI: fired-alert times are shown in local time (they were UTC), the active-alert count is the same on every view, the dashboard CPU sparkline no longer dips where history meets live data, and history charts no longer clip the top Y-axis label ("00%")
+
 ## [0.9.1] - 2026-10-09
 
 ### Fixed
