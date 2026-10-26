@@ -1,0 +1,36 @@
+# Weekly dependency update PRs. Security updates (for Dependabot alerts) are
+# enabled in the repo settings and open separately, as soon as an advisory lands.
+#
+# Not covered here:
+# - The Go toolchain (go.mod's `go` line, GO_VERSION + per-arch checksums in
+#   Dockerfile.build): bump those together by hand. vulncheck.yml runs
+#   govulncheck weekly so a standard-library vulnerability isn't missed.
+# - Docker base images: Dockerfile.build/.repo float on debian:bookworm on
+#   purpose, to keep picking up base-image security updates.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "Deps"
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+
+  # Actions are pinned to commit SHAs with a `# vX.Y.Z` comment; Dependabot
+  # updates both.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "CI"
+    groups:
+      actions:
+        patterns: ["*"]
