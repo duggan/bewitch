@@ -18,8 +18,14 @@ updates:
     commit-message:
       prefix: "Deps"
     groups:
+      # DuckDB gets its own PR: a duckdb-go "minor" bump can carry a new DuckDB
+      # engine (and storage format), which needs migration/archive/compaction
+      # testing rather than riding along with routine bumps.
+      duckdb:
+        patterns: ["github.com/duckdb/*"]
       go-minor-patch:
         update-types: [minor, patch]
+        exclude-patterns: ["github.com/duckdb/*"]
 
   # Actions are pinned to commit SHAs with a `# vX.Y.Z` comment; Dependabot
   # updates both.
