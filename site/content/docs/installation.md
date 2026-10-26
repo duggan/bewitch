@@ -126,7 +126,7 @@ The `.deb` package automatically:
 
 ## Build from Source
 
-Requires **Go 1.26.9 or newer** (as set in `go.mod`) and a C compiler (for CGO/DuckDB).
+Requires **Go 1.26.10 or newer** (as set in `go.mod`) and a C compiler (for CGO/DuckDB).
 
 ```bash
 git clone https://github.com/duggan/bewitch
