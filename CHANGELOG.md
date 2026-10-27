@@ -2,6 +2,16 @@
 
 All notable changes to bewitch are documented here.
 
+## [0.10.1] - 2026-10-27
+
+### Changed
+
+- Dependency updates: `prometheus/procfs` 0.23.0, `golang.org/x/sys` 0.49.0, `golang.org/x/term` 0.47.0, `golang.org/x/image` 0.47.0, `charmbracelet/x/ansi` 0.11.9
+
+### Fixed
+
+- **`klauspost/compress` 1.18.7** — fixes an out-of-bounds read in `s2.NewDict` (bewitch doesn't call the affected code)
+
 ## [0.10.0] - 2026-10-26
 
 ### Added

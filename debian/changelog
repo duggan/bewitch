@@ -1,3 +1,10 @@
+bewitch (0.10.1-1) unstable; urgency=medium
+
+  * klauspost/compress 1.18.7 -- fixes an out-of-bounds read in s2.NewDict (bewitch doesn't call the affected code)
+  * Dependency updates: prometheus/procfs 0.23.0, golang.org/x/sys 0.49.0, golang.org/x/term 0.47.0, golang.org/x/image 0.47.0, charmbracelet/x/ansi 0.11.9
+
+ -- Ross Duggan <ross@duggan.ie>  Tue, 27 Oct 2026 12:24:26 +0000
+
 bewitch (0.10.0-1) unstable; urgency=medium
 
   * Notification retries and reminders -- a failed delivery is retried after 15s and 1m, and notify_failures counts only deliveries that failed every attempt. [alerts] repeat_interval (off by default) re-sends a still-firing, unacknowledged alert as a STILL FIRING reminder with the current reading
