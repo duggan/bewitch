@@ -63,8 +63,9 @@ func NewPowerCollector() *PowerCollector {
 func (c *PowerCollector) Name() string { return "power" }
 
 // discoverZones picks the energy source: powercap when its energy_uj files are
-// readable (root, or a host that relaxed them — keeps mmio/psys coverage), else
-// the RAPL perf events (CAP_PERFMON; the packaged unprivileged daemon's path).
+// readable (root, or the packaged unit's `bewitchd rapl-access` grant — keeps
+// mmio/psys coverage), else the RAPL perf events (CAP_PERFMON; CAP_SYS_ADMIN
+// under Debian's perf_event_paranoid=3).
 func (c *PowerCollector) discoverZones() {
 	defer c.markRefreshed()
 
@@ -84,8 +85,9 @@ func (c *PowerCollector) discoverZones() {
 		if perfErr != nil && (pcErr != nil || !errors.Is(perfErr, os.ErrNotExist)) && !c.warned {
 			c.warned = true
 			log.Warnf("power: RAPL energy counters unreadable — powercap: %v; perf: %v. "+
-				"powercap energy_uj is root-only since kernel 5.10 (CVE-2020-8694); the perf "+
-				"path needs CAP_PERFMON (granted by the packaged unit) or perf_event_paranoid <= 0", pcErr, perfErr)
+				"powercap energy_uj is root-only since kernel 5.10 (CVE-2020-8694): the packaged unit "+
+				"runs `bewitchd rapl-access` as root before starting to let the bewitch group read it. "+
+				"The perf path needs CAP_PERFMON, or CAP_SYS_ADMIN where perf_event_paranoid > 2 (Debian's default)", pcErr, perfErr)
 		}
 	}
 	if len(c.perfZones) > 0 {

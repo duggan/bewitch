@@ -4,6 +4,13 @@ After=network.target
 
 [Service]
 Type=simple
+# Let the bewitch group read the RAPL energy counters (powercap energy_uj is
+# root-only since kernel 5.10). "+" runs this one step as root, outside the
+# sandbox below; it only changes the group and mode of the energy_uj files.
+# The perf-event route (CAP_PERFMON) is not enough on Debian, whose default
+# perf_event_paranoid=3 requires CAP_SYS_ADMIN. "-": hosts without RAPL (VMs,
+# ARM) still start.
+ExecStartPre=-+/usr/bin/bewitchd rapl-access
 ExecStart=/usr/bin/bewitchd -config /etc/bewitch.toml
 Restart=on-failure
 RestartSec=5

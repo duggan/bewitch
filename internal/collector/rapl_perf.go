@@ -16,7 +16,11 @@ import (
 // unprivileged bewitch user — can't read them, and power monitoring silently
 // reported nothing. The same counters are exported by the "power" perf PMU,
 // which perf_event_open lets a CAP_PERFMON holder read system-wide; the
-// packaged unit already grants CAP_PERFMON (for GPU/eBPF). The PMU's sysfs
+// packaged unit already grants CAP_PERFMON (for GPU/eBPF). Debian's kernels
+// are the exception: at their default perf_event_paranoid=3 they require
+// CAP_SYS_ADMIN, so there the packaged unit instead grants the bewitch group
+// read access to energy_uj (`bewitchd rapl-access`, GrantPowercapRead) and the
+// powercap path is used. The PMU's sysfs
 // metadata (type, cpumask, events/*) is world-readable, and its counters are
 // 64-bit (the kernel accumulates the 32-bit MSR), so there is no wrap to undo.
 

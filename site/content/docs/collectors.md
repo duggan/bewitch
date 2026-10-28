@@ -123,8 +123,8 @@ Reads hardware sensor temperatures from `/sys/class/hwmon/`. New sensors are pic
 
 Reads RAPL energy counters and computes watts from their differences. Two sources, same zone names:
 
-- **powercap** (`/sys/class/powercap/*/energy_uj`) when readable. Since kernel 5.10 these files are root-only (a side-channel mitigation, CVE-2020-8694), so this path is used when bewitchd runs as root.
-- **perf events** (the kernel's `power` PMU, e.g. `energy-pkg`) otherwise. This is how the packaged daemon, which runs as the unprivileged `bewitch` user, reads power: it needs `CAP_PERFMON`, which the packaged service grants. Custom units need `AmbientCapabilities=CAP_PERFMON` (or `kernel.perf_event_paranoid <= 0`).
+- **powercap** (`/sys/class/powercap/*/energy_uj`) when readable. Since kernel 5.10 these files are root-only (a side-channel mitigation, CVE-2020-8694). The packaged service runs `bewitchd rapl-access` as root before the daemon starts, which makes them readable by the `bewitch` group only, so this is the usual path. It runs on every start because sysfs permissions reset at reboot.
+- **perf events** (the kernel's `power` PMU, e.g. `energy-pkg`) otherwise. These need `CAP_PERFMON` on most kernels, but Debian's kernels at their default `kernel.perf_event_paranoid = 3` require `CAP_SYS_ADMIN`, which bewitchd doesn't hold. A custom unit that runs bewitchd as a non-root user should add `ExecStartPre=-+/usr/local/bin/bewitchd rapl-access` (adjust the path), or grant `CAP_PERFMON` on kernels that accept it.
 
 If RAPL counters exist but neither source is readable, the daemon logs a warning saying why. VMs and most ARM boards have no RAPL; the collector stays silent there.
 

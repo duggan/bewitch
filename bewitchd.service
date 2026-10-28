@@ -4,6 +4,9 @@ After=network.target
 
 [Service]
 Type=simple
+# Let the bewitch group read the RAPL energy counters (root-only since kernel
+# 5.10); "+" runs this step as root, "-" tolerates hosts without RAPL.
+ExecStartPre=-+/usr/local/bin/bewitchd rapl-access
 ExecStart=/usr/local/bin/bewitchd -config /etc/bewitch.toml
 Restart=on-failure
 RestartSec=5

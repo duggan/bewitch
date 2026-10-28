@@ -17,7 +17,8 @@ type perfCounter struct {
 }
 
 // openPerfCounter opens ev system-wide (pid -1) on its package's CPU. This needs
-// CAP_PERFMON (or perf_event_paranoid <= 0).
+// CAP_PERFMON (or perf_event_paranoid <= 0); Debian kernels with
+// perf_event_paranoid > 2 require CAP_SYS_ADMIN instead.
 func openPerfCounter(ev perfRAPLEvent) (*perfCounter, error) {
 	attr := unix.PerfEventAttr{
 		Type:   ev.pmu,

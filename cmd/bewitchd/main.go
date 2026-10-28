@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"os/user"
 	"runtime"
 	"strconv"
 	"strings"
@@ -43,6 +44,12 @@ func main() {
 	// bewitch-smart.service; it must not load config or touch the database.
 	if len(os.Args) > 1 && os.Args[1] == "smart-dump" {
 		runSmartDump(os.Args[2:])
+		return
+	}
+	// `bewitchd rapl-access` runs as root from the unit's ExecStartPre to let
+	// the bewitch group read the RAPL energy counters; same rules as smart-dump.
+	if len(os.Args) > 1 && os.Args[1] == "rapl-access" {
+		runRAPLAccess(os.Args[2:])
 		return
 	}
 
@@ -1075,5 +1082,27 @@ func runSmartDump(args []string) {
 	_ = fs.Parse(args)
 	if err := collector.DumpNVMeSMART(*out); err != nil {
 		log.Fatalf("smart-dump: %v", err)
+	}
+}
+
+// runRAPLAccess implements `bewitchd rapl-access [-group bewitch]`.
+func runRAPLAccess(args []string) {
+	fs := flag.NewFlagSet("rapl-access", flag.ExitOnError)
+	group := fs.String("group", "bewitch", "group to grant read access to the RAPL energy counters")
+	_ = fs.Parse(args)
+	g, err := user.LookupGroup(*group)
+	if err != nil {
+		log.Fatalf("rapl-access: %v", err)
+	}
+	gid, err := strconv.Atoi(g.Gid)
+	if err != nil {
+		log.Fatalf("rapl-access: group %s: bad gid %q", *group, g.Gid)
+	}
+	n, err := collector.GrantPowercapRead(gid)
+	if err != nil {
+		log.Fatalf("rapl-access: %v", err)
+	}
+	if n > 0 {
+		log.Infof("rapl-access: %d RAPL energy counters readable by group %s", n, *group)
 	}
 }
