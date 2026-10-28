@@ -13,7 +13,7 @@ import (
 func newStatsTestStore(t *testing.T) *Store {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "stats.duckdb")
-	database, err := db.Open(dbPath, "", "")
+	database, err := db.Open(dbPath, db.Options{})
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
 	}

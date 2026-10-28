@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -39,6 +40,7 @@ type DaemonConfig struct {
 	CompactionInterval  string `toml:"compaction_interval"`  // e.g. "24h", "7d"; empty = disabled
 	CheckpointThreshold string `toml:"checkpoint_threshold"` // e.g. "16MB", "256MB"; default "16MB" (DuckDB default)
 	DBMemoryLimit       string `toml:"db_memory_limit"`      // e.g. "512MB", "1GB"; caps DuckDB working memory; empty = DuckDB default (~80% RAM)
+	DBThreads           int    `toml:"db_threads"`           // DuckDB worker threads; 0/unset = min(cores, 4)
 	CheckpointInterval  string `toml:"checkpoint_interval"`  // e.g. "5m", "1m"; forced checkpoint interval for crash safety
 	ArchiveThreshold    string `toml:"archive_threshold"`    // e.g. "7d"; archive data older than this to Parquet
 	ArchiveInterval     string `toml:"archive_interval"`     // e.g. "6h"; how often to run archive; default "6h"
@@ -430,6 +432,22 @@ func (c *DaemonConfig) DBMemoryLimitValue() string {
 		return DefaultDBMemoryLimit
 	}
 	return c.DBMemoryLimit
+}
+
+// DefaultDBThreads caps DuckDB's worker threads when the user hasn't set
+// db_threads. DuckDB defaults to one per core, and each worker holds its own
+// buffers while archiving or compacting: on a 16-core host the daemon's RSS
+// peaked around 1 GB during those runs. bewitch's queries are small, so more
+// than a few workers buys little.
+const DefaultDBThreads = 4
+
+// DBThreadsValue returns the configured DuckDB thread count, or
+// min(cores, DefaultDBThreads) when unset or not positive.
+func (c *DaemonConfig) DBThreadsValue() int {
+	if c.DBThreads > 0 {
+		return c.DBThreads
+	}
+	return min(runtime.NumCPU(), DefaultDBThreads)
 }
 
 // RetentionDuration parses the retention string into a time.Duration.

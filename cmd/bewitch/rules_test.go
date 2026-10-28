@@ -21,7 +21,7 @@ import (
 // client, so export/import exercise the same HTTP round-trips as the CLI.
 func newRulesDaemon(t *testing.T) *tui.DaemonClient {
 	t.Helper()
-	database, err := db.Open(filepath.Join(t.TempDir(), "rules.duckdb"), "", "")
+	database, err := db.Open(filepath.Join(t.TempDir(), "rules.duckdb"), db.Options{})
 	if err != nil {
 		t.Fatalf("opening migrated db: %v", err)
 	}

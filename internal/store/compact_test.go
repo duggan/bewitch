@@ -14,7 +14,7 @@ import (
 func newCompactTestStore(t *testing.T) (*Store, string) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "compact.duckdb")
-	database, err := db.Open(dbPath, "", "")
+	database, err := db.Open(dbPath, db.Options{})
 	if err != nil {
 		t.Fatalf("opening migrated db: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestCompactThenRestart(t *testing.T) {
 
 	// Restart: a fresh db.Open must run migrations cleanly against the compacted file.
 	s.DB().Close()
-	reopened, err := db.Open(dbPath, "", "")
+	reopened, err := db.Open(dbPath, db.Options{})
 	if err != nil {
 		t.Fatalf("reopening compacted DB (daemon restart): %v", err)
 	}
@@ -207,7 +207,7 @@ func TestCompactContinuesSequences(t *testing.T) {
 	}
 
 	s.DB().Close() // restart, then compact again
-	reopened, err := db.Open(dbPath, "", "")
+	reopened, err := db.Open(dbPath, db.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,5 +226,24 @@ func TestCompactContinuesSequences(t *testing.T) {
 		if rows != ids {
 			t.Errorf("%s: %d rows share %d ids after compaction", table, rows, ids)
 		}
+	}
+}
+
+// TestCompactKeepsDuckDBSettings: the reopen after the swap gets a fresh DuckDB
+// instance, which must not fall back to DuckDB's defaults (~80% of RAM, one
+// thread per core).
+func TestCompactKeepsDuckDBSettings(t *testing.T) {
+	s, dbPath := newCompactTestStore(t)
+	s.SetCompactionReopenOptions(db.Options{MemoryLimit: "300MiB", Threads: 3})
+	if err := s.Compact(dbPath); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	var threads int64
+	var memLimit string
+	if err := s.DB().QueryRow(`SELECT current_setting('threads'), current_setting('memory_limit')`).Scan(&threads, &memLimit); err != nil {
+		t.Fatal(err)
+	}
+	if threads != 3 || memLimit != "300.0 MiB" {
+		t.Errorf("after compaction: threads=%d memory_limit=%q, want 3 and \"300.0 MiB\"", threads, memLimit)
 	}
 }

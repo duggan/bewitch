@@ -16,14 +16,26 @@ import (
 // compaction creates while swapping in a freshly compacted file.
 const PreCompactSuffix = ".pre-compact"
 
+// Options are the DuckDB runtime settings applied on Open and Reopen. The zero
+// value leaves every setting at DuckDB's default (tests use it).
+type Options struct {
+	// CheckpointThreshold configures wal_autocheckpoint (e.g. "16MB", "256MB");
+	// empty uses DuckDB's default (16MB).
+	CheckpointThreshold string
+	// MemoryLimit caps DuckDB's working memory (e.g. "512MB", "1GB"); empty
+	// uses DuckDB's default (~80% of physical RAM). On memory-constrained hosts
+	// this is important so large sorts/exports spill to temp_directory instead
+	// of OOM-killing.
+	MemoryLimit string
+	// Threads caps DuckDB's worker threads; 0 uses DuckDB's default (one per
+	// core). Each worker holds its own buffers during archive/compaction, so
+	// this bounds the daemon's peak memory on many-core hosts.
+	Threads int
+}
+
 // Open opens a DuckDB database at the given path and runs migrations.
 // It creates the parent directory if it does not exist.
-// checkpointThreshold configures wal_autocheckpoint (e.g. "16MB", "256MB");
-// empty uses DuckDB's default (16MB).
-// memoryLimit caps DuckDB's working memory (e.g. "512MB", "1GB"); empty uses
-// DuckDB's default (~80% of physical RAM). On memory-constrained hosts this is
-// important so large sorts/exports spill to temp_directory instead of OOM-killing.
-func Open(path string, checkpointThreshold string, memoryLimit string) (*sql.DB, error) {
+func Open(path string, opts Options) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, fmt.Errorf("creating data directory: %w", err)
 	}
@@ -34,7 +46,7 @@ func Open(path string, checkpointThreshold string, memoryLimit string) (*sql.DB,
 	if err != nil {
 		return nil, fmt.Errorf("opening duckdb: %w", err)
 	}
-	if err := applyConnSettings(db, path, checkpointThreshold, memoryLimit); err != nil {
+	if err := applyConnSettings(db, path, opts); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -54,16 +66,16 @@ func Open(path string, checkpointThreshold string, memoryLimit string) (*sql.DB,
 
 // Reopen opens an already-migrated database and applies the same runtime
 // settings as Open, without re-running migrations. Store compaction uses this
-// after swapping in the compacted file so the memory_limit / temp_directory /
-// checkpoint / parquet-cache settings survive — they are per-instance in DuckDB
-// and would otherwise reset to defaults (notably an ~80%-RAM memory_limit) on
-// the fresh connection pool.
-func Reopen(path string, checkpointThreshold string, memoryLimit string) (*sql.DB, error) {
+// after swapping in the compacted file so the memory_limit / threads /
+// temp_directory / checkpoint / parquet-cache settings survive — they are
+// per-instance in DuckDB and would otherwise reset to defaults (notably an
+// ~80%-RAM memory_limit and one thread per core) on the fresh connection pool.
+func Reopen(path string, opts Options) (*sql.DB, error) {
 	db, err := sql.Open("duckdb", path)
 	if err != nil {
 		return nil, fmt.Errorf("reopening duckdb: %w", err)
 	}
-	if err := applyConnSettings(db, path, checkpointThreshold, memoryLimit); err != nil {
+	if err := applyConnSettings(db, path, opts); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -72,17 +84,17 @@ func Reopen(path string, checkpointThreshold string, memoryLimit string) (*sql.D
 
 // applyConnSettings configures the connection pool and the runtime PRAGMAs.
 // Shared by Open and Reopen so a compaction reopen doesn't silently drop them.
-func applyConnSettings(db *sql.DB, path string, checkpointThreshold string, memoryLimit string) error {
+func applyConnSettings(db *sql.DB, path string, opts Options) error {
 	// Allow multiple connections for concurrent API access during batch writes.
 	// DuckDB handles internal locking; single-writer is enforced at transaction level.
 	db.SetMaxOpenConns(4)
-	if checkpointThreshold != "" {
-		if _, err := db.Exec(fmt.Sprintf("SET wal_autocheckpoint = '%s'", checkpointThreshold)); err != nil {
+	if opts.CheckpointThreshold != "" {
+		if _, err := db.Exec(fmt.Sprintf("SET wal_autocheckpoint = '%s'", opts.CheckpointThreshold)); err != nil {
 			return fmt.Errorf("setting wal_autocheckpoint: %w", err)
 		}
 	}
-	if memoryLimit != "" {
-		if _, err := db.Exec(fmt.Sprintf("SET memory_limit = '%s'", memoryLimit)); err != nil {
+	if opts.MemoryLimit != "" {
+		if _, err := db.Exec(fmt.Sprintf("SET memory_limit = '%s'", opts.MemoryLimit)); err != nil {
 			return fmt.Errorf("setting memory_limit: %w", err)
 		}
 		// Spill to disk (next to the DB file) when a query exceeds memory_limit,
@@ -93,6 +105,11 @@ func applyConnSettings(db *sql.DB, path string, checkpointThreshold string, memo
 		}
 		if _, err := db.Exec(fmt.Sprintf("SET temp_directory = '%s'", tempDir)); err != nil {
 			return fmt.Errorf("setting temp_directory: %w", err)
+		}
+	}
+	if opts.Threads > 0 {
+		if _, err := db.Exec(fmt.Sprintf("SET threads = %d", opts.Threads)); err != nil {
+			return fmt.Errorf("setting threads: %w", err)
 		}
 	}
 	// Cache Parquet file metadata in memory so repeated queries against

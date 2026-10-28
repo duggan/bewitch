@@ -24,7 +24,7 @@ import (
 
 func newArchiveSchemaServer(t *testing.T) (*Server, *sql.DB, string) {
 	t.Helper()
-	database, err := db.Open(filepath.Join(t.TempDir(), "a.duckdb"), "", "")
+	database, err := db.Open(filepath.Join(t.TempDir(), "a.duckdb"), db.Options{})
 	if err != nil {
 		t.Fatalf("opening migrated db: %v", err)
 	}

@@ -14,7 +14,7 @@ import (
 // multi-select clear: it removes exactly the one row, 404s when it's already gone,
 // leaves other rows untouched, and 400s on a non-numeric id.
 func TestHandleDeleteAlert(t *testing.T) {
-	database, err := db.Open(filepath.Join(t.TempDir(), "del.duckdb"), "", "")
+	database, err := db.Open(filepath.Join(t.TempDir(), "del.duckdb"), db.Options{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

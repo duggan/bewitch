@@ -34,14 +34,13 @@ type Store struct {
 	bufDropped      int    // samples dropped because the pause buffer hit its cap (reset each resume)
 	bufDroppedTotal uint64 // lifetime accumulator (never reset) for self-metrics
 	paused          bool
-	opMu            sync.Mutex // prevents concurrent maintenance/compaction
+	opMu            sync.Mutex   // prevents concurrent maintenance/compaction
 	writeGate       sync.RWMutex // see AcquireWrite; held exclusively by Compact
 
 	// DuckDB settings re-applied when compaction reopens the database (they are
 	// per-instance and reset to defaults on a fresh connection pool). Set via
 	// SetCompactionReopenOptions; empty (the test default) reopens with no PRAGMAs.
-	reopenCheckpointThreshold string
-	reopenMemoryLimit         string
+	reopenOpts db.Options
 
 	// Dimension ID caches (category -> value -> id)
 	dimCache   map[string]map[string]int16
@@ -611,17 +610,17 @@ func quoteLiteral(s string) string {
 
 // SetCompactionReopenOptions records the DuckDB settings to re-apply when a
 // compaction reopens the database after swapping in the compacted file, so
-// memory_limit / temp_directory / checkpoint settings survive the reopen.
-func (s *Store) SetCompactionReopenOptions(checkpointThreshold, memoryLimit string) {
-	s.reopenCheckpointThreshold = checkpointThreshold
-	s.reopenMemoryLimit = memoryLimit
+// memory_limit / threads / temp_directory / checkpoint settings survive the
+// reopen.
+func (s *Store) SetCompactionReopenOptions(opts db.Options) {
+	s.reopenOpts = opts
 }
 
 // reopenLocked reopens s.db from path with the recorded settings. The caller
 // must hold s.mu. Used on compaction-swap error paths so the store is left with
 // a working handle after the original file is restored.
 func (s *Store) reopenLocked(path string) {
-	newDB, err := db.Reopen(path, s.reopenCheckpointThreshold, s.reopenMemoryLimit)
+	newDB, err := db.Reopen(path, s.reopenOpts)
 	if err != nil {
 		log.Errorf("reopen after failed compaction swap: %v", err)
 		return
@@ -735,7 +734,7 @@ func (s *Store) Compact(dbPath string) error {
 
 	// Reopen the database, re-applying the runtime settings (memory_limit etc.)
 	// that a fresh DuckDB connection pool would otherwise reset to defaults.
-	newDB, err := db.Reopen(dbPath, s.reopenCheckpointThreshold, s.reopenMemoryLimit)
+	newDB, err := db.Reopen(dbPath, s.reopenOpts)
 	if err != nil {
 		os.Rename(backupPath, dbPath) // restore original
 		s.reopenLocked(dbPath)

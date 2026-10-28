@@ -113,7 +113,7 @@ func TestPrometheusIncludesCustom(t *testing.T) {
 }
 
 func TestHandleHistoryCustom(t *testing.T) {
-	database, err := db.Open(filepath.Join(t.TempDir(), "custom.duckdb"), "", "")
+	database, err := db.Open(filepath.Join(t.TempDir(), "custom.duckdb"), db.Options{})
 	if err != nil {
 		t.Fatalf("open migrated db: %v", err)
 	}

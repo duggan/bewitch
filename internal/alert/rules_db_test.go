@@ -15,7 +15,7 @@ import (
 func newRuleTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "rules.duckdb")
-	database, err := db.Open(dbPath, "", "")
+	database, err := db.Open(dbPath, db.Options{})
 	if err != nil {
 		t.Fatalf("opening migrated db: %v", err)
 	}

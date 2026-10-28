@@ -19,7 +19,7 @@ import (
 // references — and confirms MAX(uncorrected) > 0 fires.
 func TestECCAlertFires(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "ecc.duckdb")
-	database, err := db.Open(dbPath, "", "")
+	database, err := db.Open(dbPath, db.Options{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -376,6 +377,20 @@ func TestDaemonConfigDurations(t *testing.T) {
 		}
 		if DefaultDBMemoryLimit == "" {
 			t.Error("DefaultDBMemoryLimit must not be empty")
+		}
+	})
+
+	t.Run("DBThreadsValue", func(t *testing.T) {
+		want := min(runtime.NumCPU(), DefaultDBThreads)
+		for _, n := range []int{0, -1} {
+			c := DaemonConfig{DBThreads: n}
+			if got := c.DBThreadsValue(); got != want {
+				t.Errorf("db_threads = %d: got %d, want min(cores, %d) = %d", n, got, DefaultDBThreads, want)
+			}
+		}
+		set := DaemonConfig{DBThreads: 12}
+		if got := set.DBThreadsValue(); got != 12 {
+			t.Errorf("configured db_threads = %d, want 12", got)
 		}
 	})
 

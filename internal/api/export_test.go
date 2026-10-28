@@ -19,7 +19,7 @@ import (
 func exportTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	base := t.TempDir()
-	database, err := db.Open(filepath.Join(t.TempDir(), "export.duckdb"), "", "")
+	database, err := db.Open(filepath.Join(t.TempDir(), "export.duckdb"), db.Options{})
 	if err != nil {
 		t.Fatalf("opening migrated db: %v", err)
 	}

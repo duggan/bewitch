@@ -46,6 +46,7 @@ db_path = "/var/lib/bewitch/bewitch.duckdb"
 # log_level = "info"        # debug, info, warn, error
 # default_interval = "5s"   # collection interval for collectors without their own (min 100ms)
 # db_memory_limit = "512MB" # cap on DuckDB's working memory; big queries spill to disk
+# db_threads = 4            # DuckDB worker threads (default: cores, up to 4)
 # export_dir = "/var/lib/bewitch"  # where export and snapshot files may be written (default: the db_path directory)
 # sources_dir = "/etc/sources.d"   # drop-in custom-source files (default: sources.d next to the config file)
 # mock = false              # synthetic data for macOS TUI development
@@ -54,6 +55,11 @@ db_path = "/var/lib/bewitch/bewitch.duckdb"
 `db_memory_limit` defaults to `512MB` rather than DuckDB's own default of about 80% of RAM. Large
 queries, exports and archive runs spill to a `duckdb_tmp` directory next to the database instead.
 Raise it on a big host if you run heavy queries.
+
+`db_threads` caps DuckDB's worker threads at the number of cores, up to 4. DuckDB's own default is
+one per core, and each worker holds its own buffers while archiving or compacting, so on a 16-core
+host the daemon's memory briefly passed 1 GB during those runs. Raise it if queries over long
+archived ranges feel slow and you have memory to spare.
 
 `export_dir` confines the files that `bewitch snapshot`, the REPL's `.export` and the export API
 can write: paths must be absolute, inside this directory, and must not already exist.

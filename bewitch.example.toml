@@ -25,6 +25,8 @@ db_path = "/var/lib/bewitch/bewitch.duckdb"
 # db_memory_limit = "512MB"  # cap DuckDB working memory; default "512MB". Large queries,
                              # exports, and archives spill to disk (duckdb_tmp next to db_path)
                              # instead of OOM-killing the daemon. Raise on big hosts with spare RAM.
+# db_threads = 4  # DuckDB worker threads; default min(cores, 4). Bounds peak memory while
+                  # archiving and compacting; raise for faster queries over long archives.
 # checkpoint_interval = "5m"  # forced checkpoint interval for crash safety; empty = disabled
 # archive_threshold = "7d"  # archive data older than this to Parquet; empty = disabled
 # archive_interval = "6h"  # how often to run archive; default "6h"

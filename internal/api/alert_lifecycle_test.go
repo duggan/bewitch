@@ -19,7 +19,7 @@ import (
 // helper to set the current disk usage percent.
 func lifecycleSetup(t *testing.T, ruleName string) (*sql.DB, *alert.Engine, func(pct int)) {
 	t.Helper()
-	database, err := db.Open(filepath.Join(t.TempDir(), "lifecycle.duckdb"), "", "")
+	database, err := db.Open(filepath.Join(t.TempDir(), "lifecycle.duckdb"), db.Options{})
 	if err != nil {
 		t.Fatalf("opening migrated db: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestAckDoesNotRefire(t *testing.T) {
 
 // TestDeadMansSwitch fires when cpu collection has stalled and resolves when it resumes.
 func TestDeadMansSwitch(t *testing.T) {
-	database, err := db.Open(filepath.Join(t.TempDir(), "deadman.duckdb"), "", "")
+	database, err := db.Open(filepath.Join(t.TempDir(), "deadman.duckdb"), db.Options{})
 	if err != nil {
 		t.Fatalf("opening migrated db: %v", err)
 	}

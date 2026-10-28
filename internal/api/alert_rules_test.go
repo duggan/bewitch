@@ -16,7 +16,7 @@ import (
 // schema production uses (rather than a hand-rolled subset that can silently drift).
 func alertRulesDB(t *testing.T) *sql.DB {
 	t.Helper()
-	database, err := db.Open(filepath.Join(t.TempDir(), "alerts.duckdb"), "", "")
+	database, err := db.Open(filepath.Join(t.TempDir(), "alerts.duckdb"), db.Options{})
 	if err != nil {
 		t.Fatalf("opening migrated DuckDB: %v", err)
 	}

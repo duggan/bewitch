@@ -85,7 +85,7 @@ func TestThresholdAggregateColumnDefault(t *testing.T) {
 // threshold, same data — correctly ignores. This is the whole point of the feature.
 func TestThresholdAggregateMaxVsAvg(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "agg.duckdb")
-	database, err := db.Open(dbPath, "", "")
+	database, err := db.Open(dbPath, db.Options{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

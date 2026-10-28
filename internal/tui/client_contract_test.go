@@ -20,7 +20,7 @@ import (
 // wrong URL, verb, or serialization), this exercises the full HTTP round-trip for the
 // alert-rule CRUD + ack the TUI depends on, so client/server drift is caught.
 func TestDaemonClientAlertContract(t *testing.T) {
-	database, err := db.Open(filepath.Join(t.TempDir(), "contract.duckdb"), "", "")
+	database, err := db.Open(filepath.Join(t.TempDir(), "contract.duckdb"), db.Options{})
 	if err != nil {
 		t.Fatalf("opening migrated db: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestDaemonClientAlertContract(t *testing.T) {
 // (catalog, live metrics/status, history) against the real handlers, catching
 // client/server drift on the Services-tab endpoints.
 func TestDaemonClientCustomContract(t *testing.T) {
-	database, err := db.Open(filepath.Join(t.TempDir(), "custom-contract.duckdb"), "", "")
+	database, err := db.Open(filepath.Join(t.TempDir(), "custom-contract.duckdb"), db.Options{})
 	if err != nil {
 		t.Fatalf("opening migrated db: %v", err)
 	}

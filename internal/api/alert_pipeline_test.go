@@ -26,7 +26,7 @@ import (
 // 201.
 func TestAlertPipelineEndToEnd(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "pipeline.duckdb")
-	database, err := db.Open(dbPath, "", "")
+	database, err := db.Open(dbPath, db.Options{})
 	if err != nil {
 		t.Fatalf("opening migrated db: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestAlertPipelineEndToEnd(t *testing.T) {
 // does not breach is updated to a threshold that does, and the next evaluation fires.
 func TestUpdatedRuleReloadsAndFires(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "update_pipeline.duckdb")
-	database, err := db.Open(dbPath, "", "")
+	database, err := db.Open(dbPath, db.Options{})
 	if err != nil {
 		t.Fatalf("opening migrated db: %v", err)
 	}

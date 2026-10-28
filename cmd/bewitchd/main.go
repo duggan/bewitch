@@ -82,19 +82,24 @@ func main() {
 		log.Warn(warn)
 	}
 
-	database, err := db.Open(cfg.Daemon.DBPath, cfg.Daemon.CheckpointThreshold, cfg.Daemon.DBMemoryLimitValue())
+	dbOpts := db.Options{
+		CheckpointThreshold: cfg.Daemon.CheckpointThreshold,
+		MemoryLimit:         cfg.Daemon.DBMemoryLimitValue(),
+		Threads:             cfg.Daemon.DBThreadsValue(),
+	}
+	database, err := db.Open(cfg.Daemon.DBPath, dbOpts)
 	if err != nil {
 		log.Fatalf("opening database: %v", err)
 	}
 	if cfg.Daemon.CheckpointThreshold != "" {
 		log.Infof("checkpoint threshold: %s", cfg.Daemon.CheckpointThreshold)
 	}
-	log.Infof("DuckDB memory limit: %s", cfg.Daemon.DBMemoryLimitValue())
+	log.Infof("DuckDB memory limit: %s, threads: %d", dbOpts.MemoryLimit, dbOpts.Threads)
 
 	st := store.New(database)
 	// Re-apply the same DuckDB settings when a compaction reopens the database
 	// (they reset to defaults on the fresh connection pool otherwise).
-	st.SetCompactionReopenOptions(cfg.Daemon.CheckpointThreshold, cfg.Daemon.DBMemoryLimitValue())
+	st.SetCompactionReopenOptions(dbOpts)
 	defer st.DB().Close()
 
 	// Initialize collectors
