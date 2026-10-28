@@ -71,9 +71,15 @@ if [ "${BASELINE:-0}" = 1 ]; then
   # Checks covering bugs fixed since then must FAIL here, proving they detect them.
   echo "BASELINE=1: skipping the upgrade; expect failures"
 else
-  apt-get install -y "$DEB" 2>&1 | tail -5
+  # --allow-downgrades: right after a release, a dev build (0.10.1~dev...)
+  # sorts below the stable package (0.10.1-1) installed above, and apt would
+  # refuse it, leaving every check below testing the old release.
+  apt-get install -y --allow-downgrades "$DEB" 2>&1 | tail -5
 fi
 dpkg-query -W bewitch
+if [ "${BASELINE:-0}" != 1 ]; then
+  check "the built package is the one installed" test "$(dpkg-query -W -f='${Version}' bewitch)" = "$(dpkg-deb -f "$DEB" Version)"
+fi
 echo "::endgroup::"
 
 echo "::group::Service and sandbox"
