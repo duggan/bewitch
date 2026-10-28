@@ -30,10 +30,9 @@ jobs:
       - name: Compute dev version
         id: version
         run: |
-          BASE=$(cat VERSION)
           TS=$(date -u +%Y%m%d%H%M%S)
           SHA=$(git rev-parse --short HEAD)
-          echo "version=${BASE}~dev.${TS}.${SHA}" >> "$GITHUB_OUTPUT"
+          echo "version=$(scripts/build-version.sh "dev.${TS}.${SHA}")" >> "$GITHUB_OUTPUT"
 
       - name: Build artifacts
         run: >-

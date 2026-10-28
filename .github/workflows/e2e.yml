@@ -30,9 +30,8 @@ jobs:
       - name: Compute version
         id: version
         run: |
-          BASE=$(cat VERSION)
           SHA=$(git rev-parse --short HEAD)
-          echo "version=${BASE}~e2e.${SHA}" >> "$GITHUB_OUTPUT"
+          echo "version=$(scripts/build-version.sh "e2e.${SHA}")" >> "$GITHUB_OUTPUT"
 
       - name: Build artifacts
         run: >-

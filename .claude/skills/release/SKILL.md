@@ -40,7 +40,7 @@ The main site (changelog, version dropdown) deploys automatically via `deploy-si
 
 Two version files at the repo root:
 
-- **`VERSION`** — the current version. Injected into both Go binaries at build time via `-ldflags "-X main.version=..."`. Both binaries support `--version`; `bewitch` also supports the `version` subcommand. Between releases, this is bumped to the next expected version.
+- **`VERSION`** — the current version. Injected into both Go binaries at build time via `-ldflags "-X main.version=..."`. Both binaries support `--version`; `bewitch` also supports the `version` subcommand. Between releases, this is bumped to the next expected version (step 6 below) — `scripts/build-version.sh` derives dev/VM-test package versions from it.
 - **`LATEST_STABLE`** — the latest stable release version. Used by the docs site to determine the version dropdown label. Updated only during a release (matches `VERSION` at release time, falls behind when `VERSION` is bumped for the next dev cycle).
 
 When `VERSION` differs from `LATEST_STABLE`, the docs site shows a `-dev` entry at `/docs/dev` and the `deploy-site.yml` workflow uploads dev docs to R2. When they match, only stable docs are shown.
@@ -58,3 +58,4 @@ When invoked:
 3. Commit all changes
 4. Tag the release as `v<version>`
 5. Ask the user if they want to push now. If yes, run `git push origin main v<version>`
+6. **Right after the release, begin the next dev cycle**: set `VERSION` to the next expected version (usually the next minor, e.g. `0.10.1` → `0.11.0`; leave `LATEST_STABLE` alone) and commit it as `Begin <next> development`, then push it with the user's go-ahead. Dev and VM-test builds are versioned `<VERSION>~dev…`/`~vmtest…`, and `~` sorts *before* the release, so without the bump they would sort below the stable package just published (dev-channel hosts never upgrade; the VM test can't install its build). `scripts/build-version.sh` falls back to `+` when `VERSION == LATEST_STABLE`, so a missed bump still builds upgradeable packages, but do the bump anyway.

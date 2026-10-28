@@ -33,7 +33,7 @@ jobs:
 
       - name: Compute version
         id: version
-        run: echo "version=$(cat VERSION)~vmtest.$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(scripts/build-version.sh "vmtest.$(git rev-parse --short HEAD)")" >> "$GITHUB_OUTPUT"
 
       - name: Build package
         run: >-
