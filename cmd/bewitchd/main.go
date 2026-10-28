@@ -1102,7 +1102,11 @@ func runRAPLAccess(args []string) {
 	if err != nil {
 		log.Fatalf("rapl-access: %v", err)
 	}
-	if n > 0 {
-		log.Infof("rapl-access: %d RAPL energy counters readable by group %s", n, *group)
+	// Always log one line: it's how an install (and the VM test) can tell the
+	// step ran, since systemd forgets ExecStartPre status on daemon-reload.
+	if n == 0 {
+		log.Infof("rapl-access: no RAPL energy counters on this host")
+		return
 	}
+	log.Infof("rapl-access: %d RAPL energy counters readable by group %s", n, *group)
 }

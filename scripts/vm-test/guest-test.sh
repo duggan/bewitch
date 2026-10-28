@@ -93,12 +93,10 @@ check "bewitchd does not hold CAP_SYS_ADMIN (CapEff=$CAPEFF)" test $(( (0x$CAPEF
 # The unit's root ExecStartPre grants the bewitch group read access to the RAPL
 # counters; the VM has none, but the step must still run and exit 0 so it can't
 # block a start on stock Debian.
-rapl_access_ok() {
-  systemctl show bewitchd -p ExecStartPre | grep -q 'rapl-access.*code=exited ; status=0 }' && return 0
-  systemctl show bewitchd -p ExecStartPre
-  journalctl -u bewitchd -b --no-pager | grep -i 'rapl-access' | tail -5
-  return 1
-}
+# The VM has no RAPL, so it must log the "no counters" line (and no failure).
+# Checked in the journal: systemd drops ExecStartPre status on daemon-reload,
+# which the package upgrade triggers after the restart.
+rapl_access_ok() { since_upgrade | grep -q 'rapl-access: no RAPL energy counters'; }
 check "rapl-access start step ran and succeeded" rapl_access_ok
 check "API responds" wait_for 30 sh -c "curl -fsS --unix-socket $SOCK http://x/api/status | jq -e '.status == \"ok\"'"
 echo "::endgroup::"
