@@ -9,6 +9,19 @@ group = "Reference"
 
 All notable changes to bewitch are documented here. See the full [CHANGELOG.md](https://github.com/duggan/bewitch/blob/main/CHANGELOG.md) on GitHub.
 
+## 0.11.0
+
+2026-10-29
+
+### Added
+
+- **`[daemon] db_threads`** — caps DuckDB's worker threads; when unset it's the number of cores, up to 4. DuckDB's default of one per core raised peak memory during archiving and compaction on many-core hosts (on a 16-core host the peak fell from about 1 GB to about 860 MB)
+
+### Fixed
+
+- **Power monitoring on Debian** — the packaged service recorded no power data on Debian 12/13. Debian's kernel requires `CAP_SYS_ADMIN` for perf events at its default `perf_event_paranoid = 3`, so the `CAP_PERFMON` route added in 0.9.0 only worked on Ubuntu and on hosts with a lowered setting. The service now runs `bewitchd rapl-access` as root before starting, which lets the `bewitch` group read the RAPL energy counters; the daemon itself gains no capability
+- **Development packages sort after the release they follow** — after a release, dev-channel builds were versioned below it, so apt wouldn't upgrade dev-channel hosts to them
+
 ## 0.10.1
 
 2026-10-27
