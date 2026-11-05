@@ -17,6 +17,11 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "Deps"
+    ignore:
+      # charmbracelet/x's exp/teatest/v0.1.0 tag doesn't resolve as a module
+      # version ("unknown revision"), so this one update failed every run.
+      - dependency-name: "github.com/charmbracelet/x/exp/teatest"
+        versions: ["0.1.0"]
     groups:
       # DuckDB gets its own PR: a duckdb-go "minor" bump can carry a new DuckDB
       # engine (and storage format), which needs migration/archive/compaction
