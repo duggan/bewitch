@@ -54,8 +54,12 @@ Version vs revision:
 When invoked:
 
 1. Run `/changelog <version>` to update all changelogs (`CHANGELOG.md`, `site/content/docs/changelog.md`, `debian/changelog`)
-2. Update `VERSION` and `LATEST_STABLE` files with the new version (note: `VERSION` is often already at the target version from the previous release's dev-cycle bump — in that case only `LATEST_STABLE` changes)
+2. Update `VERSION` and `LATEST_STABLE` files with the new version (note: `VERSION` is often already at the target version from the previous release's dev-cycle bump — in that case only `LATEST_STABLE` changes; for a patch release, `VERSION` goes *down* temporarily and step 6 restores it)
 3. Commit all changes
 4. Tag the release as `v<version>`
 5. Ask the user if they want to push now. If yes, run `git push origin main v<version>`
-6. **Right after the release, begin the next dev cycle**: set `VERSION` to the next expected version (usually the next minor, e.g. `0.10.1` → `0.11.0`; leave `LATEST_STABLE` alone) and commit it as `Begin <next> development`, then push it with the user's go-ahead. Dev and VM-test builds are versioned `<VERSION>~dev…`/`~vmtest…`, and `~` sorts *before* the release, so without the bump they would sort below the stable package just published (dev-channel hosts never upgrade; the VM test can't install its build). `scripts/build-version.sh` falls back to `+` when `VERSION == LATEST_STABLE`, so a missed bump still builds upgradeable packages, but do the bump anyway.
+6. **Right after the release, begin (or resume) the dev cycle**: set `VERSION` to the version main is working towards and commit it as `Begin <next> development` (leave `LATEST_STABLE` alone), then push it with the user's go-ahead.
+   - After a normal release, that's the next minor (e.g. `0.11.0` → `0.12.0`).
+   - **After a patch release cut mid-cycle** (main was already at, say, `0.12.0` and you set `VERSION` down to `0.11.1` to release it), set `VERSION` back to the in-progress `0.12.0`, **not** forward to `0.11.2`. Dev hosts already run `0.12.0~dev…`, and anything versioned `0.11.x…` sorts below that, so they'd stop receiving dev builds until the next real bump.
+
+   Why it matters: dev and VM-test builds are versioned `<VERSION>~dev…`/`~vmtest…`, and `~` sorts *before* the release, so without the bump they would sort below the stable package just published (dev-channel hosts never upgrade; the VM test can't install its build). `scripts/build-version.sh` falls back to `+` when `VERSION == LATEST_STABLE`, so a missed bump still builds upgradeable packages, but do the bump anyway.
