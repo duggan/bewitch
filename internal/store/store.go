@@ -546,6 +546,16 @@ func (s *Store) PruneExclusive(retention time.Duration) error {
 }
 
 // CompactExclusive runs Compact with exclusive access (blocks maintenance).
+// newFileStorageVersion is the DuckDB file format for the database files bewitch
+// creates (the compacted replacement and snapshots). DuckDB writes new files in
+// its newest format, which older DuckDB can't open; compaction runs after every
+// archive, so without this an upgrade to a bewitch on a newer DuckDB couldn't be
+// rolled back within hours ("database file with version number 69, but we can
+// only read versions between 64 and 68"). Opening and writing an existing file
+// keeps its format. Raise it once rolling back to the previous DuckDB no longer
+// matters.
+const newFileStorageVersion = "v1.5.0"
+
 func (s *Store) CompactExclusive(dbPath string) error {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
@@ -645,7 +655,7 @@ func (s *Store) Compact(dbPath string) error {
 	os.Remove(tmpPath)
 
 	// Attach a fresh database
-	if _, err := s.db.Exec(fmt.Sprintf("ATTACH '%s' AS compact_db", quoteLiteral(tmpPath))); err != nil {
+	if _, err := s.db.Exec(fmt.Sprintf("ATTACH '%s' AS compact_db (STORAGE_VERSION '%s')", quoteLiteral(tmpPath), newFileStorageVersion)); err != nil {
 		return fmt.Errorf("attach compact db: %w", err)
 	}
 
@@ -778,7 +788,7 @@ func (s *Store) Snapshot(snapshotPath, archivePath string, withSystemTables bool
 	// Clean up any leftover file
 	os.Remove(snapshotPath)
 
-	if _, err := s.db.Exec(fmt.Sprintf("ATTACH '%s' AS snap_db", quoteLiteral(snapshotPath))); err != nil {
+	if _, err := s.db.Exec(fmt.Sprintf("ATTACH '%s' AS snap_db (STORAGE_VERSION '%s')", quoteLiteral(snapshotPath), newFileStorageVersion)); err != nil {
 		return fmt.Errorf("attach snapshot db: %w", err)
 	}
 
