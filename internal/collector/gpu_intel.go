@@ -2,6 +2,7 @@ package collector
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,15 +11,18 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/charmbracelet/log"
 )
 
 // intelGPUSample is the JSON structure emitted by intel_gpu_top -J.
 type intelGPUSample struct {
-	Period    *intelPeriod              `json:"period"`
-	Frequency *intelFrequency          `json:"frequency"`
-	RC6       *intelRC6                `json:"rc6"`
+	Period    *intelPeriod               `json:"period"`
+	Frequency *intelFrequency            `json:"frequency"`
+	RC6       *intelRC6                  `json:"rc6"`
 	Power     map[string]json.RawMessage `json:"power"`
-	Engines   map[string]*intelEngine  `json:"engines"`
+	Engines   map[string]*intelEngine    `json:"engines"`
 }
 
 type intelPeriod struct {
@@ -46,13 +50,33 @@ type intelGPUBackend struct {
 	toolPath string
 	gpuName  string // detected GPU name from DRM sysfs
 
-	mu       sync.Mutex
-	cmd      *exec.Cmd
-	latest   *intelGPUSample
+	mu        sync.Mutex
+	cmd       *exec.Cmd
+	latest    *intelGPUSample
 	seenFirst bool // first sample is discarded (no deltas)
-	running  bool
-	stopCh   chan struct{}
-	doneCh   chan struct{}
+	running   bool
+	stopping  bool
+	stopCh    chan struct{}
+	doneCh    chan struct{}
+
+	// Set by readLoop once the process has ended and been reaped.
+	exited  bool
+	exitMsg string
+	// Restart backoff after the tool exits: a host where it can't run (no
+	// permission for the i915 PMU) would otherwise relaunch it every tick.
+	failures int
+	retryAt  time.Time
+	lastWarn string
+	now      func() time.Time
+}
+
+// intelRestartBackoff is the wait before relaunching intel_gpu_top after its
+// n-th consecutive exit: 1m, doubling, capped at 1h.
+func intelRestartBackoff(n int) time.Duration {
+	if n > 7 {
+		return time.Hour
+	}
+	return min(time.Minute<<(n-1), time.Hour)
 }
 
 func newIntelGPUBackend() *intelGPUBackend {
@@ -72,34 +96,89 @@ func newIntelGPUBackend() *intelGPUBackend {
 		gpuName:  name,
 		stopCh:   make(chan struct{}),
 		doneCh:   make(chan struct{}),
+		now:      time.Now,
 	}
 }
 
 func (b *intelGPUBackend) start() error {
-	b.cmd = exec.Command(b.toolPath, "-J", "-s", "1000")
-	b.cmd.Stderr = nil // discard stderr
+	cmd := exec.Command(b.toolPath, "-J", "-s", "1000")
+	// Keep the end of stderr: when the tool fails it says why there
+	// ("Failed to initialize PMU! (Permission denied)").
+	stderr := &tailBuffer{max: 2048}
+	cmd.Stderr = stderr
 
-	stdout, err := b.cmd.StdoutPipe()
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("stdout pipe: %w", err)
 	}
 
-	if err := b.cmd.Start(); err != nil {
+	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start intel_gpu_top: %w", err)
 	}
 
+	b.cmd = cmd
 	b.running = true
+	b.exited = false
 	b.seenFirst = false
+	b.latest = nil
 	b.doneCh = make(chan struct{})
 
-	go b.readLoop(stdout)
+	go b.readLoop(cmd, stdout, stderr, b.doneCh)
 	return nil
+}
+
+// tailBuffer keeps the last max bytes written to it.
+type tailBuffer struct {
+	max int
+	buf []byte
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > t.max {
+		t.buf = t.buf[len(t.buf)-t.max:]
+	}
+	return len(p), nil
+}
+
+// describeIntelExit turns the process's exit into one log line, with a hint
+// when it couldn't open the i915 PMU.
+func describeIntelExit(waitErr error, stderr []byte) string {
+	msg := ""
+	for _, line := range bytes.Split(stderr, []byte("\n")) {
+		if l := strings.TrimSpace(string(line)); l != "" {
+			msg = l // first non-empty line names the failure
+			break
+		}
+	}
+	if msg == "" {
+		msg = "exited"
+		if waitErr != nil {
+			msg = waitErr.Error()
+		}
+	}
+	if bytes.Contains(stderr, []byte("Permission denied")) {
+		msg += " (reading the i915 PMU needs CAP_PERFMON, or CAP_SYS_ADMIN where kernel.perf_event_paranoid > 2; Debian's default is 3)"
+	}
+	return msg
 }
 
 // readLoop reads JSON objects from intel_gpu_top's stdout stream.
 // intel_gpu_top outputs a stream of JSON objects (one per period).
-func (b *intelGPUBackend) readLoop(r io.Reader) {
-	defer close(b.doneCh)
+func (b *intelGPUBackend) readLoop(cmd *exec.Cmd, r io.Reader, stderr *tailBuffer, done chan struct{}) {
+	defer close(done)
+	// Reap the process whichever way the loop ends. Without Wait the process
+	// stayed a zombie and ProcessState was never set, so a dead intel_gpu_top
+	// looked alive forever and GPU data silently stopped.
+	defer func() {
+		waitErr := cmd.Wait()
+		b.mu.Lock()
+		if !b.stopping {
+			b.exited = true
+			b.exitMsg = describeIntelExit(waitErr, stderr.buf)
+		}
+		b.mu.Unlock()
+	}()
 
 	scanner := bufio.NewScanner(r)
 	// intel_gpu_top outputs one JSON object per sample, each on its own set of lines.
@@ -169,8 +248,25 @@ func (b *intelGPUBackend) read() ([]GPUDeviceSample, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	if b.exited {
+		b.exited = false
+		b.running = false
+		b.latest = nil
+		b.failures++
+		delay := intelRestartBackoff(b.failures)
+		b.retryAt = b.now().Add(delay)
+		if b.exitMsg != b.lastWarn {
+			log.Warnf("gpu: intel_gpu_top exited: %s; retrying in %v", b.exitMsg, delay)
+			b.lastWarn = b.exitMsg
+		}
+		return nil, fmt.Errorf("intel_gpu_top exited: %s", b.exitMsg)
+	}
+
 	// Start subprocess if not running
 	if !b.running {
+		if b.now().Before(b.retryAt) {
+			return nil, nil
+		}
 		if err := b.start(); err != nil {
 			return nil, err
 		}
@@ -178,16 +274,11 @@ func (b *intelGPUBackend) read() ([]GPUDeviceSample, error) {
 		return nil, nil
 	}
 
-	// Check if process died
-	if b.cmd != nil && b.cmd.ProcessState != nil && b.cmd.ProcessState.Exited() {
-		b.running = false
-		// Will restart on next call
-		return nil, fmt.Errorf("intel_gpu_top exited")
-	}
-
 	if b.latest == nil {
 		return nil, nil // no data yet
 	}
+	b.failures = 0
+	b.lastWarn = ""
 
 	s := b.latest
 
@@ -237,19 +328,23 @@ func (b *intelGPUBackend) read() ([]GPUDeviceSample, error) {
 }
 
 func (b *intelGPUBackend) stop() {
+	// Don't hold mu while waiting for readLoop: it takes mu to publish samples
+	// and to record the exit, so waiting under the lock could deadlock.
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	if !b.running {
+		b.mu.Unlock()
 		return
 	}
-
-	close(b.stopCh)
-	if b.cmd != nil && b.cmd.Process != nil {
-		b.cmd.Process.Kill()
-	}
-	<-b.doneCh
+	b.stopping = true
 	b.running = false
+	cmd, done := b.cmd, b.doneCh
+	close(b.stopCh)
+	b.mu.Unlock()
+
+	if cmd != nil && cmd.Process != nil {
+		cmd.Process.Kill()
+	}
+	<-done
 }
 
 // detectIntelGPUName checks DRM sysfs for an Intel GPU and returns its name.

@@ -140,11 +140,12 @@ empty.
 
 | GPU | Source | Requires |
 | --- | --- | --- |
-| Intel iGPU | `intel_gpu_top -J`, kept running | `intel-gpu-tools` package, `CAP_PERFMON` |
+| Intel iGPU | `intel_gpu_top -J`, kept running | `intel-gpu-tools` package, `CAP_PERFMON` (on Debian, see below) |
 | NVIDIA | `nvidia-smi` queries (10s timeout) | NVIDIA driver with `nvidia-smi` |
 | AMD | `amdgpu` sysfs (`/sys/class/drm/card*/device/`) | Nothing extra |
 
 - **Intel:** utilization (busiest engine), clock, power. Memory isn't reported (it's shared system memory). The first reading is a baseline.
+- **Intel on Debian:** `intel_gpu_top` reads the GPU's perf events. Debian's kernels default to `kernel.perf_event_paranoid = 3`, which requires `CAP_SYS_ADMIN` for those, and the packaged service doesn't grant it. Intel GPU readings stay empty, and the daemon logs `gpu: intel_gpu_top exited: Failed to initialize PMU! (Permission denied)`. Setting `kernel.perf_event_paranoid = 2`, the upstream kernel default, lets `CAP_PERFMON` work (for example `echo kernel.perf_event_paranoid=2 > /etc/sysctl.d/60-perf.conf && sysctl --system`). Ubuntu's default already allows it. When `intel_gpu_top` exits, the daemon retries after 1 minute, doubling up to 1 hour.
 - **NVIDIA:** utilization, memory used/total, temperature, power, clock.
 - **AMD:** utilization, VRAM used/total, temperature, power, clock, read straight from the driver with no extra tools.
 - **Storage:** `gpu_metrics`
