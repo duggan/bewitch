@@ -80,3 +80,46 @@ func TestArchiveChunkedExportAndDelete(t *testing.T) {
 		t.Errorf("rows in parquet = %d, want 3", total)
 	}
 }
+
+// TestArchiveMidnightRows: archive days are [midnight, next midnight). With the
+// old (start, end] ranges a row exactly at midnight of the oldest day was never
+// exported, and later midnight rows were filed under the previous day. It only
+// showed when TestArchiveChunkedExportAndDelete ran between 00:00 and 01:00 UTC
+// (its hour-truncated timestamps landed on midnight); this test always does.
+func TestArchiveMidnightRows(t *testing.T) {
+	s := newPruneTestStore(t)
+	archiveDir := filepath.Join(t.TempDir(), "archive")
+
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	var dates []string
+	for _, d := range []int{10, 9, 8} {
+		ts := today.AddDate(0, 0, -d)
+		dates = append(dates, ts.Format("2006-01-02"))
+		if _, err := s.db.Exec(`INSERT INTO memory_metrics (ts, total_bytes, used_bytes) VALUES (?, ?, ?)`,
+			ts, 2_000_000_000, 1_000_000_000); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Archive(archiveDir, 7*24*time.Hour); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+
+	var remaining int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM memory_metrics`).Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining != 0 {
+		t.Errorf("%d midnight rows left in DuckDB, want 0", remaining)
+	}
+	for _, date := range dates {
+		var n int
+		path := filepath.Join(archiveDir, "memory_metrics", date+".parquet")
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM read_parquet(?)`, path).Scan(&n); err != nil {
+			t.Errorf("%s: %v", date, err)
+			continue
+		}
+		if n != 1 {
+			t.Errorf("%s.parquet has %d rows, want its own midnight row", date, n)
+		}
+	}
+}

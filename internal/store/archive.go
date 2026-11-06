@@ -98,7 +98,7 @@ func (s *Store) archiveTable(table, archivePath string, cutoff time.Time) error 
 	// Check if there's data to archive
 	var nullMinTs, nullMaxTs sql.NullTime
 	var count int64
-	query := fmt.Sprintf("SELECT MIN(ts), MAX(ts), COUNT(*) FROM %s WHERE ts > ? AND ts <= ?", table)
+	query := fmt.Sprintf("SELECT MIN(ts), MAX(ts), COUNT(*) FROM %s WHERE ts >= ? AND ts < ?", table)
 	if err := s.db.QueryRow(query, lastArchived, cutoff).Scan(&nullMinTs, &nullMaxTs, &count); err != nil {
 		return fmt.Errorf("query time range: %w", err)
 	}
@@ -114,6 +114,14 @@ func (s *Store) archiveTable(table, archivePath string, cutoff time.Time) error 
 		return fmt.Errorf("create archive dir: %w", err)
 	}
 
+	// Days are half-open, [midnight, next midnight), so a row exactly at
+	// midnight belongs to the day it's dated (and its file name), and
+	// archive_state's last_archived_ts means "every row before this is
+	// archived". With (start, end] a row exactly at midnight of the first day
+	// fell outside every range: it was never exported, and once archive_state
+	// moved past it, never revisited. Switching is safe for existing state: a row
+	// exactly at an old last_archived_ts was already archived and deleted.
+	//
 	// Group data by day. Each day is exported (unpaused, read-only) then its rows
 	// are deleted and archive_state advanced under a brief pause. Doing the work
 	// one day at a time keeps both the export-vs-writes overlap and each DELETE
@@ -145,7 +153,7 @@ func (s *Store) archiveTable(table, archivePath string, cutoff time.Time) error 
 		// for the brief delete.
 		ds, de := dayStart, dayEnd
 		if err := s.withPause(func() error {
-			result, err := s.db.Exec(fmt.Sprintf("DELETE FROM %s WHERE ts > ? AND ts <= ?", table), ds, de)
+			result, err := s.db.Exec(fmt.Sprintf("DELETE FROM %s WHERE ts >= ? AND ts < ?", table), ds, de)
 			if err != nil {
 				return fmt.Errorf("delete archived data: %w", err)
 			}
@@ -186,7 +194,7 @@ func (s *Store) exportToParquet(table, parquetPath string, start, end time.Time)
 		// Match columns by name: the existing file may predate a migration that
 		// added columns to the table (see ArchiveScan).
 		query := fmt.Sprintf(`COPY (
-			SELECT * FROM %s WHERE ts > ? AND ts <= ?
+			SELECT * FROM %s WHERE ts >= ? AND ts < ?
 			UNION ALL BY NAME
 			SELECT * FROM %s
 		) TO '%s' (FORMAT parquet, COMPRESSION zstd)`, table, ArchiveScan(table, ParquetLiteral(parquetPath)), quoteLiteral(tmpPath))
@@ -203,7 +211,7 @@ func (s *Store) exportToParquet(table, parquetPath string, start, end time.Time)
 		}
 	} else {
 		// Simple export - no existing file
-		query := fmt.Sprintf(`COPY (SELECT * FROM %s WHERE ts > ? AND ts <= ?) TO '%s' (FORMAT parquet, COMPRESSION zstd)`,
+		query := fmt.Sprintf(`COPY (SELECT * FROM %s WHERE ts >= ? AND ts < ?) TO '%s' (FORMAT parquet, COMPRESSION zstd)`,
 			table, parquetPath)
 
 		if _, err := s.db.Exec(query, start, end); err != nil {
