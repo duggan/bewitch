@@ -1,7 +1,6 @@
 package collector
 
 import (
-	"fmt"
 	"os/exec"
 	"time"
 )
@@ -73,7 +72,7 @@ func (c *GPUCollector) Collect() (Sample, error) {
 	}, nil
 }
 
-// Stop shuts down long-lived backend processes (e.g. intel_gpu_top).
+// Stop shuts down long-lived backend processes (none currently hold any).
 func (c *GPUCollector) Stop() {
 	for _, b := range c.backends {
 		b.stop()
@@ -85,12 +84,6 @@ func (c *GPUCollector) Stop() {
 // the required monitoring tool is not installed.
 func DetectGPUHints() []string {
 	var hints []string
-
-	if name := detectIntelGPUName(); name != "" {
-		if _, err := exec.LookPath("intel_gpu_top"); err != nil {
-			hints = append(hints, fmt.Sprintf("Intel GPU detected (%s) but intel_gpu_top not found. Install intel-gpu-tools to enable GPU monitoring.", name))
-		}
-	}
 
 	if detectNvidiaGPU() {
 		if _, err := exec.LookPath("nvidia-smi"); err != nil {

@@ -195,7 +195,7 @@ Each collector has its own section with an `interval` field. If omitted, the col
 
 [collectors.gpu]
 # interval = "5s"
-# enabled = true   # Intel (intel_gpu_top), NVIDIA (nvidia-smi), AMD (sysfs)
+# enabled = true   # Intel and AMD (sysfs, fdinfo), NVIDIA (nvidia-smi)
 
 [collectors.process]
 # interval = "5s"

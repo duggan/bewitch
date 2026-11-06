@@ -14,7 +14,7 @@
 # On other Linux: downloads a pre-built binary tarball and installs it.
 #
 # After installation, detects hardware and offers to install optional
-# monitoring tools (intel-gpu-tools, smartmontools, etc.).
+# monitoring tools (smartmontools, the NVIDIA driver).
 
 set -eu
 
@@ -49,14 +49,6 @@ ask() {
         return 1
     fi
     case "$answer" in [Yy]*) return 0 ;; *) return 1 ;; esac
-}
-
-has_intel_gpu() {
-    for d in /sys/class/drm/card*/device/driver; do
-        [ -e "$d" ] || continue
-        case "$(basename "$(readlink -f "$d")")" in i915|xe) return 0 ;; esac
-    done
-    return 1
 }
 
 has_nvidia_gpu() {
@@ -111,7 +103,6 @@ install_extras() {
 
     # Check for relevant hardware (show section if any GPU detected)
     if ! is_apt && ! command -v smartctl >/dev/null 2>&1; then _found=1; fi
-    if has_intel_gpu; then _found=1; fi
     if has_nvidia_gpu; then _found=1; fi
 
     # No relevant hardware detected
@@ -122,10 +113,6 @@ install_extras() {
 
     if ! is_apt; then
         offer_pkg smartctl smartmontools "disk SMART health"
-    fi
-
-    if has_intel_gpu; then
-        offer_pkg intel_gpu_top intel-gpu-tools "Intel GPU monitoring"
     fi
 
     if has_nvidia_gpu; then

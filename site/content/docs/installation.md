@@ -175,7 +175,6 @@ The installer detects hardware and offers to install optional monitoring tools.
 These can also be installed manually:
 
 - `smartmontools` — enhanced SMART disk health via `smartctl` (installed automatically on Debian/Ubuntu)
-- `intel-gpu-tools` — Intel iGPU monitoring via `intel_gpu_top`
 - NVIDIA driver — provides `nvidia-smi` for NVIDIA GPU monitoring
 
 Use `BEWITCH_NONINTERACTIVE=1` to auto-install all detected optional dependencies without prompting.

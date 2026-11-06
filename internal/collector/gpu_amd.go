@@ -21,7 +21,7 @@ type amdCard struct {
 }
 
 // amdGPUBackend reads AMD GPU metrics straight from amdgpu sysfs — no external tool
-// (unlike the Intel intel_gpu_top / NVIDIA nvidia-smi backends), so it's the only
+// (like the Intel backend; unlike NVIDIA's nvidia-smi), so it's a
 // zero-dependency GPU backend. Stateless: nothing to stop.
 type amdGPUBackend struct {
 	cards []amdCard

@@ -140,12 +140,15 @@ empty.
 
 | GPU | Source | Requires |
 | --- | --- | --- |
-| Intel iGPU | `intel_gpu_top -J`, kept running | `intel-gpu-tools` package, `CAP_PERFMON` (on Debian, see below) |
+| Intel (i915, xe) | sysfs and DRM fdinfo | Kernel 5.19+ for utilization; `CAP_SYS_PTRACE` (granted by the packaged service) |
 | NVIDIA | `nvidia-smi` queries (10s timeout) | NVIDIA driver with `nvidia-smi` |
 | AMD | `amdgpu` sysfs (`/sys/class/drm/card*/device/`) | Nothing extra |
 
-- **Intel:** utilization (busiest engine), clock, power. Memory isn't reported (it's shared system memory). The first reading is a baseline.
-- **Intel on Debian:** `intel_gpu_top` reads the GPU's perf events. Debian's kernels default to `kernel.perf_event_paranoid = 3`, which requires `CAP_SYS_ADMIN` for those, and the packaged service doesn't grant it. Intel GPU readings stay empty, and the daemon logs `gpu: intel_gpu_top exited: Failed to initialize PMU! (Permission denied)`. Setting `kernel.perf_event_paranoid = 2`, the upstream kernel default, lets `CAP_PERFMON` work (for example `echo kernel.perf_event_paranoid=2 > /etc/sysctl.d/60-perf.conf && sysctl --system`). Ubuntu's default already allows it. When `intel_gpu_top` exits, the daemon retries after 1 minute, doubling up to 1 hour.
+- **Intel:** utilization, clock, RC6 (idle) residency, power. Memory isn't reported (it's shared system memory). The first reading is a baseline.
+  - **Utilization** comes from DRM fdinfo: the i915 and xe drivers publish each GPU client's busy time per engine class in `/proc/<pid>/fdinfo`. bewitch reports the busiest class as a share of its capacity, so on a GPU with two video engines, one saturated video engine shows as 50%. Only processes using the GPU count, and a new one is picked up within a minute. Reading other users' fdinfo needs `CAP_SYS_PTRACE`.
+  - **Clock and RC6** come from sysfs (`gt_act_freq_mhz`, `gt/gt0/rc6_residency_ms`, or the xe equivalents).
+  - **Power** comes from a discrete card's own energy counter, or the RAPL uncore counter for integrated GPUs.
+  - No extra tools or perf events are needed, so this works under Debian's default `perf_event_paranoid = 3`. Earlier versions ran `intel_gpu_top`, which needed `CAP_SYS_ADMIN` there.
 - **NVIDIA:** utilization, memory used/total, temperature, power, clock.
 - **AMD:** utilization, VRAM used/total, temperature, power, clock, read straight from the driver with no extra tools.
 - **Storage:** `gpu_metrics`

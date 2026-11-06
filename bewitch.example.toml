@@ -115,7 +115,7 @@ refresh_interval = "2s"
 
 [collectors.gpu]
 # interval = "5s"
-# enabled = true  # set to false to disable GPU collection (Intel iGPU via intel_gpu_top, NVIDIA via nvidia-smi)
+# enabled = true  # set to false to disable GPU collection (Intel and AMD read directly from the kernel, NVIDIA via nvidia-smi)
 
 [collectors.process]
 # interval = "5s"

@@ -765,7 +765,7 @@ func main() {
 			defer cancel()
 			close(shutdownCh) // stop scheduled-job and checkpoint goroutines
 			alertEngine.Stop()
-			// Stop long-lived collector subprocesses (e.g. intel_gpu_top)
+			// Stop collectors that hold resources across ticks
 			for _, sc := range scheduled {
 				type stopper interface{ Stop() }
 				if s, ok := sc.collector.(stopper); ok {
